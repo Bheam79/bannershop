@@ -1,4 +1,5 @@
 using System.IO;
+using BannerShop.Api.Services.DesignRequests;
 using BannerShop.Api.Services.Orders;
 using BannerShop.Api.Services.Orders.Stripe;
 using Microsoft.AspNetCore.Mvc;
@@ -11,15 +12,18 @@ public class WebhooksController : ControllerBase
 {
     private readonly IStripePaymentService _stripe;
     private readonly IOrderService _orders;
+    private readonly IDesignRequestService _designRequests;
     private readonly ILogger<WebhooksController> _logger;
 
     public WebhooksController(
         IStripePaymentService stripe,
         IOrderService orders,
+        IDesignRequestService designRequests,
         ILogger<WebhooksController> logger)
     {
         _stripe = stripe;
         _orders = orders;
+        _designRequests = designRequests;
         _logger = logger;
     }
 
@@ -46,7 +50,9 @@ public class WebhooksController : ControllerBase
             switch (evt.EventType)
             {
                 case "payment_intent.succeeded":
+                    // PaymentIntent can be for either an Order or a DesignRequest — try both.
                     await _orders.MarkPaidAsync(evt.PaymentIntentId, evt.OrderIdFromMetadata, ct);
+                    await _designRequests.MarkPaidAndEnqueueAsync(evt.PaymentIntentId, ct);
                     break;
 
                 case "payment_intent.payment_failed":

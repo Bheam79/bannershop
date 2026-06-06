@@ -20,6 +20,8 @@ public class BannerShopDbContext : DbContext
     public DbSet<ShipmentTracking> ShipmentTrackings => Set<ShipmentTracking>();
     public DbSet<BannerDesign> BannerDesigns => Set<BannerDesign>();
     public DbSet<BannerTemplate> BannerTemplates => Set<BannerTemplate>();
+    public DbSet<DesignRequest> DesignRequests => Set<DesignRequest>();
+    public DbSet<DesignRequestRevision> DesignRequestRevisions => Set<DesignRequestRevision>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -176,6 +178,52 @@ public class BannerShopDbContext : DbContext
             e.Property(x => x.NameNb).HasMaxLength(100).IsRequired();
             e.Property(x => x.NameEn).HasMaxLength(100).IsRequired();
             e.HasIndex(x => x.SortOrder);
+        });
+
+        // DesignRequest (AI / Manual design jobs — own mini-order with its own PaymentIntent)
+        modelBuilder.Entity<DesignRequest>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Mode).HasConversion<string>().HasMaxLength(20).IsRequired();
+            e.Property(x => x.Language).HasMaxLength(5).IsRequired().HasDefaultValue("nb");
+            e.Property(x => x.PersonName).HasMaxLength(200).IsRequired();
+            e.Property(x => x.TextContent).HasMaxLength(500).IsRequired();
+            e.Property(x => x.ThemeDescription).HasMaxLength(500).IsRequired();
+            e.Property(x => x.UploadedPhotoPath).HasMaxLength(500);
+            e.Property(x => x.AspectRatio).HasMaxLength(10).IsRequired().HasDefaultValue("16:9");
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(30).IsRequired();
+            e.Property(x => x.PriceNok).HasColumnType("decimal(10,2)");
+            e.Property(x => x.StripePaymentIntentId).HasMaxLength(200);
+            e.Property(x => x.AiResultStoragePath).HasMaxLength(500);
+            e.Property(x => x.DesignerPreviewPath).HasMaxLength(500);
+            e.Property(x => x.FinalCroppedStoragePath).HasMaxLength(500);
+            e.Property(x => x.LastError).HasMaxLength(2000);
+
+            e.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.BannerTemplate)
+                .WithMany()
+                .HasForeignKey(x => x.BannerTemplateId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => x.UserId);
+            e.HasIndex(x => x.StripePaymentIntentId);
+            e.HasIndex(x => x.Status);
+        });
+
+        // DesignRequestRevision (correction log per request)
+        modelBuilder.Entity<DesignRequestRevision>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.CustomerComment).HasMaxLength(2000).IsRequired();
+            e.HasOne(x => x.DesignRequest)
+                .WithMany(x => x.Revisions)
+                .HasForeignKey(x => x.DesignRequestId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.DesignRequestId);
         });
 
         // Seed data

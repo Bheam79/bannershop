@@ -2,6 +2,8 @@ using System.Security.Claims;
 using System.Text;
 using BannerShop.Api.Services;
 using BannerShop.Api.Services.BannerBuilder;
+using BannerShop.Api.Services.DesignRequests;
+using BannerShop.Api.Services.DesignRequests.OpenAi;
 using BannerShop.Api.Services.Orders;
 using BannerShop.Api.Services.Orders.Stripe;
 using BannerShop.Api.Services.Shipping;
@@ -81,6 +83,29 @@ builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.Configure<FileStorageOptions>(builder.Configuration.GetSection(FileStorageOptions.SectionName));
 builder.Services.AddSingleton<BannerFileStorage>();
 builder.Services.AddSingleton<IImageProcessingService, ImageProcessingService>();
+
+// ─── AI Design Requests (95 kr) ──────────────────────────────────────────────
+builder.Services.Configure<OpenAiOptions>(builder.Configuration.GetSection(OpenAiOptions.SectionName));
+
+var openAiSection = builder.Configuration.GetSection(OpenAiOptions.SectionName);
+var openAiKey = openAiSection["ApiKey"];
+var openAiConfigured =
+    !string.IsNullOrWhiteSpace(openAiKey) &&
+    !openAiKey.StartsWith("sk-REPLACE", StringComparison.OrdinalIgnoreCase) &&
+    !openAiKey.StartsWith("REPLACE_", StringComparison.OrdinalIgnoreCase);
+
+if (openAiConfigured)
+    builder.Services.AddHttpClient<IAiImageService, OpenAiImageService>();
+else
+    builder.Services.AddSingleton<IAiImageService, MockAiImageService>();
+
+builder.Services.AddSingleton<IUpscalingService, NoopUpscalingService>();
+builder.Services.AddSingleton<IPhotoCompositor, PhotoCompositorNotImplemented>();
+builder.Services.AddSingleton<IBannerPromptService, BannerPromptService>();
+builder.Services.AddSingleton<IDesignRequestJobQueue, DesignRequestJobQueue>();
+builder.Services.AddScoped<IDesignRequestService, DesignRequestService>();
+builder.Services.AddScoped<AiGenerationPipeline>();
+builder.Services.AddHostedService<DesignRequestJobProcessor>();
 
 // Allow multipart uploads up to the configured cap (+25% headroom for form overhead).
 var fileStorageOpts = builder.Configuration.GetSection(FileStorageOptions.SectionName).Get<FileStorageOptions>()

@@ -63,3 +63,11 @@ cd /workspace/repo/BannerShop.Api && dotnet run
 - `IImageProcessingService` uses `SixLabors.ImageSharp` for raster ops and `PDFtoImage` for PDF→PNG (first page only, 200 DPI).
 - `PDFtoImage` v4 has int-page overloads marked obsolete — use the `Index`-based overload.
 - Dimension math lives in pure helper `BannerDimensions` (covered by unit tests in `BannerDimensionsTests`).
+- Only `SixLabors.ImageSharp` (3.1.5) is referenced — `SixLabors.ImageSharp.Drawing` is NOT, so `Fill`/`DrawText` extensions on `IImageProcessingContext` are unavailable. Use `Image<Rgba32>` constructor with a fill colour, or `Mutate(ctx => ctx.Crop(...))` for crops.
+
+## AI design requests (BANNERSH-19)
+- `DesignRequest` + `DesignRequestRevision` entities + `AddDesignRequests` migration ship with this task (BANNERSH-26 is the consolidated foundation task — was still TODO when this was done, so the entities were added here).
+- Stripe webhook (`payment_intent.succeeded`) calls BOTH `OrderService.MarkPaidAsync` and `DesignRequestService.MarkPaidAndEnqueueAsync` — the latter looks up by PaymentIntentId, ignores misses, and enqueues a job. Design-request PaymentIntents use `orderId = -designRequestId` metadata so order-lookups by id won't accidentally hit them.
+- AI pipeline runs in `DesignRequestJobProcessor` (BackgroundService) reading from `IDesignRequestJobQueue` (in-process `Channel<int>`). No external queue dependency for v1 volumes.
+- Image provider abstraction: `IAiImageService` is `OpenAiImageService` when `OpenAi:ApiKey` is set, else `MockAiImageService` (solid-colour PNG, so the rest of the pipeline is exercisable without API credit).
+- Per BANNERSH-18: model is `gpt-image-2` (configurable via `OpenAi:ImageModel`), no Replicate upscaling — `NoopUpscalingService` returns input unchanged. `IPhotoCompositor` is a stub (`PhotoCompositorNotImplemented`) since portraits go through `/v1/images/edits`.

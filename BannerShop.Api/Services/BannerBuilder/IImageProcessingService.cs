@@ -20,4 +20,13 @@ public interface IImageProcessingService
     Task<(int WidthPx, int HeightPx)> GeneratePreviewAsync(
         string sourceAbsolutePath, string outputAbsolutePath,
         int rotationDegrees, int maxWidth, int quality, CancellationToken ct);
+
+    /// <summary>
+    /// Center-crops an image to the target aspect ratio expressed as
+    /// <paramref name="ratioWidth"/>:<paramref name="ratioHeight"/> and writes it as PNG
+    /// to <paramref name="outputAbsolutePath"/>. Returns the resulting dimensions.
+    /// </summary>
+    Task<(int WidthPx, int HeightPx)> CenterCropAsync(
+        string sourceAbsolutePath, string outputAbsolutePath,
+        int ratioWidth, int ratioHeight, CancellationToken ct);
 }

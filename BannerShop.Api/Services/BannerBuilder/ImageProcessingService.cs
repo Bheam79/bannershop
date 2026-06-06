@@ -1,5 +1,6 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.Processing;
 
 namespace BannerShop.Api.Services.BannerBuilder;
@@ -66,6 +67,42 @@ public sealed class ImageProcessingService : IImageProcessingService
         var encoder = new JpegEncoder { Quality = quality };
         await img.SaveAsync(outputAbsolutePath, encoder, ct);
 
+        return (img.Width, img.Height);
+    }
+
+    public async Task<(int WidthPx, int HeightPx)> CenterCropAsync(
+        string sourceAbsolutePath, string outputAbsolutePath,
+        int ratioWidth, int ratioHeight, CancellationToken ct)
+    {
+        if (ratioWidth <= 0 || ratioHeight <= 0)
+            throw new ArgumentException("Aspect ratio components must be positive.");
+
+        using var img = await Image.LoadAsync(sourceAbsolutePath, ct);
+
+        // Find the largest rectangle of the target ratio centered in the source.
+        var srcW = img.Width;
+        var srcH = img.Height;
+        var srcRatio = (double)srcW / srcH;
+        var targetRatio = (double)ratioWidth / ratioHeight;
+
+        int cropW, cropH;
+        if (srcRatio > targetRatio)
+        {
+            // Source is wider — crop width.
+            cropH = srcH;
+            cropW = (int)Math.Round(srcH * targetRatio);
+        }
+        else
+        {
+            cropW = srcW;
+            cropH = (int)Math.Round(srcW / targetRatio);
+        }
+        var offX = (srcW - cropW) / 2;
+        var offY = (srcH - cropH) / 2;
+
+        img.Mutate(ctx => ctx.Crop(new Rectangle(offX, offY, cropW, cropH)));
+
+        await img.SaveAsync(outputAbsolutePath, new PngEncoder(), ct);
         return (img.Width, img.Height);
     }
 }
