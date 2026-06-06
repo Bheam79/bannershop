@@ -19,6 +19,7 @@ public class BannerShopDbContext : DbContext
     public DbSet<ProductionStatus> ProductionStatuses => Set<ProductionStatus>();
     public DbSet<ShipmentTracking> ShipmentTrackings => Set<ShipmentTracking>();
     public DbSet<BannerDesign> BannerDesigns => Set<BannerDesign>();
+    public DbSet<BannerTemplate> BannerTemplates => Set<BannerTemplate>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -167,6 +168,16 @@ public class BannerShopDbContext : DbContext
             e.HasIndex(x => x.UserId);
         });
 
+        // BannerTemplate (pre-defined celebration categories)
+        modelBuilder.Entity<BannerTemplate>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Category).HasConversion<string>().HasMaxLength(50).IsRequired();
+            e.Property(x => x.NameNb).HasMaxLength(100).IsRequired();
+            e.Property(x => x.NameEn).HasMaxLength(100).IsRequired();
+            e.HasIndex(x => x.SortOrder);
+        });
+
         // Seed data
         SeedData(modelBuilder);
     }
@@ -218,6 +229,17 @@ public class BannerShopDbContext : DbContext
             new PricingParameter { Id = 8, Name = "Forsendelse: maks lengde (cm)", Key = "shipping_max_length_cm", Value = 240m, Description = "Maks tube-lengde transportør aksepterer (cm) — Bring Servicepakke" },
             new PricingParameter { Id = 9, Name = "Standard leveringstid (dager)", Key = "standard_lead_time_days", Value = 14m, Description = "Produksjons- og leveringstid for standard ordre (dager fra bestilling)" },
             new PricingParameter { Id = 10, Name = "Express leveringstid (dager)", Key = "express_lead_time_days", Value = 3m, Description = "Produksjonstid for express-ordre (dager fra bestilling, før forsendelse)" }
+        );
+
+        // Seed BannerTemplates (celebration categories shown in the banner builder)
+        modelBuilder.Entity<BannerTemplate>().HasData(
+            new BannerTemplate { Id = 1, Category = BannerTemplateCategory.Birthday,     NameNb = "Bursdag",        NameEn = "Birthday",         SortOrder = 10 },
+            new BannerTemplate { Id = 2, Category = BannerTemplateCategory.Confirmation, NameNb = "Konfirmasjon",   NameEn = "Confirmation",     SortOrder = 20 },
+            new BannerTemplate { Id = 3, Category = BannerTemplateCategory.Wedding,      NameNb = "Bryllup",        NameEn = "Wedding",          SortOrder = 30 },
+            new BannerTemplate { Id = 4, Category = BannerTemplateCategory.Anniversary,  NameNb = "Jubileum",       NameEn = "Anniversary",      SortOrder = 40 },
+            new BannerTemplate { Id = 5, Category = BannerTemplateCategory.Christmas,    NameNb = "Julefeiring",    NameEn = "Christmas party",  SortOrder = 50 },
+            new BannerTemplate { Id = 6, Category = BannerTemplateCategory.NewYear,      NameNb = "Nyttårsfeiring", NameEn = "New Year's party", SortOrder = 60 },
+            new BannerTemplate { Id = 7, Category = BannerTemplateCategory.Other,        NameNb = "Annen feiring",  NameEn = "Other occasion",   SortOrder = 70 }
         );
     }
 }
