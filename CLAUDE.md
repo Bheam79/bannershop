@@ -37,6 +37,15 @@ BANNERSHOP_DB="..." dotnet-ef database update \
 - API calls: all via `/api` proxy in Vite dev server (proxied to `localhost:5000`)
 - Auth store: `localStorage` backed JWT + refresh token
 
+## Production (`make up` / `make down`) — BANNERSH-30
+Top-level `Makefile` stands up the full stack on any Linux host with `docker`, `dotnet`, `npm`, `systemctl`, `openssl` in PATH. MariaDB runs as a Docker container; backend (which now also serves the SPA from `BannerShop.Api/wwwroot/`) runs as a `systemctl --user` service.
+
+- Ports: backend `:17080`, MariaDB `127.0.0.1:17006` (both in the 17000–17100 range).
+- Layout under `$HOME/.local/share/bannershop/{app,data,secrets}` and unit at `$HOME/.config/systemd/user/bannershop.service` — no sudo required (except optional `loginctl enable-linger $USER` for boot start).
+- Secrets (DB password, JWT key, admin password) are generated on first run via `openssl rand`, kept mode 0600 under `secrets/`, and reused on subsequent `make up`.
+- The Vite build is copied into `BannerShop.Api/wwwroot/` at publish time so a single ASP.NET process serves `/api/*` and the SPA (with `MapFallbackToFile("index.html")` for client-side routes — only registered when the file exists, so tests/dev are unaffected).
+- `Program.cs` auto-runs `db.Database.Migrate()` only in `Development` or `Production` environments — `Testing` (used by `TestWebApplicationFactory` with the InMemory provider) is skipped because InMemory doesn't support migrations.
+
 ## Build commands
 ```bash
 # Backend

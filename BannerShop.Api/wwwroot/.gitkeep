@@ -1,0 +1,9 @@
+# Placeholder so wwwroot/ exists for ASP.NET Core's StaticFiles middleware.
+#
+# In production, `make up` (root Makefile) copies the built Vite SPA from
+# `frontend/dist/` into this directory before publishing the backend, so
+# the API process serves both the JSON API at /api/* and the SPA on every
+# other path.
+#
+# In Development this directory normally stays empty — the SPA is served
+# by `vite dev` on :5173 with /api proxied to the backend on :5000.

@@ -220,6 +220,13 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("FrontendPolicy");
 
+// ─── Static file serving for the SPA (wwwroot) ───────────────────────────────
+// In production, the built Vite frontend is copied into BannerShop.Api/wwwroot
+// at publish time (see the root Makefile). In Development, wwwroot is typically
+// empty and the SPA is served by `vite dev` on :5173 with /api proxied here.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 // ─── Static file serving for uploaded files ──────────────────────────────────
 // Files are stored under FileStorage:LocalRoot and exposed at FileStorage:PublicBaseUrl ("/files").
 //
@@ -249,11 +256,27 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
+// SPA fallback: serve index.html for any non-API, non-file route so client-side
+// routing works on deep-links / refresh. Only kicks in when wwwroot/index.html
+// actually exists (i.e. the prod build copied the Vite output in).
+{
+    var indexPath = Path.Combine(app.Environment.WebRootPath ?? string.Empty, "index.html");
+    if (File.Exists(indexPath))
+    {
+        app.MapFallbackToFile("index.html");
+    }
+}
+
 // ─── Auto-migrate & seed on startup ──────────────────────────────────────────
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<BannerShopDbContext>();
-    if (app.Environment.IsDevelopment())
+    // Apply pending migrations on startup in Development and Production —
+    // production installs (see Makefile) rely on this so `make up` "just works"
+    // without a separate `dotnet ef database update` step. Skipped in other
+    // environments (e.g. "Testing") because the integration-test WebApplicationFactory
+    // swaps in the InMemory provider, which does not support migrations.
+    if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
     {
         db.Database.Migrate();
     }
