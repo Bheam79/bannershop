@@ -15,7 +15,7 @@ cb docker run mariadb:11 --name db -v /workspace/mariadb-data:/var/lib/mysql \
 DB_IP=$(cb docker exec db hostname -I | tr -d ' ')
 # Update appsettings*.json to use $DB_IP instead of localhost/hostname
 ```
-Current DB IP: `10.89.7.3` (changes each time the container restarts — re-read with the `DB_IP=$(cb docker exec db hostname -I | tr -d ' ')` snippet above; appsettings.json is hard-coded to a previous IP and may need updating).
+Current DB IP: `10.89.7.5` (changes each time the container restarts — re-read with the `DB_IP=$(cb docker exec db hostname -I | tr -d ' ')` snippet above; appsettings.json is hard-coded to a previous IP and may need updating).
 
 ## EF Core migrations
 The `DesignTimeDbContextFactory` reads `BANNERSHOP_DB` env var:

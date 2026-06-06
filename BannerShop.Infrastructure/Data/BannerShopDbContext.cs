@@ -166,8 +166,11 @@ public class BannerShopDbContext : DbContext
             e.HasOne(x => x.User)
                 .WithMany()
                 .HasForeignKey(x => x.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
-            e.HasIndex(x => x.UserId);
+                .OnDelete(DeleteBehavior.Restrict);
+            // Composite index for user-scoped listing sorted newest-first.
+            e.HasIndex(x => new { x.UserId, x.CreatedAt })
+             .IsDescending(false, true)
+             .HasDatabaseName("IX_BannerDesigns_UserId_CreatedAt");
         });
 
         // BannerTemplate (pre-defined celebration categories)
@@ -187,8 +190,8 @@ public class BannerShopDbContext : DbContext
             e.Property(x => x.Mode).HasConversion<string>().HasMaxLength(20).IsRequired();
             e.Property(x => x.Language).HasMaxLength(5).IsRequired().HasDefaultValue("nb");
             e.Property(x => x.PersonName).HasMaxLength(200).IsRequired();
-            e.Property(x => x.TextContent).HasMaxLength(500).IsRequired();
-            e.Property(x => x.ThemeDescription).HasMaxLength(500).IsRequired();
+            e.Property(x => x.TextContent).HasMaxLength(1000).IsRequired();
+            e.Property(x => x.ThemeDescription).HasMaxLength(1000).IsRequired();
             e.Property(x => x.UploadedPhotoPath).HasMaxLength(500);
             e.Property(x => x.AspectRatio).HasMaxLength(10).IsRequired().HasDefaultValue("16:9");
             e.Property(x => x.Status).HasConversion<string>().HasMaxLength(30).IsRequired();
