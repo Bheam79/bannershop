@@ -162,7 +162,7 @@ db-up: secrets
 			-e MYSQL_USER=$(DB_USER) \
 			-e MYSQL_PASSWORD="$$(cat $(SECRETS_DIR)/db_password)" \
 			-v bannershop_dbdata:/var/lib/mysql \
-			mariadb:11 >/dev/null; \
+			docker.io/library/mariadb:11 >/dev/null; \
 	fi
 	@echo "Waiting for MariaDB to accept connections..."
 	@for i in $$(seq 1 60); do \
