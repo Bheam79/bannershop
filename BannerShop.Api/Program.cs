@@ -25,6 +25,9 @@ builder.Services.AddDbContext<BannerShopDbContext>(options =>
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
+// ─── Catalog Services ─────────────────────────────────────────────────────────
+builder.Services.AddScoped<IPricingService, PricingService>();
+
 // ─── Authentication (JWT) ─────────────────────────────────────────────────────
 var jwtSecret = builder.Configuration["Jwt:Secret"]
     ?? throw new InvalidOperationException("JWT secret is not configured.");

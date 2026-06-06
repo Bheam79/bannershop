@@ -1,0 +1,86 @@
+using BannerShop.Api.Models.Catalog;
+using BannerShop.Api.Services;
+using BannerShop.Infrastructure.Data;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+namespace BannerShop.Api.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+public class SizesController : ControllerBase
+{
+    private readonly BannerShopDbContext _db;
+    private readonly IPricingService _pricing;
+
+    public SizesController(BannerShopDbContext db, IPricingService pricing)
+    {
+        _db = db;
+        _pricing = pricing;
+    }
+
+    // ── GET /api/sizes?customWidthCm=X ────────────────────────────────────────
+    [HttpGet]
+    public async Task<IActionResult> GetSizes([FromQuery] int? customWidthCm = null)
+    {
+        var sizes = await _db.BannerSizes
+            .Include(s => s.Material)
+            .Where(s => s.IsActive)
+            .OrderBy(s => s.SortOrder)
+            .ToListAsync();
+
+        var result = new List<BannerSizeDto>(sizes.Count);
+        foreach (var s in sizes)
+        {
+            var price = await _pricing.CalculatePriceAsync(s, customWidthCm);
+            result.Add(ToDto(s, price));
+        }
+
+        return Ok(result);
+    }
+
+    // ── GET /api/sizes/{id}/price?customWidthCm=X ─────────────────────────────
+    [HttpGet("{id:int}/price")]
+    public async Task<IActionResult> GetPrice(int id, [FromQuery] int? customWidthCm = null)
+    {
+        var size = await _db.BannerSizes.FindAsync(id);
+        if (size == null) return NotFound();
+
+        if (size.IsCustomWidth && customWidthCm is null)
+            return BadRequest(new { error = "customWidthCm is required for custom-width banner sizes." });
+
+        var price = await _pricing.CalculatePriceAsync(size, customWidthCm);
+        return Ok(new PriceResponseDto
+        {
+            SizeId = size.Id,
+            CustomWidthCm = customWidthCm,
+            PriceNok = price
+        });
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static BannerSizeDto ToDto(BannerShop.Core.Entities.BannerSize s, decimal price) => new()
+    {
+        Id = s.Id,
+        WidthCm = s.WidthCm,
+        HeightCm = s.HeightCm,
+        IsCustomWidth = s.IsCustomWidth,
+        Name = s.Name,
+        IsActive = s.IsActive,
+        MaterialId = s.MaterialId,
+        Material = new MaterialDto
+        {
+            Id = s.Material.Id,
+            Name = s.Material.Name,
+            WidthCm = s.Material.WidthCm,
+            WeightGsm = s.Material.WeightGsm,
+            PricePerSqm = s.Material.PricePerSqm,
+            AvailableFrom = s.Material.AvailableFrom
+        },
+        FixedPrice = s.FixedPrice,
+        SortOrder = s.SortOrder,
+        CalculatedPrice = price,
+        AvailableFrom = s.Material.AvailableFrom
+    };
+}
