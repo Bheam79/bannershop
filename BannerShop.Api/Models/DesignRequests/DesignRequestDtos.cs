@@ -2,6 +2,43 @@ using System.ComponentModel.DataAnnotations;
 
 namespace BannerShop.Api.Models.DesignRequests;
 
+/// <summary>POST /api/design-requests/manual body.</summary>
+public class CreateManualDesignRequestDto
+{
+    [Required]
+    public int TemplateId { get; set; }
+
+    [Required]
+    [RegularExpression("^(nb|en)$", ErrorMessage = "Language must be 'nb' or 'en'.")]
+    public string Language { get; set; } = "nb";
+
+    [Required, StringLength(200, MinimumLength = 1)]
+    public string PersonName { get; set; } = string.Empty;
+
+    [Range(0, 130)]
+    public int? PersonAge { get; set; }
+
+    [Required, StringLength(500, MinimumLength = 1)]
+    public string TextContent { get; set; } = string.Empty;
+
+    [Required, StringLength(500)]
+    public string ThemeDescription { get; set; } = string.Empty;
+
+    [Required]
+    [RegularExpression("^(16:9|18:9)$", ErrorMessage = "AspectRatio must be '16:9' or '18:9'.")]
+    public string AspectRatio { get; set; } = "16:9";
+
+    /// <summary>Optional BannerDesign id for an uploaded portrait photo.</summary>
+    public int? UploadedPhotoBannerDesignId { get; set; }
+}
+
+/// <summary>POST /api/design-requests/{id}/revision body.</summary>
+public class RequestRevisionDto
+{
+    [Required, StringLength(2000, MinimumLength = 1)]
+    public string Comment { get; set; } = string.Empty;
+}
+
 /// <summary>POST /api/design-requests/ai body.</summary>
 public class CreateAiDesignRequestDto
 {
@@ -78,6 +115,81 @@ public class DesignRequestDetailDto
     public string? PreviewUrl { get; set; }
     public string? FinalCroppedUrl { get; set; }
     public string? LastError { get; set; }
+    public DateTime? CustomerApprovedAt { get; set; }
+    public string? DesignerNotes { get; set; }
+    public IReadOnlyList<DesignRequestRevisionDto> Revisions { get; set; } = Array.Empty<DesignRequestRevisionDto>();
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>Snapshot of a single revision comment.</summary>
+public class DesignRequestRevisionDto
+{
+    public int Id { get; set; }
+    public int RevisionNumber { get; set; }
+    public string CustomerComment { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+// ── Admin DTOs ────────────────────────────────────────────────────────────────
+
+/// <summary>Query filters for GET /api/admin/design-requests.</summary>
+public class AdminDesignRequestFilter
+{
+    public string? Status { get; set; }
+    public string? Mode { get; set; }
+    public DateTime? FromUtc { get; set; }
+    public DateTime? ToUtc { get; set; }
+    public string? Search { get; set; }
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 20;
+}
+
+/// <summary>Paginated list response for the admin endpoint.</summary>
+public class PagedResult<T>
+{
+    public IReadOnlyList<T> Items { get; set; } = Array.Empty<T>();
+    public int TotalCount { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
+    public int TotalPages => PageSize > 0 ? (int)Math.Ceiling((double)TotalCount / PageSize) : 0;
+}
+
+/// <summary>Admin list item — includes customer info.</summary>
+public class AdminDesignRequestListItemDto
+{
+    public int Id { get; set; }
+    public string Mode { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string AspectRatio { get; set; } = string.Empty;
+    public decimal PriceNok { get; set; }
+    public int BannerTemplateId { get; set; }
+    public string PersonName { get; set; } = string.Empty;
+    public int? PersonAge { get; set; }
+    // Customer info
+    public int UserId { get; set; }
+    public string CustomerName { get; set; } = string.Empty;
+    public string CustomerEmail { get; set; } = string.Empty;
+    public int RevisionCount { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>Full admin detail — all fields including upload paths and revision history.</summary>
+public class AdminDesignRequestDetailDto : DesignRequestDetailDto
+{
+    public string CustomerName { get; set; } = string.Empty;
+    public string CustomerEmail { get; set; } = string.Empty;
+    public string? UploadedPhotoUrl { get; set; }
+    public string? TemplateName { get; set; }
+}
+
+/// <summary>PUT /api/admin/design-requests/{id}/status body.</summary>
+public class AdminUpdateStatusDto
+{
+    [Required]
+    public string Status { get; set; } = string.Empty;
+
+    [StringLength(2000)]
+    public string? Notes { get; set; }
 }

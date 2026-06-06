@@ -1,5 +1,6 @@
 using BannerShop.Api.Models.DesignRequests;
 using BannerShop.Api.Services.BannerBuilder;
+using BannerShop.Api.Services.Email;
 using BannerShop.Api.Services.Orders.Stripe;
 using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
@@ -11,11 +12,13 @@ namespace BannerShop.Api.Services.DesignRequests;
 public sealed class DesignRequestService : IDesignRequestService
 {
     public const decimal AiPriceNok = 95m;
+    public const decimal ManualPriceNok = 495m;
 
     private readonly BannerShopDbContext _db;
     private readonly IStripePaymentService _stripe;
     private readonly IDesignRequestJobQueue _queue;
     private readonly BannerFileStorage _storage;
+    private readonly IEmailService _email;
     private readonly ILogger<DesignRequestService> _log;
 
     public DesignRequestService(
@@ -23,12 +26,14 @@ public sealed class DesignRequestService : IDesignRequestService
         IStripePaymentService stripe,
         IDesignRequestJobQueue queue,
         BannerFileStorage storage,
+        IEmailService email,
         ILogger<DesignRequestService> log)
     {
         _db = db;
         _stripe = stripe;
         _queue = queue;
         _storage = storage;
+        _email = email;
         _log = log;
     }
 
@@ -85,6 +90,91 @@ public sealed class DesignRequestService : IDesignRequestService
         return DesignRequestActionResult.Ok(request.Id, intent.ClientSecret, AiPriceNok);
     }
 
+    public async Task<DesignRequestActionResult> CreateManualRequestAsync(int userId, CreateManualDesignRequestDto req, CancellationToken ct = default)
+    {
+        var template = await _db.BannerTemplates.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == req.TemplateId, ct);
+        if (template is null)
+            return DesignRequestActionResult.Fail("Banner template not found.");
+
+        string? uploadedPhotoPath = null;
+        if (req.UploadedPhotoBannerDesignId is int designId)
+        {
+            var design = await _db.BannerDesigns.AsNoTracking()
+                .FirstOrDefaultAsync(d => d.Id == designId && d.UserId == userId, ct);
+            if (design is null)
+                return DesignRequestActionResult.Fail("Uploaded photo not found.");
+            uploadedPhotoPath = design.StoragePath;
+        }
+
+        var request = new DesignRequest
+        {
+            UserId = userId,
+            BannerTemplateId = template.Id,
+            Mode = DesignRequestMode.Manual,
+            Language = req.Language,
+            PersonName = req.PersonName.Trim(),
+            PersonAge = req.PersonAge,
+            TextContent = req.TextContent.Trim(),
+            ThemeDescription = req.ThemeDescription.Trim(),
+            UploadedPhotoPath = uploadedPhotoPath,
+            AspectRatio = req.AspectRatio,
+            Status = DesignRequestStatus.Pending,
+            PriceNok = ManualPriceNok,
+            RegenerationsRemaining = 0,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        _db.DesignRequests.Add(request);
+        await _db.SaveChangesAsync(ct);
+
+        var intent = await _stripe.CreatePaymentIntentAsync(
+            orderId: -request.Id,
+            userId: userId,
+            amountNok: ManualPriceNok,
+            ct: ct);
+
+        request.StripePaymentIntentId = intent.PaymentIntentId;
+        await _db.SaveChangesAsync(ct);
+
+        return DesignRequestActionResult.Ok(request.Id, intent.ClientSecret, ManualPriceNok);
+    }
+
+    public async Task<DesignRequestActionResult> RequestRevisionAsync(int id, int callerUserId, string comment, CancellationToken ct = default)
+    {
+        var r = await _db.DesignRequests
+            .Include(x => x.User)
+            .Include(x => x.Revisions)
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
+
+        if (r is null) return DesignRequestActionResult.Fail("Design request not found.");
+        if (r.UserId != callerUserId) return DesignRequestActionResult.Fail("Forbidden.");
+
+        if (r.Status != DesignRequestStatus.AwaitingApproval)
+            return DesignRequestActionResult.Fail($"Cannot request a revision from status {r.Status}.");
+
+        if (r.Mode != DesignRequestMode.Manual)
+            return DesignRequestActionResult.Fail("Revisions are only available for manual design requests.");
+
+        if (r.RevisionCount >= 1)
+            return DesignRequestActionResult.Fail("No free revisions remaining on this request.");
+
+        r.Revisions.Add(new DesignRequestRevision
+        {
+            DesignRequestId = r.Id,
+            RevisionNumber = r.RevisionCount + 1,
+            CustomerComment = comment.Trim(),
+            CreatedAt = DateTime.UtcNow
+        });
+
+        r.RevisionCount++;
+        r.Status = DesignRequestStatus.RevisionRequested;
+        r.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return DesignRequestActionResult.Ok(ToDetail(r));
+    }
+
     public async Task<IReadOnlyList<DesignRequestListItemDto>> ListMineAsync(int userId, CancellationToken ct = default)
     {
         var rows = await _db.DesignRequests.AsNoTracking()
@@ -107,7 +197,10 @@ public sealed class DesignRequestService : IDesignRequestService
 
     public async Task<DesignRequestDetailDto?> GetAsync(int id, int callerUserId, bool isAdmin, CancellationToken ct = default)
     {
-        var r = await _db.DesignRequests.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        var r = await _db.DesignRequests
+            .AsNoTracking()
+            .Include(x => x.Revisions.OrderBy(rv => rv.RevisionNumber))
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (r is null) return null;
         if (r.UserId != callerUserId && !isAdmin) return null;
         return ToDetail(r);
@@ -115,7 +208,9 @@ public sealed class DesignRequestService : IDesignRequestService
 
     public async Task<DesignRequestActionResult> ApproveAsync(int id, int callerUserId, CancellationToken ct = default)
     {
-        var r = await _db.DesignRequests.FirstOrDefaultAsync(x => x.Id == id, ct);
+        var r = await _db.DesignRequests
+            .Include(x => x.Revisions)
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (r is null) return DesignRequestActionResult.Fail("Design request not found.");
         if (r.UserId != callerUserId)
             return DesignRequestActionResult.Fail("Forbidden.");
@@ -124,6 +219,7 @@ public sealed class DesignRequestService : IDesignRequestService
             return DesignRequestActionResult.Fail($"Cannot approve a request in status {r.Status}.");
 
         r.Status = DesignRequestStatus.Approved;
+        r.CustomerApprovedAt = DateTime.UtcNow;
         r.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return DesignRequestActionResult.Ok(ToDetail(r));
@@ -152,11 +248,19 @@ public sealed class DesignRequestService : IDesignRequestService
         request.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
 
-        await _queue.EnqueueAsync(request.Id, ct);
-        _log.LogInformation("Enqueued AI generation for DesignRequest {Id} (PI {Pi})", request.Id, paymentIntentId);
+        if (request.Mode == DesignRequestMode.Ai)
+        {
+            await _queue.EnqueueAsync(request.Id, ct);
+            _log.LogInformation("Enqueued AI generation for DesignRequest {Id} (PI {Pi})", request.Id, paymentIntentId);
+        }
+        else
+        {
+            // Manual mode — designer will handle it; optionally notify admin.
+            _log.LogInformation("Manual DesignRequest {Id} paid (PI {Pi}) — InProgress, awaiting designer.", request.Id, paymentIntentId);
+        }
     }
 
-    private DesignRequestDetailDto ToDetail(DesignRequest r)
+    internal DesignRequestDetailDto ToDetail(DesignRequest r)
     {
         // Prefer the cropped print-ready asset; fall back to the raw AI result.
         var publicPath = r.FinalCroppedStoragePath ?? r.AiResultStoragePath;
@@ -182,6 +286,18 @@ public sealed class DesignRequestService : IDesignRequestService
             PreviewUrl = string.IsNullOrEmpty(previewPath) ? null : _storage.PublicUrlFor(previewPath),
             FinalCroppedUrl = string.IsNullOrEmpty(r.FinalCroppedStoragePath) ? null : _storage.PublicUrlFor(r.FinalCroppedStoragePath),
             LastError = r.LastError,
+            CustomerApprovedAt = r.CustomerApprovedAt,
+            DesignerNotes = r.DesignerNotes,
+            Revisions = r.Revisions
+                .OrderBy(rv => rv.RevisionNumber)
+                .Select(rv => new DesignRequestRevisionDto
+                {
+                    Id = rv.Id,
+                    RevisionNumber = rv.RevisionNumber,
+                    CustomerComment = rv.CustomerComment,
+                    CreatedAt = rv.CreatedAt
+                })
+                .ToList(),
             CreatedAt = r.CreatedAt,
             UpdatedAt = r.UpdatedAt
         };

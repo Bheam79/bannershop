@@ -7,6 +7,12 @@ public interface IDesignRequestService
     /// <summary>Creates an AI <c>DesignRequest</c> + Stripe PaymentIntent (95 NOK).</summary>
     Task<DesignRequestActionResult> CreateAiRequestAsync(int userId, CreateAiDesignRequestDto req, CancellationToken ct = default);
 
+    /// <summary>Creates a Manual <c>DesignRequest</c> + Stripe PaymentIntent (495 NOK).</summary>
+    Task<DesignRequestActionResult> CreateManualRequestAsync(int userId, CreateManualDesignRequestDto req, CancellationToken ct = default);
+
+    /// <summary>Submits a customer revision comment (Manual flow only, max 1 free revision).</summary>
+    Task<DesignRequestActionResult> RequestRevisionAsync(int id, int callerUserId, string comment, CancellationToken ct = default);
+
     /// <summary>Lists requests owned by a single user, newest first.</summary>
     Task<IReadOnlyList<DesignRequestListItemDto>> ListMineAsync(int userId, CancellationToken ct = default);
 
@@ -17,8 +23,9 @@ public interface IDesignRequestService
     Task<DesignRequestActionResult> ApproveAsync(int id, int callerUserId, CancellationToken ct = default);
 
     /// <summary>
-    /// Called after a successful Stripe payment for this request: flips status Pending→InProgress
-    /// and enqueues the AI generation job. Idempotent for repeated webhook deliveries.
+    /// Called after a successful Stripe payment: flips status Pending→InProgress.
+    /// For AI mode also enqueues the generation job.
+    /// Idempotent for repeated webhook deliveries.
     /// </summary>
     Task MarkPaidAndEnqueueAsync(string paymentIntentId, CancellationToken ct = default);
 }

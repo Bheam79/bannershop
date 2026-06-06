@@ -68,6 +68,12 @@ public class DesignRequest
     /// <summary>Last error message recorded by the AI pipeline (if any).</summary>
     public string? LastError { get; set; }
 
+    /// <summary>When the customer approved the preview (Manual flow).</summary>
+    public DateTime? CustomerApprovedAt { get; set; }
+
+    /// <summary>Internal notes from the designer / admin (Manual flow).</summary>
+    public string? DesignerNotes { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

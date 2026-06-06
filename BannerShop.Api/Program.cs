@@ -4,6 +4,7 @@ using BannerShop.Api.Services;
 using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Api.Services.DesignRequests;
 using BannerShop.Api.Services.DesignRequests.OpenAi;
+using BannerShop.Api.Services.Email;
 using BannerShop.Api.Services.Orders;
 using BannerShop.Api.Services.Orders.Stripe;
 using BannerShop.Api.Services.Shipping;
@@ -103,9 +104,15 @@ builder.Services.AddSingleton<IUpscalingService, NoopUpscalingService>();
 builder.Services.AddSingleton<IPhotoCompositor, PhotoCompositorNotImplemented>();
 builder.Services.AddSingleton<IBannerPromptService, BannerPromptService>();
 builder.Services.AddSingleton<IDesignRequestJobQueue, DesignRequestJobQueue>();
-builder.Services.AddScoped<IDesignRequestService, DesignRequestService>();
+builder.Services.AddScoped<DesignRequestService>();          // concrete type needed by AdminDesignRequestService
+builder.Services.AddScoped<IDesignRequestService>(sp => sp.GetRequiredService<DesignRequestService>());
+builder.Services.AddScoped<IAdminDesignRequestService, AdminDesignRequestService>();
 builder.Services.AddScoped<AiGenerationPipeline>();
 builder.Services.AddHostedService<DesignRequestJobProcessor>();
+
+// ─── Email ────────────────────────────────────────────────────────────────────
+builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
+builder.Services.AddScoped<IEmailService, NullEmailService>();  // Swap for SmtpEmailService when configured
 
 // Allow multipart uploads up to the configured cap (+25% headroom for form overhead).
 var fileStorageOpts = builder.Configuration.GetSection(FileStorageOptions.SectionName).Get<FileStorageOptions>()

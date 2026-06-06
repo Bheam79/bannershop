@@ -24,6 +24,38 @@ public class DesignRequestsController : ControllerBase
         _service = service;
     }
 
+    // ── POST /api/design-requests/manual ────────────────────────────────────
+    [HttpPost("manual")]
+    public async Task<IActionResult> CreateManual([FromBody] CreateManualDesignRequestDto req, CancellationToken ct)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        var userId = GetUserId();
+        if (userId == 0) return Unauthorized();
+
+        var result = await _service.CreateManualRequestAsync(userId, req, ct);
+        if (!result.Success) return BadRequest(new { error = result.Error });
+
+        return Ok(new CreateDesignRequestResponseDto
+        {
+            DesignRequestId = result.DesignRequestId,
+            ClientSecret = result.ClientSecret ?? string.Empty,
+            TotalNok = result.TotalNok
+        });
+    }
+
+    // ── POST /api/design-requests/{id}/revision ──────────────────────────────
+    [HttpPost("{id:int}/revision")]
+    public async Task<IActionResult> RequestRevision(int id, [FromBody] RequestRevisionDto req, CancellationToken ct)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        var userId = GetUserId();
+        if (userId == 0) return Unauthorized();
+
+        var result = await _service.RequestRevisionAsync(id, userId, req.Comment, ct);
+        if (!result.Success) return BadRequest(new { error = result.Error });
+        return Ok(result.Detail);
+    }
+
     // ── POST /api/design-requests/ai ─────────────────────────────────────────
     [HttpPost("ai")]
     public async Task<IActionResult> CreateAi([FromBody] CreateAiDesignRequestDto req, CancellationToken ct)

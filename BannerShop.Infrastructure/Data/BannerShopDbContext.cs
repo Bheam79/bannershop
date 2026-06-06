@@ -198,6 +198,7 @@ public class BannerShopDbContext : DbContext
             e.Property(x => x.DesignerPreviewPath).HasMaxLength(500);
             e.Property(x => x.FinalCroppedStoragePath).HasMaxLength(500);
             e.Property(x => x.LastError).HasMaxLength(2000);
+            e.Property(x => x.DesignerNotes).HasMaxLength(2000);
 
             e.HasOne(x => x.User)
                 .WithMany()

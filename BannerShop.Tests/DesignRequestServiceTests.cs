@@ -1,6 +1,7 @@
 using BannerShop.Api.Models.DesignRequests;
 using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Api.Services.DesignRequests;
+using BannerShop.Api.Services.Email;
 using BannerShop.Api.Services.Orders.Stripe;
 using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
@@ -33,7 +34,8 @@ public class DesignRequestServiceTests
         queue.Setup(q => q.EnqueueAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
              .Returns(ValueTask.CompletedTask);
 
-        var svc = new DesignRequestService(db, stripe.Object, queue.Object, MakeStorage(), NullLogger<DesignRequestService>.Instance);
+        var email = new Mock<IEmailService>();
+        var svc = new DesignRequestService(db, stripe.Object, queue.Object, MakeStorage(), email.Object, NullLogger<DesignRequestService>.Instance);
         return (svc, stripe, queue);
     }
 
