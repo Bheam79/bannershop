@@ -23,7 +23,7 @@ async function handleSubmit() {
       password: password.value,
     })
     auth.setAuth(data)
-    const redirect = (route.query.redirect as string) || '/'
+    const redirect = (route.query.redirect as string) || '/account'
     router.push(redirect)
   } catch (err: any) {
     error.value = err.response?.data?.error ?? 'Innlogging feilet. Prøv igjen.'

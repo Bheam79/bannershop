@@ -1,7 +1,7 @@
 import apiClient from './client'
 import type { DeliveryType } from '@/types'
 
-// ── Request / Response types ─────────────────────────────────────────────────
+// ── Request types ─────────────────────────────────────────────────────────────
 
 export interface OrderDraftRequest {
   deliveryType: DeliveryType
@@ -19,6 +19,8 @@ export interface OrderDraftRequest {
   }>
 }
 
+// ── Response types ────────────────────────────────────────────────────────────
+
 export interface OrderDraftResponse {
   orderId: number
   clientSecret: string
@@ -31,6 +33,53 @@ export interface OrderDraftResponse {
   }
 }
 
+export interface OrderListItem {
+  id: number
+  status: string
+  deliveryType: string
+  totalNok: number
+  itemCount: number
+  createdAt: string
+  estimatedDelivery: string | null
+}
+
+export interface OrdersPage {
+  items: OrderListItem[]
+  page: number
+  pageSize: number
+  totalCount: number
+  totalPages: number
+}
+
+export interface ProductionStatusEntry {
+  id: number
+  stage: string
+  updatedAt: string
+  notes: string | null
+}
+
+export interface OrderItemDetail {
+  id: number
+  bannerSizeName: string | null
+  customWidthCm: number | null
+  heightCm: number
+  quantity: number
+  unitPriceNok: number
+  lineTotalNok: number
+  notes: string | null
+  currentProductionStage: string
+  productionStatusHistory: ProductionStatusEntry[]
+}
+
+export interface ShipmentTracking {
+  carrier: string
+  trackingNumber: string
+  trackingUrl: string | null
+  shippedAt: string | null
+  estimatedArrival: string | null
+  deliveredAt: string | null
+}
+
 export interface OrderDetailResponse {
   id: number
   status: string
@@ -40,6 +89,7 @@ export interface OrderDetailResponse {
   totalNok: number
   estimatedDelivery: string | null
   createdAt: string
+  updatedAt: string
   shippingAddress: {
     line1: string
     line2?: string | null
@@ -47,18 +97,16 @@ export interface OrderDetailResponse {
     city: string
     country: string
   } | null
-  items: Array<{
-    id: number
-    bannerSizeName: string | null
-    customWidthCm: number | null
-    heightCm: number
-    quantity: number
-    unitPriceNok: number
-    lineTotalNok: number
-  }>
+  items: OrderItemDetail[]
+  shipmentTracking: ShipmentTracking | null
 }
 
-// ── API calls ────────────────────────────────────────────────────────────────
+// ── API calls ─────────────────────────────────────────────────────────────────
+
+export async function listOrders(page = 1, pageSize = 20): Promise<OrdersPage> {
+  const { data } = await apiClient.get<OrdersPage>('/orders', { params: { page, pageSize } })
+  return data
+}
 
 export async function createOrderDraft(req: OrderDraftRequest): Promise<OrderDraftResponse> {
   const { data } = await apiClient.post<OrderDraftResponse>('/orders/draft', req)

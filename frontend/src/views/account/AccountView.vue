@@ -1,10 +1,66 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import apiClient from '@/api/client'
 import type { User } from '@/types'
+import { listOrders } from '@/api/orders'
+import type { OrderListItem } from '@/api/orders'
 
 const auth = useAuthStore()
+const router = useRouter()
+
+// ── Active orders summary ─────────────────────────────────────────────────────
+const recentOrders = ref<OrderListItem[]>([])
+const ordersLoading = ref(true)
+
+const ACTIVE_STATUSES = new Set([
+  'PendingPayment', 'Paid', 'InProduction', 'ReadyToShip', 'Shipped',
+])
+
+const activeOrders = computed(() =>
+  recentOrders.value.filter(o => ACTIVE_STATUSES.has(o.status))
+)
+
+onMounted(async () => {
+  try {
+    const result = await listOrders(1, 5)
+    recentOrders.value = result.items
+  } catch {
+    // non-critical — ignore
+  } finally {
+    ordersLoading.value = false
+  }
+})
+
+const STATUS_LABELS: Record<string, string> = {
+  Draft: 'Utkast',
+  PendingPayment: 'Venter betaling',
+  Paid: 'Betalt',
+  InProduction: 'Under produksjon',
+  ReadyToShip: 'Klar til frakt',
+  Shipped: 'Sendt',
+  Delivered: 'Levert',
+  Cancelled: 'Kansellert',
+}
+const STATUS_CLASSES: Record<string, string> = {
+  Draft: 'bg-gray-100 text-gray-600',
+  PendingPayment: 'bg-yellow-100 text-yellow-800',
+  Paid: 'bg-blue-100 text-blue-800',
+  InProduction: 'bg-blue-100 text-blue-800',
+  ReadyToShip: 'bg-purple-100 text-purple-800',
+  Shipped: 'bg-green-100 text-green-800',
+  Delivered: 'bg-green-100 text-green-700',
+  Cancelled: 'bg-red-100 text-red-700',
+}
+function statusLabel(s: string) { return STATUS_LABELS[s] ?? s }
+function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'bg-gray-100 text-gray-600' }
+function formatNok(n: number): string {
+  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
+}
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('nb-NO', { day: '2-digit', month: 'short', year: 'numeric' })
+}
 
 // ── Profile form ──────────────────────────────────────────────────────────────
 const profile = reactive({
@@ -80,8 +136,60 @@ async function changePassword() {
 <template>
   <div class="max-w-2xl mx-auto px-4 py-12 space-y-10">
     <div>
-      <h1 class="text-2xl font-bold text-gray-900">Min konto</h1>
+      <h1 class="text-2xl font-bold text-gray-900">
+        Hei{{ auth.user?.name ? `, ${auth.user.name.split(' ')[0]}` : '' }}! 👋
+      </h1>
       <p class="text-gray-500 text-sm mt-1">{{ auth.user?.email }}</p>
+    </div>
+
+    <!-- Active orders summary -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-800">Aktive ordrer</h2>
+        <RouterLink to="/account/orders" class="text-sm text-blue-700 hover:underline font-medium">
+          Se alle ordrer →
+        </RouterLink>
+      </div>
+
+      <div v-if="ordersLoading" class="text-center py-4">
+        <div class="inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+
+      <div v-else-if="activeOrders.length === 0 && recentOrders.length === 0" class="text-center py-4 text-gray-400 text-sm">
+        Ingen ordrer ennå.
+        <RouterLink to="/" class="text-blue-700 hover:underline ml-1">Handle nå</RouterLink>
+      </div>
+
+      <div v-else-if="activeOrders.length === 0" class="text-sm text-gray-500 py-2">
+        Ingen aktive ordrer for øyeblikket.
+        <RouterLink to="/account/orders" class="text-blue-700 hover:underline ml-1">Se ordrehistorikk</RouterLink>
+      </div>
+
+      <ul v-else class="divide-y divide-gray-100">
+        <li
+          v-for="order in activeOrders"
+          :key="order.id"
+          class="flex items-center justify-between py-3 cursor-pointer hover:bg-gray-50 -mx-2 px-2 rounded-lg transition"
+          @click="router.push(`/account/orders/${order.id}`)"
+        >
+          <div class="space-y-0.5">
+            <div class="font-medium text-blue-700 text-sm">#{{ order.id }}</div>
+            <div class="text-xs text-gray-400">{{ formatDate(order.createdAt) }}</div>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-semibold px-2 py-0.5 rounded-full" :class="statusClass(order.status)">
+              {{ statusLabel(order.status) }}
+            </span>
+            <span class="text-sm font-semibold text-gray-800">{{ formatNok(order.totalNok) }}</span>
+          </div>
+        </li>
+      </ul>
+
+      <div v-if="activeOrders.length > 0" class="mt-3 text-center">
+        <RouterLink to="/account/orders" class="text-xs text-gray-400 hover:text-blue-700">
+          Se alle ordrer →
+        </RouterLink>
+      </div>
     </div>
 
     <!-- Profile section -->
@@ -177,9 +285,5 @@ async function changePassword() {
       </form>
     </div>
 
-    <!-- Quick links -->
-    <div class="flex gap-4 text-sm">
-      <RouterLink to="/account/orders" class="text-blue-700 hover:underline">Mine ordrer →</RouterLink>
-    </div>
   </div>
 </template>

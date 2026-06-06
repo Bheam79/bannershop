@@ -35,7 +35,7 @@ async function handleSubmit() {
       phone: phone.value || null,
     })
     auth.setAuth(data)
-    router.push('/')
+    router.push('/account')
   } catch (err: any) {
     error.value = err.response?.data?.error ?? 'Registrering feilet. Prøv igjen.'
   } finally {
