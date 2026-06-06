@@ -137,4 +137,6 @@ export interface CartItem {
   quantity: number
   unitPriceNok: number
   notes?: string
+  /** Optional reference to a BannerDesign uploaded via the banner builder. */
+  designId?: number
 }

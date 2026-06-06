@@ -11,6 +11,11 @@ const router = createRouter({
       component: () => import('@/views/HomeView.vue'),
     },
     {
+      path: '/banner-builder',
+      name: 'banner-builder',
+      component: () => import('@/views/BannerBuilderView.vue'),
+    },
+    {
       path: '/checkout',
       name: 'checkout',
       component: () => import('@/views/checkout/CheckoutView.vue'),

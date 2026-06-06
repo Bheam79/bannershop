@@ -22,6 +22,9 @@ async function handleLogout() {
 
       <div class="flex items-center gap-6">
         <RouterLink to="/" class="text-gray-700 hover:text-blue-700 font-medium">Bannere</RouterLink>
+        <RouterLink to="/banner-builder" class="text-gray-700 hover:text-blue-700 font-medium">
+          Lag ditt banner
+        </RouterLink>
 
         <template v-if="auth.isLoggedIn">
           <RouterLink to="/account" class="text-gray-700 hover:text-blue-700">Min konto</RouterLink>

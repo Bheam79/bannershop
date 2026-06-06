@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, RouterLink } from 'vue-router'
 import type { BannerSize, ShippingEstimate, DeliveryType, CartItem } from '@/types'
 import { fetchSizes, fetchPrice } from '@/api/shop'
 import { useCartStore } from '@/stores/cart'
@@ -153,6 +153,12 @@ onMounted(loadSizes)
         Høykvalitets bannere fra vår lokale trykkeri – rask levering over hele Norge.
         Standard maljer i hjørnene og sydde kanter inkludert.
       </p>
+      <RouterLink
+        to="/banner-builder"
+        class="inline-flex items-center gap-2 mt-5 bg-blue-700 hover:bg-blue-800 text-white font-semibold px-5 py-2.5 rounded-lg text-sm shadow-sm transition"
+      >
+        🎨 Lag ditt eget banner – last opp design
+      </RouterLink>
     </header>
 
     <!-- Loading / error -->
