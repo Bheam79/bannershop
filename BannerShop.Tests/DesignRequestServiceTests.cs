@@ -19,8 +19,8 @@ public class DesignRequestServiceTests
     private static BannerFileStorage MakeStorage() =>
         new(Options.Create(new FileStorageOptions
         {
-            BasePath = Path.Combine(Path.GetTempPath(), "bs-tests-" + Guid.NewGuid().ToString("N")),
-            PublicUrlPrefix = "/uploads"
+            LocalRoot = Path.Combine(Path.GetTempPath(), "bs-tests-" + Guid.NewGuid().ToString("N")),
+            PublicBaseUrl = "/files"
         }));
 
     private static (DesignRequestService service, Mock<IStripePaymentService> stripe, Mock<IDesignRequestJobQueue> queue) MakeService(

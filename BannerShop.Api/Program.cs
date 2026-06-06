@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text;
 using BannerShop.Api.Services;
 using BannerShop.Api.Services.BannerBuilder;
+using BannerShop.Core;
 using BannerShop.Api.Services.DesignRequests;
 using BannerShop.Api.Services.DesignRequests.OpenAi;
 using BannerShop.Api.Services.Email;
@@ -82,7 +83,14 @@ builder.Services.AddScoped<IOrderService, OrderService>();
 
 // ─── Banner Builder (file uploads, image processing) ─────────────────────────
 builder.Services.Configure<FileStorageOptions>(builder.Configuration.GetSection(FileStorageOptions.SectionName));
+// IFileStore: shared abstraction for all banner-builder file I/O (BANNERSH-25).
+builder.Services.AddSingleton<IFileStore, LocalDiskFileStore>();
+// UploadValidator: centralised size/MIME/magic-byte checks (BANNERSH-25).
+builder.Services.AddSingleton<UploadValidator>();
+// BannerFileStorage: legacy wrapper kept until callers fully migrate to IFileStore.
+#pragma warning disable CS0618 // legacy aliases used intentionally here
 builder.Services.AddSingleton<BannerFileStorage>();
+#pragma warning restore CS0618
 builder.Services.AddSingleton<IImageProcessingService, ImageProcessingService>();
 
 // ─── AI Design Requests (95 kr) ──────────────────────────────────────────────
@@ -117,7 +125,8 @@ builder.Services.AddScoped<IEmailService, NullEmailService>();  // Swap for Smtp
 // Allow multipart uploads up to the configured cap (+25% headroom for form overhead).
 var fileStorageOpts = builder.Configuration.GetSection(FileStorageOptions.SectionName).Get<FileStorageOptions>()
     ?? new FileStorageOptions();
-var multipartMaxBytes = (long)fileStorageOpts.MaxFileSizeMb * 1024 * 1024 * 5 / 4;
+// Use MaxUploadBytes (canonical) directly — gives exact byte control.
+var multipartMaxBytes = fileStorageOpts.MaxUploadBytes * 5 / 4; // +25% headroom for multipart framing
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 {
     o.MultipartBodyLengthLimit = multipartMaxBytes;
@@ -212,20 +221,25 @@ if (app.Environment.IsDevelopment())
 app.UseCors("FrontendPolicy");
 
 // ─── Static file serving for uploaded files ──────────────────────────────────
-// Files are stored under FileStorage:BasePath and exposed at FileStorage:PublicUrlPrefix.
-// Note: this serves files by relative path; per-user authorization happens at the
-// controller layer (GET /api/banner-builder/{id}/preview). The static route is fine
-// for designs that need a public(-ish) preview URL because filenames are GUIDs and
-// unguessable. Tightened access controls can be added once IFileStore lands (BANNERSH-25).
+// Files are stored under FileStorage:LocalRoot and exposed at FileStorage:PublicBaseUrl ("/files").
+//
+// Access model:
+//   • Banner-builder uploads:  served directly via StaticFiles — safe because filenames are
+//     unguessable GUIDs.  No authorization header required.
+//   • Design-request previews: SHOULD be proxied through an authorized API controller so that
+//     only the owning user (or admin) can fetch them.  The static route still covers them as a
+//     fallback while the controller layer is not yet in place.
+//
+// BANNERSH-25: IFileStore now owns path-building; GetPublicUrl() returns "/files/…" paths.
 {
-    var basePath = fileStorageOpts.BasePath;
-    if (!string.IsNullOrWhiteSpace(basePath))
+    var storageRoot = fileStorageOpts.LocalRoot;
+    if (!string.IsNullOrWhiteSpace(storageRoot))
     {
-        Directory.CreateDirectory(basePath);
+        Directory.CreateDirectory(storageRoot);
         app.UseStaticFiles(new StaticFileOptions
         {
-            FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(basePath),
-            RequestPath = fileStorageOpts.PublicUrlPrefix.TrimEnd('/'),
+            FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(storageRoot),
+            RequestPath = fileStorageOpts.PublicBaseUrl.TrimEnd('/'),
             ServeUnknownFileTypes = false
         });
     }
