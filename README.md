@@ -163,6 +163,67 @@ material gsm; the relevant knobs live in the `PricingParameter` table:
 Results are cached in memory for 1 hour per (postal code, parcel dimensions) to
 avoid hammering the Bring API.
 
+## Orders, Payments & Production
+
+The full order flow is implemented:
+
+```
+Draft → PendingPayment → Paid → InProduction → ReadyToShip → Shipped → Delivered
+                                                                      ↘ Cancelled
+```
+
+### Customer endpoints (require Bearer token)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/orders/draft` | Create a draft order + Stripe PaymentIntent. Body: `{ deliveryType, shippingAddress, items: [{ bannerSizeId, customWidthCm?, quantity, notes }] }`. Returns `{ orderId, clientSecret, totalNok, breakdown }`. |
+| `GET`  | `/api/orders?page=1&pageSize=20` | List the caller's orders, newest first. |
+| `GET`  | `/api/orders/{id}` | Full order detail (items, production history, shipment). |
+| `POST` | `/api/orders/{id}/cancel` | Cancel a `Draft` or `PendingPayment` order. |
+
+### Admin endpoints (require Admin role)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET`  | `/api/admin/orders?status=&fromUtc=&toUtc=&search=&page=&pageSize=` | Paginated list with filters. `search` matches order id, customer email & name. |
+| `GET`  | `/api/admin/orders/{id}` | Full detail. |
+| `PUT`  | `/api/admin/orders/{id}/status` | `{ status }` — set order status. |
+| `PUT`  | `/api/admin/orders/{id}/items/{itemId}/production` | `{ stage, notes? }` — append a production-stage row. Auto-promotes order to `InProduction` and (when every item is `ReadyToShip`) to `ReadyToShip`. |
+| `POST` | `/api/admin/orders/{id}/shipping` | `{ carrier, trackingNumber, trackingUrl?, shippedAt?, estimatedArrival? }` — create/update shipment tracking and set status to `Shipped`. |
+
+### Stripe webhook
+
+`POST /api/webhooks/stripe` — verifies the `Stripe-Signature` header against
+`Stripe__WebhookSecret` and reacts to:
+
+- `payment_intent.succeeded` → marks order `Paid`, seeds `Queued`
+  `ProductionStatus` rows for each item.
+- `payment_intent.payment_failed` → logs the failure; order stays at
+  `PendingPayment` so the customer can retry.
+
+The handler is idempotent — repeated webhook delivery is a no-op.
+
+### Pricing snapshot
+
+When `POST /api/orders/draft` is called, the server:
+
+1. Validates and loads each `BannerSize` (with material).
+2. Calls `IPricingService` per item to compute `UnitPriceNok` and snapshots
+   that, the area, and the line total onto the `OrderItem` rows so historic
+   orders retain their pricing forever.
+3. For each item, calls `ParcelCalculator` + `IShippingService` to compute
+   shipping cost (sum over items). Express adds the `express_fee` pricing
+   parameter as a production surcharge.
+4. Estimated delivery = today + `standard_lead_time_days` (default 14) or
+   `express_lead_time_days` (default 3), plus the largest carrier transit time.
+5. Creates an `Address` row, the `Order` (status `PendingPayment`), then the
+   Stripe PaymentIntent (amount in øre = NOK × 100, metadata `{ orderId, userId }`).
+
+If Stripe credentials are missing/placeholder, the API auto-wires
+`MockStripePaymentService` so the rest of the flow can be exercised in dev
+(client secrets are obviously fake — the frontend Stripe.js confirm step will
+fail in dev until real keys are configured).
+
 ## Seeded Data
 
 On first migration the following data is seeded:

@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using System.Text;
 using BannerShop.Api.Services;
+using BannerShop.Api.Services.Orders;
+using BannerShop.Api.Services.Orders.Stripe;
 using BannerShop.Api.Services.Shipping;
 using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
@@ -56,6 +58,23 @@ else
 {
     builder.Services.AddScoped<IShippingService, MockShippingService>();
 }
+
+// ─── Stripe + Orders ──────────────────────────────────────────────────────────
+builder.Services.Configure<StripeOptions>(builder.Configuration.GetSection(StripeOptions.SectionName));
+
+var stripeSection = builder.Configuration.GetSection(StripeOptions.SectionName);
+var stripeKey = stripeSection["SecretKey"];
+var stripeConfigured =
+    !string.IsNullOrWhiteSpace(stripeKey) &&
+    !stripeKey.StartsWith("sk_test_REPLACE_", StringComparison.OrdinalIgnoreCase) &&
+    !stripeKey.StartsWith("REPLACE_", StringComparison.OrdinalIgnoreCase);
+
+if (stripeConfigured)
+    builder.Services.AddScoped<IStripePaymentService, StripePaymentService>();
+else
+    builder.Services.AddScoped<IStripePaymentService, MockStripePaymentService>();
+
+builder.Services.AddScoped<IOrderService, OrderService>();
 
 // ─── Authentication (JWT) ─────────────────────────────────────────────────────
 var jwtSecret = builder.Configuration["Jwt:Secret"]
