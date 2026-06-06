@@ -11,6 +11,7 @@
     "type-check": "vue-tsc --build"
   },
   "dependencies": {
+    "@stripe/stripe-js": "^9.7.0",
     "@tailwindcss/vite": "^4.3.0",
     "axios": "^1.17.0",
     "pinia": "^3.0.4",
