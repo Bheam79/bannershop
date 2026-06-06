@@ -21,6 +21,7 @@ BannerShop.Core/           # Domain entities & enums
 BannerShop.Infrastructure/ # EF Core DbContext, migrations, repositories
 BannerShop.Api/            # ASP.NET Core Web API
 frontend/                  # Vue 3 + Vite + Tailwind CSS
+e2e/                       # Playwright E2E tests
 docker-compose.yml         # MariaDB for local dev (outside dev container)
 ```
 
@@ -236,3 +237,64 @@ On first migration the following data is seeded:
 - 300×150 cm, 350×150 cm, 400×150 cm, 450×150 cm, 500×150 cm
 - Custom width × 150 cm (price calculated)
 - 300×180 cm — fixed price 699 NOK (180cm material, pre-order)
+
+## E2E Tests (Playwright)
+
+The `e2e/` folder contains a Playwright TypeScript test project covering all critical user journeys.
+
+### Prerequisites
+
+- Backend API running at `http://localhost:5000` (or set `API_URL`)
+- Frontend dev server running at `http://localhost:5173` (or set `BASE_URL`)
+- Chromium browser (ships with the system Playwright install)
+
+### Setup
+
+```bash
+cd e2e
+cp .env.example .env
+# Edit .env — set TEST_USER_EMAIL, TEST_USER_PASSWORD, ADMIN_EMAIL, ADMIN_PASSWORD
+npm install
+```
+
+### Running tests
+
+```bash
+cd e2e
+
+# Run all tests (headless)
+npx playwright test
+
+# Run a specific suite
+npx playwright test tests/shop.spec.ts
+npx playwright test tests/checkout.spec.ts
+npx playwright test tests/account.spec.ts
+npx playwright test tests/admin.spec.ts
+
+# Run headed (see the browser)
+npx playwright test --headed
+
+# Open interactive UI
+npx playwright test --ui
+
+# View HTML report
+npx playwright show-report
+```
+
+### Test suites
+
+| File | Covers |
+|------|--------|
+| `tests/shop.spec.ts` | Home page, banner sizes, pricing, shipping estimator, add to cart |
+| `tests/checkout.spec.ts` | Checkout form validation, delivery toggle, payment, confirmation |
+| `tests/account.spec.ts` | Register, login, order list, order detail, production stages, tracking |
+| `tests/admin.spec.ts` | Admin access control, sizes CRUD, pricing params, orders, production, shipping |
+
+### Notes
+
+- Tests that require an admin user or test user will be skipped (not fail) if
+  the credentials are not configured.
+- The mock Stripe flow (`pi_mock_` client secret) is used in dev; real Stripe
+  is tested in CI with Stripe test cards when real keys are configured.
+- Screenshots are captured on failure in `test-results/`.
+- Run `npx playwright install chromium` if the system browser is not found.

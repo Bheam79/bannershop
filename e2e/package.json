@@ -1,0 +1,21 @@
+{
+  "name": "bannershop-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright E2E tests for BannerShop",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^24.12.2",
+    "dotenv": "^16.4.7",
+    "typescript": "~5.8.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
