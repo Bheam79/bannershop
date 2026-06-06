@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 using BannerShop.Api.Services;
+using BannerShop.Api.Services.Shipping;
 using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
 using BannerShop.Infrastructure.Data;
@@ -27,6 +28,34 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 
 // ─── Catalog Services ─────────────────────────────────────────────────────────
 builder.Services.AddScoped<IPricingService, PricingService>();
+
+// ─── Shipping (Bring/Posten) ─────────────────────────────────────────────────
+builder.Services.AddMemoryCache();
+builder.Services.Configure<BringOptions>(builder.Configuration.GetSection(BringOptions.SectionName));
+builder.Services.AddScoped<ParcelCalculator>();
+
+var bringSection = builder.Configuration.GetSection(BringOptions.SectionName);
+var bringUid = bringSection["ApiUid"];
+var bringKey = bringSection["ApiKey"];
+var bringConfigured =
+    !string.IsNullOrWhiteSpace(bringUid) &&
+    !string.IsNullOrWhiteSpace(bringKey) &&
+    !bringUid.StartsWith("REPLACE_WITH_", StringComparison.OrdinalIgnoreCase) &&
+    !bringKey.StartsWith("REPLACE_WITH_", StringComparison.OrdinalIgnoreCase);
+
+if (bringConfigured)
+{
+    builder.Services.AddHttpClient<IShippingService, BringShippingService>((sp, http) =>
+    {
+        var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<BringOptions>>().Value;
+        http.BaseAddress = new Uri(opts.BaseUrl);
+        http.Timeout = TimeSpan.FromSeconds(opts.TimeoutSeconds);
+    });
+}
+else
+{
+    builder.Services.AddScoped<IShippingService, MockShippingService>();
+}
 
 // ─── Authentication (JWT) ─────────────────────────────────────────────────────
 var jwtSecret = builder.Configuration["Jwt:Secret"]
