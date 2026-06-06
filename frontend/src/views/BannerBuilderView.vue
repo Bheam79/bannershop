@@ -146,6 +146,13 @@ onMounted(async () => {
         Last opp din egen design — vi beregner størrelsen automatisk og trykker
         på det banneret du velger.
       </p>
+      <!-- AI builder promo card -->
+      <RouterLink
+        to="/banner-builder/ai"
+        class="inline-flex items-center gap-2 mt-5 bg-purple-700 hover:bg-purple-800 text-white font-semibold px-5 py-2.5 rounded-lg text-sm shadow-sm transition"
+      >
+        ✨ AI-generert feiringsbanner — 95 kr
+      </RouterLink>
     </header>
 
     <!-- Auth notice (page is public, but upload requires login) -->

@@ -16,6 +16,11 @@ const router = createRouter({
       component: () => import('@/views/BannerBuilderView.vue'),
     },
     {
+      path: '/banner-builder/ai',
+      name: 'banner-builder-ai',
+      component: () => import('@/views/AiBannerBuilderView.vue'),
+    },
+    {
       path: '/checkout',
       name: 'checkout',
       component: () => import('@/views/checkout/CheckoutView.vue'),

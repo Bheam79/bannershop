@@ -153,12 +153,20 @@ onMounted(loadSizes)
         Høykvalitets bannere fra vår lokale trykkeri – rask levering over hele Norge.
         Standard maljer i hjørnene og sydde kanter inkludert.
       </p>
-      <RouterLink
-        to="/banner-builder"
-        class="inline-flex items-center gap-2 mt-5 bg-blue-700 hover:bg-blue-800 text-white font-semibold px-5 py-2.5 rounded-lg text-sm shadow-sm transition"
-      >
-        🎨 Lag ditt eget banner – last opp design
-      </RouterLink>
+      <div class="flex flex-wrap gap-3 justify-center mt-5">
+        <RouterLink
+          to="/banner-builder"
+          class="inline-flex items-center gap-2 bg-blue-700 hover:bg-blue-800 text-white font-semibold px-5 py-2.5 rounded-lg text-sm shadow-sm transition"
+        >
+          🎨 Lag ditt eget banner – last opp design
+        </RouterLink>
+        <RouterLink
+          to="/banner-builder/ai"
+          class="inline-flex items-center gap-2 bg-purple-700 hover:bg-purple-800 text-white font-semibold px-5 py-2.5 rounded-lg text-sm shadow-sm transition"
+        >
+          ✨ AI-generert feiringsbanner — 95 kr
+        </RouterLink>
+      </div>
     </header>
 
     <!-- Loading / error -->
