@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="BannerShop.Api/BannerShop.Api.csproj" />
+  <Project Path="BannerShop.Core/BannerShop.Core.csproj" />
+  <Project Path="BannerShop.Infrastructure/BannerShop.Infrastructure.csproj" />
+</Solution>

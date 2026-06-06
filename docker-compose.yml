@@ -1,0 +1,30 @@
+version: "3.9"
+
+# NOTE: In the dev container environment, the MariaDB container is managed
+# via `cb docker` commands (sibling containers). This docker-compose.yml
+# is provided for local development outside the dev container.
+#
+# To start locally:   docker compose up -d
+# To stop:            docker compose down
+
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_dev
+      MYSQL_DATABASE: bannershop
+      MYSQL_USER: bannershop
+      MYSQL_PASSWORD: bannershop_dev
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  mariadb_data:

@@ -1,0 +1,26 @@
+## ── .NET ──────────────────────────────────────────────────────────────────────
+*.user
+*.suo
+.vs/
+bin/
+obj/
+*.log
+*.nupkg
+*.snupkg
+**/appsettings.*.local.json
+
+## ── Node / Frontend ──────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/.env
+*.local
+
+## ── Docker / Misc ────────────────────────────────────────────────────────────
+.env
+*.swp
+.DS_Store
+Thumbs.db
+
+## ── JetBrains Rider / VS ─────────────────────────────────────────────────────
+.idea/
+*.DotSettings.user
