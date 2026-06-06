@@ -139,8 +139,16 @@ onMounted(async () => {
   <div class="max-w-5xl mx-auto px-4 py-8 sm:py-12">
     <!-- Header -->
     <header class="mb-8 text-center">
+      <div class="mb-4">
+        <RouterLink
+          to="/banner-builder"
+          class="text-sm text-blue-700 hover:underline"
+        >
+          ← Tilbake til bannervalgene
+        </RouterLink>
+      </div>
       <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 mb-3">
-        Lag ditt eget banner
+        Eget bilde eller PDF
       </h1>
       <p class="text-lg text-gray-600 max-w-2xl mx-auto">
         Last opp din egen design — vi beregner størrelsen automatisk og trykker

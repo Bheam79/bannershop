@@ -13,6 +13,11 @@ const router = createRouter({
     {
       path: '/banner-builder',
       name: 'banner-builder',
+      component: () => import('@/views/BannerBuilderHubView.vue'),
+    },
+    {
+      path: '/banner-builder/upload',
+      name: 'banner-builder-upload',
       component: () => import('@/views/BannerBuilderView.vue'),
     },
     {

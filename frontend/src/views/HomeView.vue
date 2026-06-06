@@ -155,7 +155,7 @@ onMounted(loadSizes)
       </p>
       <div class="flex flex-wrap gap-3 justify-center mt-5">
         <RouterLink
-          to="/banner-builder"
+          to="/banner-builder/upload"
           class="inline-flex items-center gap-2 bg-blue-700 hover:bg-blue-800 text-white font-semibold px-5 py-2.5 rounded-lg text-sm shadow-sm transition"
         >
           🎨 Lag ditt eget banner – last opp design
@@ -402,6 +402,71 @@ onMounted(loadSizes)
             Tykkere og kraftigere PVC for langvarig utendørs montering, byggeplasser
             eller stormutsatte områder. Ekstra rivebestandig med høyere fargeintensitet.
           </p>
+        </div>
+      </section>
+
+      <!-- Banner builder section -->
+      <section class="mb-10">
+        <div class="text-center mb-6">
+          <h2 class="text-2xl font-bold text-gray-900 mb-2">Lag ditt eget banner</h2>
+          <p class="text-gray-600 max-w-xl mx-auto text-sm">
+            Upload din fil, la AI lage det, eller bestill et profesjonelt design fra oss.
+          </p>
+        </div>
+        <div class="grid gap-4 sm:grid-cols-3">
+          <!-- Upload -->
+          <div class="bg-white border border-gray-200 rounded-xl p-5 flex flex-col shadow-sm hover:shadow-md transition">
+            <div class="text-3xl mb-3">📁</div>
+            <h3 class="font-bold text-gray-900 mb-1">Eget bilde eller PDF</h3>
+            <p class="text-xs text-gray-600 flex-1 mb-3">
+              Last opp designet ditt — bredden beregnes automatisk. Se forhåndsvisning og legg i handlekurven.
+            </p>
+            <p class="text-xs font-semibold text-gray-700 mb-3">Samme pris som standard banner</p>
+            <RouterLink
+              to="/banner-builder/upload"
+              class="block text-center bg-blue-700 hover:bg-blue-800 text-white font-semibold px-4 py-2 rounded-lg text-sm transition"
+            >
+              Start →
+            </RouterLink>
+          </div>
+
+          <!-- AI -->
+          <div class="bg-white border border-gray-200 rounded-xl p-5 flex flex-col shadow-sm hover:shadow-md transition relative">
+            <span class="absolute top-4 right-4 bg-purple-100 text-purple-800 text-xs font-bold px-2 py-0.5 rounded-full">
+              Ferdig på minutter
+            </span>
+            <div class="text-3xl mb-3">✨</div>
+            <h3 class="font-bold text-gray-900 mb-1">AI-designet banner</h3>
+            <p class="text-xs text-gray-600 flex-1 mb-3">
+              Velg mal, skriv inn navn og tekst — AI genererer et unikt banner på minutter.
+            </p>
+            <p class="text-xs font-semibold text-gray-700 mb-3">95 kr</p>
+            <RouterLink
+              to="/banner-builder/ai"
+              class="block text-center bg-purple-700 hover:bg-purple-800 text-white font-semibold px-4 py-2 rounded-lg text-sm transition"
+            >
+              Lag AI-banner →
+            </RouterLink>
+          </div>
+
+          <!-- Manual / professional -->
+          <div class="bg-white border border-gray-200 rounded-xl p-5 flex flex-col shadow-sm hover:shadow-md transition relative">
+            <span class="absolute top-4 right-4 bg-amber-100 text-amber-900 text-xs font-bold px-2 py-0.5 rounded-full">
+              Innen 2–3 virkedager
+            </span>
+            <div class="text-3xl mb-3">🎨</div>
+            <h3 class="font-bold text-gray-900 mb-1">Vi designer for deg</h3>
+            <p class="text-xs text-gray-600 flex-1 mb-3">
+              Fyll inn ønskene dine — teamet vårt designer og sender forhåndsvisning til godkjenning.
+            </p>
+            <p class="text-xs font-semibold text-gray-700 mb-3">495 kr</p>
+            <RouterLink
+              to="/banner-builder/manual"
+              class="block text-center bg-amber-600 hover:bg-amber-700 text-white font-semibold px-4 py-2 rounded-lg text-sm transition"
+            >
+              Bestill design →
+            </RouterLink>
+          </div>
         </div>
       </section>
     </template>
