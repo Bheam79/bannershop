@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
 
 const auth = useAuthStore()
 const cart = useCartStore()
+const router = useRouter()
 
-function handleLogout() {
-  auth.logout()
+async function handleLogout() {
+  await auth.logoutFromServer()
+  router.push('/login')
 }
 </script>
 
@@ -22,6 +24,7 @@ function handleLogout() {
         <RouterLink to="/" class="text-gray-700 hover:text-blue-700 font-medium">Bannere</RouterLink>
 
         <template v-if="auth.isLoggedIn">
+          <RouterLink to="/account" class="text-gray-700 hover:text-blue-700">Min konto</RouterLink>
           <RouterLink to="/account/orders" class="text-gray-700 hover:text-blue-700">Mine ordrer</RouterLink>
           <button @click="handleLogout" class="text-sm text-gray-500 hover:text-red-600">Logg ut</button>
         </template>

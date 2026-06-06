@@ -1,4 +1,8 @@
+using System.Security.Claims;
 using System.Text;
+using BannerShop.Api.Services;
+using BannerShop.Core.Entities;
+using BannerShop.Core.Enums;
 using BannerShop.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +21,10 @@ builder.Services.AddDbContext<BannerShopDbContext>(options =>
     options.UseMySql(connectionString, mariaDbVersion,
         mySqlOptions => mySqlOptions.EnableRetryOnFailure(3)));
 
+// ─── Auth Services ────────────────────────────────────────────────────────────
+builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+
 // ─── Authentication (JWT) ─────────────────────────────────────────────────────
 var jwtSecret = builder.Configuration["Jwt:Secret"]
     ?? throw new InvalidOperationException("JWT secret is not configured.");
@@ -26,6 +34,7 @@ var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "bannershop.no";
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        options.MapInboundClaims = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -35,7 +44,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidIssuer = jwtIssuer,
             ValidAudience = jwtAudience,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
-            ClockSkew = TimeSpan.FromMinutes(1)
+            ClockSkew = TimeSpan.FromMinutes(1),
+            // Map standard claim types so [Authorize(Roles="...")] works
+            NameClaimType = ClaimTypes.Name,
+            RoleClaimType = ClaimTypes.Role,
         };
     });
 
@@ -100,7 +112,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// ─── Auto-migrate on startup (dev convenience) ────────────────────────────────
+// ─── Auto-migrate & seed on startup ──────────────────────────────────────────
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<BannerShopDbContext>();
@@ -108,9 +120,35 @@ using (var scope = app.Services.CreateScope())
     {
         db.Database.Migrate();
     }
+
+    // Seed admin user (runs in all environments)
+    await SeedAdminAsync(db, app.Configuration);
 }
 
 app.Run();
+
+// ─── Admin seed helper ────────────────────────────────────────────────────────
+static async Task SeedAdminAsync(BannerShopDbContext db, IConfiguration config)
+{
+    var adminEmail = config["Admin:SeedEmail"] ?? "admin@bannershop.no";
+    var adminPassword = config["Admin:SeedPassword"];
+
+    if (string.IsNullOrWhiteSpace(adminPassword))
+        return; // No password configured — skip seed
+
+    if (await db.Users.AnyAsync(u => u.Email == adminEmail))
+        return; // Already exists
+
+    db.Users.Add(new User
+    {
+        Email = adminEmail,
+        PasswordHash = BCrypt.Net.BCrypt.HashPassword(adminPassword),
+        Name = "Administrator",
+        Role = UserRole.Admin,
+        CreatedAt = DateTime.UtcNow
+    });
+    await db.SaveChangesAsync();
+}
 
 // Make Program accessible for integration tests
 public partial class Program { }

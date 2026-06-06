@@ -29,6 +29,18 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('user')
   }
 
+  /** Invalidates the refresh token on the server, then clears local state. */
+  async function logoutFromServer() {
+    if (refreshTokenValue.value) {
+      try {
+        await axios.post('/api/auth/logout', { refreshToken: refreshTokenValue.value })
+      } catch {
+        // Ignore errors — local logout proceeds regardless
+      }
+    }
+    logout()
+  }
+
   async function refreshToken(): Promise<boolean> {
     if (!refreshTokenValue.value) return false
     try {
@@ -45,11 +57,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   return {
     accessToken,
+    refreshTokenValue,
     user,
     isLoggedIn,
     isAdmin,
     setAuth,
     logout,
+    logoutFromServer,
     refreshToken,
   }
 })
