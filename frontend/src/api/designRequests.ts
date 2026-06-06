@@ -56,6 +56,7 @@ export interface DesignRequestDetail {
   stripePaymentIntentId: string | null
   previewUrl: string | null
   finalCroppedUrl: string | null
+  finalBannerDesignId: number | null
   lastError: string | null
   createdAt: string
   updatedAt: string

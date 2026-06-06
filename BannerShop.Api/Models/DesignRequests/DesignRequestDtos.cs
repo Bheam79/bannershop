@@ -114,6 +114,7 @@ public class DesignRequestDetailDto
     public string? StripePaymentIntentId { get; set; }
     public string? PreviewUrl { get; set; }
     public string? FinalCroppedUrl { get; set; }
+    public int? FinalBannerDesignId { get; set; }
     public string? LastError { get; set; }
     public DateTime? CustomerApprovedAt { get; set; }
     public string? DesignerNotes { get; set; }

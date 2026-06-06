@@ -6,6 +6,7 @@ using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
 using BannerShop.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using System.IO;
 
 namespace BannerShop.Api.Services.DesignRequests;
 
@@ -18,6 +19,7 @@ public sealed class DesignRequestService : IDesignRequestService
     private readonly IStripePaymentService _stripe;
     private readonly IDesignRequestJobQueue _queue;
     private readonly BannerFileStorage _storage;
+    private readonly IImageProcessingService _images;
     private readonly IEmailService _email;
     private readonly ILogger<DesignRequestService> _log;
 
@@ -26,6 +28,7 @@ public sealed class DesignRequestService : IDesignRequestService
         IStripePaymentService stripe,
         IDesignRequestJobQueue queue,
         BannerFileStorage storage,
+        IImageProcessingService images,
         IEmailService email,
         ILogger<DesignRequestService> log)
     {
@@ -33,6 +36,7 @@ public sealed class DesignRequestService : IDesignRequestService
         _stripe = stripe;
         _queue = queue;
         _storage = storage;
+        _images = images;
         _email = email;
         _log = log;
     }
@@ -218,9 +222,13 @@ public sealed class DesignRequestService : IDesignRequestService
         if (r.Status is not (DesignRequestStatus.AwaitingApproval or DesignRequestStatus.Revised))
             return DesignRequestActionResult.Fail($"Cannot approve a request in status {r.Status}.");
 
-        r.Status = DesignRequestStatus.Approved;
+        r.Status = DesignRequestStatus.Final;
         r.CustomerApprovedAt = DateTime.UtcNow;
         r.UpdatedAt = DateTime.UtcNow;
+
+        // Create a BannerDesign row so the customer can add the result directly to the print cart.
+        await TryCreateFinalBannerDesignAsync(r, ct);
+
         await _db.SaveChangesAsync(ct);
         return DesignRequestActionResult.Ok(ToDetail(r));
     }
@@ -260,6 +268,85 @@ public sealed class DesignRequestService : IDesignRequestService
         }
     }
 
+    /// <summary>
+    /// If the design request has a final image asset and no BannerDesign row yet,
+    /// creates one so the customer can add the design to the print cart.
+    /// The caller is responsible for calling <c>SaveChangesAsync</c> afterwards.
+    /// </summary>
+    internal async Task TryCreateFinalBannerDesignAsync(DesignRequest r, CancellationToken ct)
+    {
+        if (r.FinalBannerDesignId.HasValue)
+            return; // Already created — idempotent.
+
+        var finalPath = r.FinalCroppedStoragePath ?? r.DesignerPreviewPath;
+        if (string.IsNullOrEmpty(finalPath))
+        {
+            _log.LogWarning(
+                "TryCreateFinalBannerDesignAsync: DesignRequest {Id} has no final asset path — skipping BannerDesign creation.",
+                r.Id);
+            return;
+        }
+
+        var absPath = _storage.AbsolutePathFor(finalPath);
+        if (!File.Exists(absPath))
+        {
+            _log.LogWarning(
+                "TryCreateFinalBannerDesignAsync: file {Path} not found — skipping BannerDesign creation for DesignRequest {Id}.",
+                absPath, r.Id);
+            return;
+        }
+
+        int widthPx, heightPx;
+        try
+        {
+            (widthPx, heightPx) = await _images.ReadDimensionsAsync(absPath, ct);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex,
+                "TryCreateFinalBannerDesignAsync: failed to read dimensions from {Path} for DesignRequest {Id}.",
+                absPath, r.Id);
+            return;
+        }
+
+        // 18:9 (2:1) aspect ratio → 180 cm tall banner; all others → 150 cm.
+        var selectedHeightCm = r.AspectRatio == "18:9" ? 180 : 150;
+        var computedWidthCm  = BannerDimensions.ComputeWidthCm(widthPx, heightPx, rotationDegrees: 0, selectedHeightCm);
+
+        // Derive a display name from the storage path.
+        var originalFileName = Path.GetFileName(finalPath);
+        var contentType = Path.GetExtension(finalPath).TrimStart('.').ToLowerInvariant() switch
+        {
+            "jpg" or "jpeg" => "image/jpeg",
+            "webp"          => "image/webp",
+            _               => "image/png"
+        };
+
+        var design = new BannerDesign
+        {
+            UserId           = r.UserId,
+            OriginalFileName = originalFileName,
+            StoragePath      = finalPath,
+            ContentType      = contentType,
+            WidthPx          = widthPx,
+            HeightPx         = heightPx,
+            RotationDegrees  = 0,
+            SelectedHeightCm = selectedHeightCm,
+            ComputedWidthCm  = computedWidthCm,
+            PreviewStoragePath = null, // customer has already seen the preview
+            CreatedAt        = DateTime.UtcNow
+        };
+        _db.BannerDesigns.Add(design);
+
+        // Flush now to obtain the generated Id before the caller saves the parent entity.
+        await _db.SaveChangesAsync(ct);
+
+        r.FinalBannerDesignId = design.Id;
+        _log.LogInformation(
+            "Created BannerDesign {DesignId} for DesignRequest {RequestId} (path={Path}).",
+            design.Id, r.Id, finalPath);
+    }
+
     internal DesignRequestDetailDto ToDetail(DesignRequest r)
     {
         // Prefer the cropped print-ready asset; fall back to the raw AI result.
@@ -285,6 +372,7 @@ public sealed class DesignRequestService : IDesignRequestService
             StripePaymentIntentId = r.StripePaymentIntentId,
             PreviewUrl = string.IsNullOrEmpty(previewPath) ? null : _storage.PublicUrlFor(previewPath),
             FinalCroppedUrl = string.IsNullOrEmpty(r.FinalCroppedStoragePath) ? null : _storage.PublicUrlFor(r.FinalCroppedStoragePath),
+            FinalBannerDesignId = r.FinalBannerDesignId,
             LastError = r.LastError,
             CustomerApprovedAt = r.CustomerApprovedAt,
             DesignerNotes = r.DesignerNotes,

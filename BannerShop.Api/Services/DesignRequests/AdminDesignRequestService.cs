@@ -225,6 +225,11 @@ public sealed class AdminDesignRequestService : IAdminDesignRequestService
         if (!string.IsNullOrWhiteSpace(notes))
             r.DesignerNotes = notes.Trim();
 
+        // When the admin pushes to Final, ensure a BannerDesign row exists so the
+        // customer can add the result to their print cart.
+        if (newStatus == DesignRequestStatus.Final)
+            await _base.TryCreateFinalBannerDesignAsync(r, ct);
+
         await _db.SaveChangesAsync(ct);
         return DesignRequestActionResult.Ok(_base.ToDetail(r));
     }

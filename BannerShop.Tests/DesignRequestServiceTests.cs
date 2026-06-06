@@ -34,8 +34,9 @@ public class DesignRequestServiceTests
         queue.Setup(q => q.EnqueueAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
              .Returns(ValueTask.CompletedTask);
 
+        var images = new Mock<IImageProcessingService>();
         var email = new Mock<IEmailService>();
-        var svc = new DesignRequestService(db, stripe.Object, queue.Object, MakeStorage(), email.Object, NullLogger<DesignRequestService>.Instance);
+        var svc = new DesignRequestService(db, stripe.Object, queue.Object, MakeStorage(), images.Object, email.Object, NullLogger<DesignRequestService>.Instance);
         return (svc, stripe, queue);
     }
 
@@ -165,7 +166,7 @@ public class DesignRequestServiceTests
 
         var ok = await svc.ApproveAsync(id, 1);
         ok.Success.Should().BeTrue();
-        db.DesignRequests.Single().Status.Should().Be(DesignRequestStatus.Approved);
+        db.DesignRequests.Single().Status.Should().Be(DesignRequestStatus.Final);
     }
 
     [Fact]

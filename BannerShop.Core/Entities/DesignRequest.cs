@@ -74,11 +74,18 @@ public class DesignRequest
     /// <summary>Internal notes from the designer / admin (Manual flow).</summary>
     public string? DesignerNotes { get; set; }
 
+    /// <summary>
+    /// FK to the <see cref="BannerDesign"/> row created when this request reaches Final status.
+    /// Null until the design is finalised. The customer uses this id to add the print to their cart.
+    /// </summary>
+    public int? FinalBannerDesignId { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     // Navigation
     public User User { get; set; } = null!;
     public BannerTemplate BannerTemplate { get; set; } = null!;
+    public BannerDesign? FinalBannerDesign { get; set; }
     public ICollection<DesignRequestRevision> Revisions { get; set; } = new List<DesignRequestRevision>();
 }

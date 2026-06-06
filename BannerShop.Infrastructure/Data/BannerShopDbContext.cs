@@ -217,6 +217,11 @@ public class BannerShopDbContext : DbContext
                 .HasForeignKey(x => x.BannerTemplateId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            e.HasOne(x => x.FinalBannerDesign)
+                .WithMany()
+                .HasForeignKey(x => x.FinalBannerDesignId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             e.HasIndex(x => x.UserId);
             e.HasIndex(x => x.StripePaymentIntentId);
             e.HasIndex(x => x.Status);
