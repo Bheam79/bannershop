@@ -192,6 +192,22 @@ async function changePassword() {
       </div>
     </div>
 
+    <!-- Design requests quick link -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-gray-800">Mine design-bestillinger</h2>
+          <p class="text-sm text-gray-500 mt-1">AI-banner (95 kr) og manuelt design (495 kr)</p>
+        </div>
+        <RouterLink
+          to="/account/design-requests"
+          class="text-sm text-blue-700 hover:underline font-medium"
+        >
+          Se alle →
+        </RouterLink>
+      </div>
+    </div>
+
     <!-- Profile section -->
     <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
       <h2 class="text-lg font-semibold text-gray-800 mb-4">Profilinformasjon</h2>

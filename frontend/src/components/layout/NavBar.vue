@@ -29,6 +29,7 @@ async function handleLogout() {
         <template v-if="auth.isLoggedIn">
           <RouterLink to="/account" class="text-gray-700 hover:text-blue-700">Min konto</RouterLink>
           <RouterLink to="/account/orders" class="text-gray-700 hover:text-blue-700">Mine ordrer</RouterLink>
+          <RouterLink to="/account/design-requests" class="text-gray-700 hover:text-blue-700">Mine design-bestillinger</RouterLink>
           <button @click="handleLogout" class="text-sm text-gray-500 hover:text-red-600">Logg ut</button>
         </template>
         <template v-else>

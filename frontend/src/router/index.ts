@@ -21,6 +21,11 @@ const router = createRouter({
       component: () => import('@/views/AiBannerBuilderView.vue'),
     },
     {
+      path: '/banner-builder/manual',
+      name: 'banner-builder-manual',
+      component: () => import('@/views/ManualBannerBuilderView.vue'),
+    },
+    {
       path: '/checkout',
       name: 'checkout',
       component: () => import('@/views/checkout/CheckoutView.vue'),
@@ -67,6 +72,18 @@ const router = createRouter({
       path: '/account/orders/:id',
       name: 'account-order-detail',
       component: () => import('@/views/account/OrderDetailView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/account/design-requests',
+      name: 'account-design-requests',
+      component: () => import('@/views/account/AccountDesignRequestsView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/account/design-requests/:id',
+      name: 'account-design-request-detail',
+      component: () => import('@/views/account/AccountDesignRequestDetailView.vue'),
       meta: { requiresAuth: true },
     },
 

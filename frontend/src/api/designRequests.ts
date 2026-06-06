@@ -101,3 +101,33 @@ export async function listDesignRequests(): Promise<DesignRequestListItem[]> {
   const { data } = await apiClient.get<DesignRequestListItem[]>('/design-requests')
   return data
 }
+
+export interface CreateManualRequestPayload {
+  templateId: number
+  language: string // 'nb' | 'en'
+  personName: string
+  personAge?: number | null
+  textContent: string
+  themeDescription: string
+  aspectRatio: string // '16:9' | '18:9'
+  uploadedPhotoBannerDesignId?: number | null
+}
+
+/** Create a Manual design request (495 kr) and return a Stripe PaymentIntent client secret. */
+export async function createManualRequest(
+  req: CreateManualRequestPayload,
+): Promise<CreateDesignRequestResponse> {
+  const { data } = await apiClient.post<CreateDesignRequestResponse>(
+    '/design-requests/manual',
+    req,
+  )
+  return data
+}
+
+/** Customer requests one free revision (Manual only; only allowed when status=AwaitingApproval). */
+export async function requestRevision(id: number, comment: string): Promise<DesignRequestDetail> {
+  const { data } = await apiClient.post<DesignRequestDetail>(`/design-requests/${id}/revision`, {
+    comment,
+  })
+  return data
+}
