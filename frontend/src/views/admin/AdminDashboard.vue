@@ -198,6 +198,14 @@ function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'bg-gray-100 text-
         <h2 class="font-semibold text-gray-800">Prissetting</h2>
         <p class="text-sm text-gray-500 mt-1">Juster prisparametere</p>
       </RouterLink>
+      <RouterLink
+        to="/admin/design-requests"
+        class="block bg-white rounded-xl border border-gray-200 shadow-sm p-6 hover:border-blue-400 hover:shadow-md transition"
+      >
+        <div class="text-3xl mb-3">🎨</div>
+        <h2 class="font-semibold text-gray-800">Design-bestillinger</h2>
+        <p class="text-sm text-gray-500 mt-1">Administrer AI- og manuelle designoppdrag</p>
+      </RouterLink>
     </div>
   </div>
 </template>
