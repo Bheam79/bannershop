@@ -41,6 +41,9 @@ export interface OrderListItem {
   itemCount: number
   createdAt: string
   estimatedDelivery: string | null
+  // Present in admin responses
+  customerName?: string | null
+  customerEmail?: string | null
 }
 
 export interface OrdersPage {
@@ -82,6 +85,9 @@ export interface ShipmentTracking {
 
 export interface OrderDetailResponse {
   id: number
+  userId?: number
+  customerName?: string | null
+  customerEmail?: string | null
   status: string
   deliveryType: string
   shippingCostNok: number
