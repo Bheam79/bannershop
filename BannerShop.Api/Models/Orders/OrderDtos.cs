@@ -48,6 +48,9 @@ public class OrderItemInputDto
 
     [StringLength(1000)]
     public string? Notes { get; set; }
+
+    [Range(1, int.MaxValue)]
+    public int? BannerDesignId { get; set; }
 }
 
 public class UpdateOrderStatusRequest
@@ -152,6 +155,7 @@ public class OrderItemDto
     public decimal UnitPriceNok { get; set; }
     public decimal LineTotalNok { get; set; }
     public string? Notes { get; set; }
+    public int? BannerDesignId { get; set; }
     public string CurrentProductionStage { get; set; } = "Queued";
     public List<ProductionStatusDto> ProductionStatusHistory { get; set; } = new();
 }

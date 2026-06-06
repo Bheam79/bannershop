@@ -16,6 +16,7 @@ export interface OrderDraftRequest {
     customWidthCm?: number
     quantity: number
     notes?: string
+    bannerDesignId?: number
   }>
 }
 
@@ -70,6 +71,7 @@ export interface OrderItemDetail {
   unitPriceNok: number
   lineTotalNok: number
   notes: string | null
+  bannerDesignId: number | null
   currentProductionStage: string
   productionStatusHistory: ProductionStatusEntry[]
 }

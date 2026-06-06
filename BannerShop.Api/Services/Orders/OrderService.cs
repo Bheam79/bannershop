@@ -47,6 +47,26 @@ public class OrderService : IOrderService
         if (req.Items is null || req.Items.Count == 0)
             return Fail("Order must contain at least one item.");
 
+        // ── Validate BannerDesignIds (if any) in one round-trip ──
+        var requestedDesignIds = req.Items
+            .Where(i => i.BannerDesignId.HasValue)
+            .Select(i => i.BannerDesignId!.Value)
+            .Distinct()
+            .ToList();
+        if (requestedDesignIds.Count > 0)
+        {
+            var ownedDesigns = await _db.BannerDesigns
+                .AsNoTracking()
+                .Where(d => requestedDesignIds.Contains(d.Id) && d.UserId == userId)
+                .Select(d => d.Id)
+                .ToListAsync(ct);
+            foreach (var designId in requestedDesignIds)
+            {
+                if (!ownedDesigns.Contains(designId))
+                    return Fail($"BannerDesign {designId} not found or does not belong to this user.");
+            }
+        }
+
         // ── Load all referenced banner sizes (with material) in one round-trip ──
         var sizeIds = req.Items.Select(i => i.BannerSizeId).Distinct().ToList();
         var sizes = await _db.BannerSizes
@@ -79,14 +99,15 @@ public class OrderService : IOrderService
 
             items.Add(new OrderItem
             {
-                BannerSizeId  = size.Id,
-                CustomWidthCm = input.CustomWidthCm,
-                HeightCm      = size.HeightCm,
-                Quantity      = input.Quantity,
-                AreaSqm       = areaSqm,
-                UnitPriceNok  = decimal.Round(unitPrice, 2),
-                LineTotalNok  = lineTotal,
-                Notes         = string.IsNullOrWhiteSpace(input.Notes) ? null : input.Notes.Trim()
+                BannerSizeId   = size.Id,
+                CustomWidthCm  = input.CustomWidthCm,
+                HeightCm       = size.HeightCm,
+                Quantity       = input.Quantity,
+                AreaSqm        = areaSqm,
+                UnitPriceNok   = decimal.Round(unitPrice, 2),
+                LineTotalNok   = lineTotal,
+                Notes          = string.IsNullOrWhiteSpace(input.Notes) ? null : input.Notes.Trim(),
+                BannerDesignId = input.BannerDesignId
             });
         }
 
@@ -491,6 +512,7 @@ public class OrderService : IOrderService
             UnitPriceNok = i.UnitPriceNok,
             LineTotalNok = i.LineTotalNok,
             Notes = i.Notes,
+            BannerDesignId = i.BannerDesignId,
             CurrentProductionStage = (i.ProductionStatuses.OrderByDescending(p => p.UpdatedAt).FirstOrDefault()?.Stage
                                       ?? ProductionStage.Queued).ToString(),
             ProductionStatusHistory = i.ProductionStatuses

@@ -12,9 +12,11 @@ public class OrderItem
     public decimal UnitPriceNok { get; set; }
     public decimal LineTotalNok { get; set; }
     public string? Notes { get; set; }
+    public int? BannerDesignId { get; set; }
 
     // Navigation
     public Order Order { get; set; } = null!;
     public BannerSize? BannerSize { get; set; }
+    public BannerDesign? BannerDesign { get; set; }
     public ICollection<ProductionStatus> ProductionStatuses { get; set; } = new List<ProductionStatus>();
 }

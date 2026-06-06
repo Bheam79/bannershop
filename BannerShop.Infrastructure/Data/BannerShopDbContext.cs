@@ -129,6 +129,10 @@ public class BannerShopDbContext : DbContext
                 .WithMany(x => x.OrderItems)
                 .HasForeignKey(x => x.BannerSizeId)
                 .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.BannerDesign)
+                .WithMany()
+                .HasForeignKey(x => x.BannerDesignId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // ProductionStatus
