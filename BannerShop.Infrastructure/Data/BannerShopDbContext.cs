@@ -18,6 +18,7 @@ public class BannerShopDbContext : DbContext
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
     public DbSet<ProductionStatus> ProductionStatuses => Set<ProductionStatus>();
     public DbSet<ShipmentTracking> ShipmentTrackings => Set<ShipmentTracking>();
+    public DbSet<BannerDesign> BannerDesigns => Set<BannerDesign>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -149,6 +150,21 @@ public class BannerShopDbContext : DbContext
                 .WithOne(x => x.ShipmentTracking)
                 .HasForeignKey<ShipmentTracking>(x => x.OrderId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // BannerDesign (basic banner builder uploads)
+        modelBuilder.Entity<BannerDesign>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.OriginalFileName).HasMaxLength(255).IsRequired();
+            e.Property(x => x.StoragePath).HasMaxLength(500).IsRequired();
+            e.Property(x => x.ContentType).HasMaxLength(100).IsRequired();
+            e.Property(x => x.PreviewStoragePath).HasMaxLength(500);
+            e.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.UserId);
         });
 
         // Seed data

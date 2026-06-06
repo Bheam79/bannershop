@@ -15,7 +15,7 @@ cb docker run mariadb:11 --name db -v /workspace/mariadb-data:/var/lib/mysql \
 DB_IP=$(cb docker exec db hostname -I | tr -d ' ')
 # Update appsettings*.json to use $DB_IP instead of localhost/hostname
 ```
-Current DB IP: `10.89.7.2` (may change if container is recreated).
+Current DB IP: `10.89.7.3` (changes each time the container restarts — re-read with the `DB_IP=$(cb docker exec db hostname -I | tr -d ' ')` snippet above; appsettings.json is hard-coded to a previous IP and may need updating).
 
 ## EF Core migrations
 The `DesignTimeDbContextFactory` reads `BANNERSHOP_DB` env var:
@@ -57,3 +57,9 @@ cd /workspace/repo/BannerShop.Api && dotnet run
 ## Seeded data
 - 2 materials (160cm/400g and 180cm/680g), 7 banner sizes, 5 pricing parameters
 - Seed is in `BannerShopDbContext.SeedData()` — applied via migration
+
+## Banner builder (BANNERSH-15)
+- File uploads land under `FileStorage:BasePath` (default `/workspace/uploads`) and are served via StaticFiles at `FileStorage:PublicUrlPrefix` (default `/uploads`).
+- `IImageProcessingService` uses `SixLabors.ImageSharp` for raster ops and `PDFtoImage` for PDF→PNG (first page only, 200 DPI).
+- `PDFtoImage` v4 has int-page overloads marked obsolete — use the `Index`-based overload.
+- Dimension math lives in pure helper `BannerDimensions` (covered by unit tests in `BannerDimensionsTests`).

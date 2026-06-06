@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 using BannerShop.Api.Services;
+using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Api.Services.Orders;
 using BannerShop.Api.Services.Orders.Stripe;
 using BannerShop.Api.Services.Shipping;
@@ -75,6 +76,24 @@ else
     builder.Services.AddScoped<IStripePaymentService, MockStripePaymentService>();
 
 builder.Services.AddScoped<IOrderService, OrderService>();
+
+// ─── Banner Builder (file uploads, image processing) ─────────────────────────
+builder.Services.Configure<FileStorageOptions>(builder.Configuration.GetSection(FileStorageOptions.SectionName));
+builder.Services.AddSingleton<BannerFileStorage>();
+builder.Services.AddSingleton<IImageProcessingService, ImageProcessingService>();
+
+// Allow multipart uploads up to the configured cap (+25% headroom for form overhead).
+var fileStorageOpts = builder.Configuration.GetSection(FileStorageOptions.SectionName).Get<FileStorageOptions>()
+    ?? new FileStorageOptions();
+var multipartMaxBytes = (long)fileStorageOpts.MaxFileSizeMb * 1024 * 1024 * 5 / 4;
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
+{
+    o.MultipartBodyLengthLimit = multipartMaxBytes;
+});
+builder.WebHost.ConfigureKestrel(o =>
+{
+    o.Limits.MaxRequestBodySize = multipartMaxBytes;
+});
 
 // ─── Authentication (JWT) ─────────────────────────────────────────────────────
 var jwtSecret = builder.Configuration["Jwt:Secret"]
@@ -159,6 +178,27 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("FrontendPolicy");
+
+// ─── Static file serving for uploaded files ──────────────────────────────────
+// Files are stored under FileStorage:BasePath and exposed at FileStorage:PublicUrlPrefix.
+// Note: this serves files by relative path; per-user authorization happens at the
+// controller layer (GET /api/banner-builder/{id}/preview). The static route is fine
+// for designs that need a public(-ish) preview URL because filenames are GUIDs and
+// unguessable. Tightened access controls can be added once IFileStore lands (BANNERSH-25).
+{
+    var basePath = fileStorageOpts.BasePath;
+    if (!string.IsNullOrWhiteSpace(basePath))
+    {
+        Directory.CreateDirectory(basePath);
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(basePath),
+            RequestPath = fileStorageOpts.PublicUrlPrefix.TrimEnd('/'),
+            ServeUnknownFileTypes = false
+        });
+    }
+}
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
