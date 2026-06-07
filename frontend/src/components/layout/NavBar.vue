@@ -42,7 +42,7 @@ async function handleLogout() {
         </template>
 
         <RouterLink v-if="cart.itemCount > 0" to="/checkout" class="btn btn-primary" style="background:var(--gold);color:#1a0d06;box-shadow:none;font-size:14px;padding:9px 16px">
-          🛒 Kasse ({{ cart.itemCount }})
+          <i class="fa-solid fa-cart-shopping"></i> Kasse ({{ cart.itemCount }})
         </RouterLink>
       </div>
 

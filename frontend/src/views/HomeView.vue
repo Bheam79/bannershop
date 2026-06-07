@@ -11,7 +11,7 @@ const cart = useCartStore()
 /* ── Category data ──────────────────────────────────────────── */
 interface Cat {
   id: string
-  emoji: string
+  icon: string
   name: string
   occ: string
   price: number
@@ -22,27 +22,27 @@ interface Cat {
 
 const CATS: Cat[] = [
   {
-    id: 'bursdag', emoji: '🎈', name: 'Bursdag', occ: 'Bursdagsbanner', price: 810,
+    id: 'bursdag', icon: 'fa-cake-candles', name: 'Bursdag', occ: 'Bursdagsbanner', price: 810,
     img: '/banners/banner-emma-princess.png',
     big: 'Gratulerer med dagen!', sub: 'Emma fyller 6 år',
   },
   {
-    id: 'konfirmasjon', emoji: '🎓', name: 'Konfirmasjon', occ: 'Konfirmasjonsbanner', price: 810,
+    id: 'konfirmasjon', icon: 'fa-graduation-cap', name: 'Konfirmasjon', occ: 'Konfirmasjonsbanner', price: 810,
     img: '/banners/banner-konfirmasjon.png',
     big: 'Konfirmant 2026', sub: 'Gratulerer, Jonas!',
   },
   {
-    id: 'dap', emoji: '🌿', name: 'Dåp', occ: 'Dåpsbanner', price: 810,
+    id: 'dap', icon: 'fa-leaf', name: 'Dåp', occ: 'Dåpsbanner', price: 810,
     img: '/banners/banner-dap.png',
     big: 'Velkommen til verden', sub: 'Lille Markus',
   },
   {
-    id: 'bryllup', emoji: '💍', name: 'Bryllup', occ: 'Bryllupsbanner', price: 945,
+    id: 'bryllup', icon: 'fa-ring', name: 'Bryllup', occ: 'Bryllupsbanner', price: 945,
     img: '/banners/banner-bryllup.png',
     big: 'Maria & Johan', sub: 'For alltid · 12.07.2026',
   },
   {
-    id: 'sommerfest', emoji: '☀️', name: 'Sommerfest', occ: 'Sommerfestbanner', price: 810,
+    id: 'sommerfest', icon: 'fa-sun', name: 'Sommerfest', occ: 'Sommerfestbanner', price: 810,
     img: '/banners/banner-sommerfest.png',
     big: 'Sommerfest 2026', sub: 'Velkommen alle sammen',
   },
@@ -107,7 +107,7 @@ async function handleLogout() {
           </template>
           <a v-if="cart.itemCount > 0" href="/checkout" @click.prevent="router.push('/checkout')"
              class="btn btn-primary" style="background:var(--gold);color:#1a0d06;box-shadow:none">
-            🛒 ({{ cart.itemCount }})
+            <i class="fa-solid fa-cart-shopping"></i> ({{ cart.itemCount }})
           </a>
         </div>
       </div>
@@ -138,9 +138,9 @@ async function handleLogout() {
             <a href="#lagselv" @click.prevent="scrollTo('lagselv')" class="btn btn-ghost btn-lg">Lag ditt eget design</a>
           </div>
           <div style="display:flex;gap:22px;flex-wrap:wrap;margin-top:30px">
-            <span style="display:flex;align-items:center;gap:9px;color:var(--muted);font-size:14.5px;font-weight:500"><span style="color:var(--accent);font-weight:700">✓</span> Kraftig værbestandig PVC</span>
-            <span style="display:flex;align-items:center;gap:9px;color:var(--muted);font-size:14.5px;font-weight:500"><span style="color:var(--accent);font-weight:700">✓</span> UV-bestandig fullfargetrykk</span>
-            <span style="display:flex;align-items:center;gap:9px;color:var(--muted);font-size:14.5px;font-weight:500"><span style="color:var(--accent);font-weight:700">✓</span> Levering i hele Norge</span>
+            <span style="display:flex;align-items:center;gap:9px;color:var(--muted);font-size:14.5px;font-weight:500"><i class="fa-solid fa-check" style="color:var(--accent)"></i> Kraftig værbestandig PVC</span>
+            <span style="display:flex;align-items:center;gap:9px;color:var(--muted);font-size:14.5px;font-weight:500"><i class="fa-solid fa-check" style="color:var(--accent)"></i> UV-bestandig fullfargetrykk</span>
+            <span style="display:flex;align-items:center;gap:9px;color:var(--muted);font-size:14.5px;font-weight:500"><i class="fa-solid fa-check" style="color:var(--accent)"></i> Levering i hele Norge</span>
           </div>
         </div>
 
@@ -193,7 +193,7 @@ async function handleLogout() {
           >
             <div class="cat-media">
               <img :src="cat.img" :alt="cat.name + 'sbanner'" class="cat-img">
-              <span class="cat-emoji">{{ cat.emoji }}</span>
+              <span class="cat-emoji"><i :class="['fa-solid', cat.icon]"></i></span>
               <div class="cat-scrim"></div>
             </div>
             <div class="cat-body">
@@ -208,7 +208,7 @@ async function handleLogout() {
           <!-- Custom card -->
           <button class="cat-card cat-custom" @click="router.push('/banner-builder')">
             <div class="cat-body" style="flex-direction:column;text-align:center;width:100%">
-              <span style="width:38px;height:38px;border-radius:10px;background:var(--surface-2);border:1px solid rgba(255,255,255,.1);display:grid;place-items:center;font-size:20px;margin-bottom:12px">✨</span>
+              <span style="width:38px;height:38px;border-radius:10px;background:var(--surface-2);border:1px solid rgba(255,255,255,.1);display:grid;place-items:center;font-size:18px;margin-bottom:12px"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--gold)"></i></span>
               <h3 class="display" style="font-size:21px;letter-spacing:-.01em;color:var(--text)">Noe annet?</h3>
               <div style="font-size:13px;color:var(--faint);margin-top:6px">Egendesignet banner – din anledning, din tekst</div>
               <span class="cat-arrow" style="margin-top:12px">→</span>
@@ -240,10 +240,10 @@ async function handleLogout() {
               <span class="dim-tag">300 × 150 cm · mest populær</span>
             </div>
             <ul class="feat-list">
-              <li><span style="color:var(--accent);font-weight:700">✓</span> UV-bestandig trykk i fullfarge</li>
-              <li><span style="color:var(--accent);font-weight:700">✓</span> Klart for både inne og ute</li>
-              <li><span style="color:var(--accent);font-weight:700">✓</span> Kraftig, værbestandig PVC</li>
-              <li><span style="color:var(--accent);font-weight:700">✓</span> Maljer i hjørnene som tilvalg</li>
+              <li><i class="fa-solid fa-check" style="color:var(--accent)"></i> UV-bestandig trykk i fullfarge</li>
+              <li><i class="fa-solid fa-check" style="color:var(--accent)"></i> Klart for både inne og ute</li>
+              <li><i class="fa-solid fa-check" style="color:var(--accent)"></i> Kraftig, værbestandig PVC</li>
+              <li><i class="fa-solid fa-check" style="color:var(--accent)"></i> Maljer i hjørnene som tilvalg</li>
             </ul>
           </div>
 
@@ -262,13 +262,13 @@ async function handleLogout() {
             <div style="font-size:13.5px;color:var(--faint);margin-bottom:20px">Standardstørrelse 300 × 150 cm. Pris inkl. trykk &amp; ferdigstilling.</div>
             <div style="height:1px;background:var(--line-soft);margin:4px 0 18px"></div>
             <ul style="display:grid;gap:9px;margin-bottom:22px">
-              <li style="list-style:none;display:flex;align-items:center;gap:10px;font-size:14.5px;color:var(--muted)"><span style="color:var(--accent)">✓</span> Ferdig oppsett – bare bytt navn &amp; dato</li>
-              <li style="list-style:none;display:flex;align-items:center;gap:10px;font-size:14.5px;color:var(--muted)"><span style="color:var(--accent)">✓</span> Gratis korrektur før trykk</li>
-              <li style="list-style:none;display:flex;align-items:center;gap:10px;font-size:14.5px;color:var(--muted)"><span style="color:var(--accent)">✓</span> Maljer i hjørnene som rimelig tilvalg</li>
+              <li style="list-style:none;display:flex;align-items:center;gap:10px;font-size:14.5px;color:var(--muted)"><i class="fa-solid fa-check" style="color:var(--accent)"></i> Ferdig oppsett – bare bytt navn &amp; dato</li>
+              <li style="list-style:none;display:flex;align-items:center;gap:10px;font-size:14.5px;color:var(--muted)"><i class="fa-solid fa-check" style="color:var(--accent)"></i> Gratis korrektur før trykk</li>
+              <li style="list-style:none;display:flex;align-items:center;gap:10px;font-size:14.5px;color:var(--muted)"><i class="fa-solid fa-check" style="color:var(--accent)"></i> Maljer i hjørnene som rimelig tilvalg</li>
             </ul>
             <div style="margin-top:auto;display:grid;gap:10px">
               <button class="btn btn-primary btn-lg" style="justify-content:center;width:100%" @click="router.push('/banner-builder/ai')">
-                🛒 Kom i gang med dette
+                <i class="fa-solid fa-cart-shopping"></i> Kom i gang med dette
               </button>
               <div style="font-size:13px;color:var(--faint);text-align:center;margin-top:2px">
                 Trenger du en annen størrelse? <b style="color:var(--muted);font-weight:600">Velg egen størrelse i neste steg.</b>
@@ -292,7 +292,7 @@ async function handleLogout() {
 
           <!-- Upload -->
           <div class="make-card" @click="router.push('/banner-builder/upload')" style="cursor:pointer">
-            <div class="make-ico">📁</div>
+            <div class="make-ico"><i class="fa-solid fa-folder-open"></i></div>
             <h3 class="display" style="font-size:20px;margin-bottom:8px">Last opp eget design</h3>
             <p style="color:var(--muted);font-size:15px;flex:1;margin-bottom:16px">Har du fil klar? Last opp bilde eller PDF, så regner vi ut bredden automatisk og viser forhåndsvisning.</p>
             <div style="font-size:14px;color:var(--faint);margin-bottom:14px">Samme pris som standardbanner</div>
@@ -302,7 +302,7 @@ async function handleLogout() {
           <!-- AI -->
           <div class="make-card make-feat" style="cursor:pointer" @click="router.push('/banner-builder/ai')">
             <span class="make-tag">Ferdig på minutter</span>
-            <div class="make-ico" style="background:rgba(255,106,61,.14);border-color:rgba(255,106,61,.3)">✦</div>
+            <div class="make-ico" style="background:rgba(255,106,61,.14);border-color:rgba(255,106,61,.3)"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--accent)"></i></div>
             <h3 class="display" style="font-size:20px;margin-bottom:8px">AI-designet banner</h3>
             <p style="color:var(--muted);font-size:15px;flex:1;margin-bottom:16px">Velg anledning, skriv inn navn og tekst – så lager AI et unikt banner for deg på minutter.</p>
             <div style="font-size:14px;color:var(--faint);margin-bottom:14px"><b style="color:var(--text);font-family:var(--font-display);font-weight:700;font-size:18px">95 kr</b> for AI-design</div>
@@ -312,7 +312,7 @@ async function handleLogout() {
           <!-- Manual design -->
           <div class="make-card" style="cursor:pointer" @click="router.push('/banner-builder/manual')">
             <span class="make-tag">2–3 virkedager</span>
-            <div class="make-ico">🎨</div>
+            <div class="make-ico"><i class="fa-solid fa-palette"></i></div>
             <h3 class="display" style="font-size:20px;margin-bottom:8px">Vi designer for deg</h3>
             <p style="color:var(--muted);font-size:15px;flex:1;margin-bottom:16px">Fyll inn ønskene dine, så lager designteamet vårt et forslag og sender til godkjenning.</p>
             <div style="font-size:14px;color:var(--faint);margin-bottom:14px"><b style="color:var(--text);font-family:var(--font-display);font-weight:700;font-size:18px">495 kr</b> for designtjeneste</div>
@@ -326,22 +326,22 @@ async function handleLogout() {
     <div style="border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);background:var(--bg-2)">
       <div class="wrap" style="display:grid;grid-template-columns:repeat(4,1fr);gap:24px;padding:42px 0">
         <div class="strip-item">
-          <span style="font-size:22px;margin-bottom:4px;display:block">🏭</span>
+          <span class="strip-icon"><i class="fa-solid fa-industry"></i></span>
           <h4 class="display" style="font-size:17px;margin-bottom:4px">Eget lokalt trykkeri</h4>
           <p style="color:var(--muted);font-size:14px">Vi trykker alt selv – full kontroll på kvalitet og leveringstid.</p>
         </div>
         <div class="strip-item">
-          <span style="font-size:22px;margin-bottom:4px;display:block">🚚</span>
+          <span class="strip-icon"><i class="fa-solid fa-truck"></i></span>
           <h4 class="display" style="font-size:17px;margin-bottom:4px">Rask levering</h4>
           <p style="color:var(--muted);font-size:14px">Standard 2–3 dager, eller ekspress når det haster.</p>
         </div>
         <div class="strip-item">
-          <span style="font-size:22px;margin-bottom:4px;display:block">💪</span>
+          <span class="strip-icon"><i class="fa-solid fa-shield-halved"></i></span>
           <h4 class="display" style="font-size:17px;margin-bottom:4px">Værbestandig</h4>
           <p style="color:var(--muted);font-size:14px">UV-bestandig fullfargetrykk på kraftig PVC – tåler norsk vær.</p>
         </div>
         <div class="strip-item">
-          <span style="font-size:22px;margin-bottom:4px;display:block">✅</span>
+          <span class="strip-icon"><i class="fa-solid fa-circle-check"></i></span>
           <h4 class="display" style="font-size:17px;margin-bottom:4px">Alltid ferdigstilt</h4>
           <p style="color:var(--muted);font-size:14px">Sydde kanter og maljer i hjørnene følger med på alle bannere.</p>
         </div>
@@ -665,6 +665,18 @@ async function handleLogout() {
 
 /* ── Trust strip ────────────────────────────────────────────── */
 .strip-item { display: flex; flex-direction: column; gap: 6px; }
+.strip-icon {
+  font-size: 20px;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
 
 /* ── CTA band ───────────────────────────────────────────────── */
 .cta-band {
