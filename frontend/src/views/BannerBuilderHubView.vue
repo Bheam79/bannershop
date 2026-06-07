@@ -3,81 +3,155 @@ import { RouterLink } from 'vue-router'
 </script>
 
 <template>
-  <div class="max-w-5xl mx-auto px-4 py-10 sm:py-14">
+  <div style="max-width:1000px;margin:0 auto;padding:2.5rem 1.5rem 4rem">
     <!-- Hero -->
-    <header class="text-center mb-12">
-      <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 mb-3">
+    <header style="text-align:center;margin-bottom:3rem">
+      <h1 class="display" style="font-size:clamp(30px,4vw,46px);color:var(--text);margin-bottom:12px">
         Lag ditt eget banner
       </h1>
-      <p class="text-lg text-gray-600 max-w-2xl mx-auto">
-        Upload din fil, la AI lage det, eller bestill et profesjonelt design fra oss.
+      <p style="font-size:18px;color:var(--muted);max-width:36em;margin:0 auto">
+        Last opp din fil, la AI lage det, eller bestill et profesjonelt design fra oss.
       </p>
     </header>
 
     <!-- Option cards -->
-    <div class="grid gap-6 sm:grid-cols-3">
+    <div class="hub-grid">
       <!-- 1. Upload own file -->
-      <div class="bg-white border border-gray-200 rounded-2xl p-6 flex flex-col shadow-sm hover:shadow-md transition">
-        <div class="text-4xl mb-4">📁</div>
-        <h2 class="text-xl font-bold text-gray-900 mb-2">Eget bilde eller PDF</h2>
-        <p class="text-sm text-gray-600 flex-1 mb-4">
+      <div class="hub-card">
+        <div class="hub-ico">
+          <i class="fa-solid fa-folder-open"></i>
+        </div>
+        <h2 class="display" style="font-size:21px;color:var(--text);margin-bottom:10px">
+          Eget bilde eller PDF
+        </h2>
+        <p style="font-size:14.5px;color:var(--muted);flex:1;margin-bottom:16px">
           Last opp bildet eller PDF-en din, velg høyde (150 eller 180 cm) — bredden
           beregnes automatisk. Se forhåndsvisning og legg i handlekurven.
         </p>
-        <div class="text-sm font-semibold text-gray-700 mb-4">
+        <div style="font-size:13px;color:var(--faint);margin-bottom:18px">
           Samme pris som standard banner
         </div>
-        <RouterLink
-          to="/banner-builder/upload"
-          class="mt-auto block text-center bg-blue-700 hover:bg-blue-800 text-white font-semibold px-5 py-2.5 rounded-lg text-sm transition"
-        >
+        <RouterLink to="/banner-builder/upload" class="btn btn-soft" style="justify-content:center;width:100%">
           Start →
         </RouterLink>
       </div>
 
       <!-- 2. AI banner -->
-      <div class="bg-white border border-gray-200 rounded-2xl p-6 flex flex-col shadow-sm hover:shadow-md transition relative">
-        <span class="absolute top-4 right-4 bg-purple-100 text-purple-800 text-xs font-bold px-2.5 py-1 rounded-full">
-          Ferdig på minutter
+      <div class="hub-card hub-feat">
+        <span class="hub-tag">
+          <i class="fa-solid fa-bolt"></i> Ferdig på minutter
         </span>
-        <div class="text-4xl mb-4">✨</div>
-        <h2 class="text-xl font-bold text-gray-900 mb-2">AI-designet banner</h2>
-        <p class="text-sm text-gray-600 flex-1 mb-4">
+        <div class="hub-ico hub-ico-accent">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>
+        </div>
+        <h2 class="display" style="font-size:21px;color:var(--text);margin-bottom:10px">
+          AI-designet banner
+        </h2>
+        <p style="font-size:14.5px;color:var(--muted);flex:1;margin-bottom:16px">
           Velg mal (bursdag, bryllup, konfirmasjon m.m.), skriv inn navn og ønsket tekst
           — AI genererer et unikt banner for deg på minutter.
         </p>
-        <div class="text-sm font-semibold text-gray-700 mb-4">
-          95 kr
+        <div style="font-size:14px;color:var(--faint);margin-bottom:18px">
+          <b style="color:var(--text);font-family:var(--font-display);font-size:22px;font-weight:700">95 kr</b>
+          <span style="font-size:13px;margin-left:4px">for AI-design</span>
         </div>
-        <RouterLink
-          to="/banner-builder/ai"
-          class="mt-auto block text-center bg-purple-700 hover:bg-purple-800 text-white font-semibold px-5 py-2.5 rounded-lg text-sm transition"
-        >
+        <RouterLink to="/banner-builder/ai" class="btn btn-primary" style="justify-content:center;width:100%">
           Lag AI-banner →
         </RouterLink>
       </div>
 
       <!-- 3. Manual / professional design -->
-      <div class="bg-white border border-gray-200 rounded-2xl p-6 flex flex-col shadow-sm hover:shadow-md transition relative">
-        <span class="absolute top-4 right-4 bg-amber-100 text-amber-900 text-xs font-bold px-2.5 py-1 rounded-full">
-          Innen 2–3 virkedager
+      <div class="hub-card">
+        <span class="hub-tag hub-tag-gold">
+          <i class="fa-solid fa-clock"></i> Innen 2–3 virkedager
         </span>
-        <div class="text-4xl mb-4">🎨</div>
-        <h2 class="text-xl font-bold text-gray-900 mb-2">Vi designer for deg</h2>
-        <p class="text-sm text-gray-600 flex-1 mb-4">
+        <div class="hub-ico">
+          <i class="fa-solid fa-palette"></i>
+        </div>
+        <h2 class="display" style="font-size:21px;color:var(--text);margin-bottom:10px">
+          Vi designer for deg
+        </h2>
+        <p style="font-size:14.5px;color:var(--muted);flex:1;margin-bottom:16px">
           Velg mal og fyll inn ønskene dine — teamet vårt designer banneret og sender deg
           en forhåndsvisning til godkjenning. Én gratis korrigering inkludert.
         </p>
-        <div class="text-sm font-semibold text-gray-700 mb-4">
-          495 kr
+        <div style="font-size:14px;color:var(--faint);margin-bottom:18px">
+          <b style="color:var(--text);font-family:var(--font-display);font-size:22px;font-weight:700">495 kr</b>
+          <span style="font-size:13px;margin-left:4px">for designtjeneste</span>
         </div>
-        <RouterLink
-          to="/banner-builder/manual"
-          class="mt-auto block text-center bg-amber-600 hover:bg-amber-700 text-white font-semibold px-5 py-2.5 rounded-lg text-sm transition"
-        >
+        <RouterLink to="/banner-builder/manual" class="btn btn-soft" style="justify-content:center;width:100%">
           Bestill design →
         </RouterLink>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.hub-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+@media (max-width: 768px) {
+  .hub-grid { grid-template-columns: 1fr; }
+}
+
+.hub-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.18s, transform 0.18s;
+}
+.hub-card:hover {
+  border-color: var(--line);
+  transform: translateY(-3px);
+}
+.hub-feat {
+  border-color: rgba(255,106,61,.4);
+  background: linear-gradient(170deg, rgba(255,106,61,.07), var(--surface));
+}
+
+.hub-ico {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  color: var(--muted);
+  margin-bottom: 18px;
+}
+.hub-ico-accent {
+  background: rgba(255,106,61,.14);
+  border-color: rgba(255,106,61,.3);
+  color: var(--accent);
+}
+
+.hub-tag {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-2);
+  background: rgba(255,106,61,.12);
+  border: 1px solid rgba(255,106,61,.25);
+  padding: 4px 10px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.hub-tag-gold {
+  color: var(--gold);
+  background: rgba(231,185,78,.12);
+  border-color: rgba(231,185,78,.28);
+}
+</style>

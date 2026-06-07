@@ -84,15 +84,15 @@ const step2Valid = computed(
     themeDescription.value.trim().length > 0,
 )
 
-// ── Category emojis ───────────────────────────────────────────────────────────
-const categoryEmoji: Record<string, string> = {
-  Birthday: '🎂',
-  Confirmation: '⛪',
-  Wedding: '💍',
-  Anniversary: '🎉',
-  Christmas: '🎄',
-  NewYear: '🥂',
-  Other: '🎊',
+// ── Category icons (FontAwesome) ──────────────────────────────────────────────
+const categoryIconClass: Record<string, string> = {
+  Birthday: 'fa-cake-candles',
+  Confirmation: 'fa-graduation-cap',
+  Wedding: 'fa-ring',
+  Anniversary: 'fa-champagne-glasses',
+  Christmas: 'fa-tree',
+  NewYear: 'fa-champagne-glasses',
+  Other: 'fa-gift',
 }
 
 // ── Load templates ────────────────────────────────────────────────────────────
@@ -215,12 +215,12 @@ async function initStripe() {
     const card = elements.create('card', {
       style: {
         base: {
-          fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+          fontFamily: 'Hanken Grotesk, ui-sans-serif, system-ui, sans-serif',
           fontSize: '16px',
-          color: '#111827',
-          '::placeholder': { color: '#9ca3af' },
+          color: '#f4efe8',
+          '::placeholder': { color: '#8a8073' },
         },
-        invalid: { color: '#ef4444' },
+        invalid: { color: '#ff6a3d' },
       },
       hidePostalCode: true,
     })
@@ -313,87 +313,75 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="max-w-4xl mx-auto px-4 py-8 sm:py-12">
+  <div style="max-width:960px;margin:0 auto;padding:2rem 1.5rem 4rem">
     <!-- Header -->
-    <header class="mb-8 text-center">
-      <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 mb-3">
+    <header style="margin-bottom:2.5rem;text-align:center">
+      <h1 class="display" style="font-size:clamp(28px,4vw,44px);color:var(--text);margin-bottom:12px">
         Manuelt designet feiringsbanner
       </h1>
-      <p class="text-lg text-gray-600 max-w-2xl mx-auto">
+      <p style="font-size:18px;color:var(--muted);max-width:36em;margin:0 auto">
         Beskriv ønsket og legg ved et portrettfoto — vi designer banneret manuelt og sender deg en
         forhåndsvisning innen 2–3 virkedager.
-        <strong class="text-gray-900">{{ formatNok(495) }}</strong>.
+        <strong style="color:var(--text)">{{ formatNok(495) }}</strong>.
       </p>
     </header>
 
     <!-- Auth guard -->
-    <div
-      v-if="!auth.isLoggedIn"
-      class="mb-8 bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 text-sm text-amber-900"
-    >
-      <strong>Du må være innlogget</strong> for å bestille et manuelt banner.
-      <RouterLink to="/login?redirect=/banner-builder/manual" class="underline font-medium ml-1">
-        Logg inn
-      </RouterLink>
-      eller
-      <RouterLink to="/register" class="underline font-medium">registrer deg</RouterLink>
-      for å fortsette.
+    <div v-if="!auth.isLoggedIn" class="notice-gold" style="margin-bottom:2rem">
+      <i class="fa-solid fa-circle-info"></i>
+      <span>
+        <strong>Du må være innlogget</strong> for å bestille et manuelt banner.
+        <RouterLink to="/login?redirect=/banner-builder/manual" style="color:var(--accent);font-weight:600">Logg inn</RouterLink>
+        eller
+        <RouterLink to="/register" style="color:var(--accent);font-weight:600">registrer deg</RouterLink>
+        for å fortsette.
+      </span>
     </div>
 
     <!-- ── Post-payment confirmation ───────────────────────────────────── -->
-    <div v-if="phase === 'confirmed'" class="text-center py-16">
-      <div class="text-6xl mb-6">🎉</div>
-      <h2 class="text-3xl font-bold text-gray-900 mb-3">Bestillingen er mottatt!</h2>
-      <p class="text-lg text-gray-600 max-w-xl mx-auto mb-8">
+    <div v-if="phase === 'confirmed'" style="text-align:center;padding:5rem 0">
+      <div style="width:80px;height:80px;border-radius:50%;background:rgba(255,106,61,.15);border:2px solid rgba(255,106,61,.3);display:grid;place-items:center;margin:0 auto 24px;font-size:36px">
+        <i class="fa-solid fa-envelope-open-text" style="color:var(--accent)"></i>
+      </div>
+      <h2 class="display" style="font-size:32px;color:var(--text);margin-bottom:12px">Bestillingen er mottatt!</h2>
+      <p style="font-size:18px;color:var(--muted);max-width:36em;margin:0 auto 30px">
         Du vil motta en e-post når designforslaget er klart til godkjenning.
-        Vi leverer innen <strong>2–3 virkedager</strong>.
+        Vi leverer innen <strong style="color:var(--text)">2–3 virkedager</strong>.
       </p>
-      <RouterLink
-        to="/account/design-requests"
-        class="inline-block bg-blue-700 hover:bg-blue-800 text-white font-semibold px-8 py-3 rounded-xl transition"
-      >
-        Se mine design-bestillinger
+      <RouterLink to="/account/design-requests" class="btn btn-primary" style="font-size:16px;padding:13px 28px">
+        <i class="fa-solid fa-palette"></i> Se mine design-bestillinger
       </RouterLink>
     </div>
 
     <!-- ── Stepper UI ─────────────────────────────────────────────────── -->
     <template v-else>
       <!-- Step indicator -->
-      <nav class="mb-8 flex items-center gap-2 sm:gap-4" aria-label="Steg">
+      <nav class="step-nav" style="margin-bottom:2rem" aria-label="Steg">
         <button
           v-for="(label, idx) in ['Velg mal', 'Tilpass', 'Betal']"
           :key="idx"
           type="button"
-          class="flex items-center gap-2 text-sm font-medium transition"
-          :class="step === idx + 1
-            ? 'text-blue-700'
-            : step > idx + 1
-              ? 'text-gray-500 hover:text-blue-600 cursor-pointer'
-              : 'text-gray-400 cursor-default'"
+          class="step-nav-btn"
+          :class="{
+            'step-active': step === idx + 1,
+            'step-done': step > idx + 1,
+            'step-future': step < idx + 1,
+          }"
           :disabled="idx + 1 > step"
           @click="idx + 1 < step ? (step = (idx + 1) as 1 | 2 | 3) : undefined"
         >
           <span
-            class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-            :class="step > idx + 1
-              ? 'bg-green-600 text-white'
-              : step === idx + 1
-                ? 'bg-blue-700 text-white'
-                : 'bg-gray-200 text-gray-500'"
+            class="step-circle"
+            :class="{
+              'step-circle-active': step === idx + 1,
+              'step-circle-done': step > idx + 1,
+              'step-circle-future': step < idx + 1,
+            }"
           >
-            <svg
-              v-if="step > idx + 1"
-              class="w-4 h-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="3"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
+            <i v-if="step > idx + 1" class="fa-solid fa-check" style="font-size:11px"></i>
             <span v-else>{{ idx + 1 }}</span>
           </span>
-          <span class="hidden sm:inline">{{ label }}</span>
+          <span class="step-label">{{ label }}</span>
         </button>
       </nav>
 
@@ -401,34 +389,31 @@ onBeforeUnmount(() => {
            STEP 1: Choose template + upload photo (required) + language
       ════════════════════════════════════════════════════════════════════════ -->
       <div v-if="step === 1">
-        <div v-if="templatesLoading" class="text-center text-gray-500 py-12">Laster maler…</div>
-        <div
-          v-else-if="templatesError"
-          class="bg-red-50 border border-red-200 text-red-800 rounded-xl p-6 text-center"
-        >
+        <div v-if="templatesLoading" style="text-align:center;color:var(--muted);padding:3rem 0">
+          <i class="fa-solid fa-circle-notch fa-spin" style="font-size:24px;margin-bottom:12px;display:block;color:var(--accent)"></i>
+          Laster maler…
+        </div>
+        <div v-else-if="templatesError" class="error-box" style="justify-content:center;flex-direction:column;text-align:center;padding:2rem">
+          <i class="fa-solid fa-circle-exclamation" style="font-size:24px;margin-bottom:8px"></i>
           {{ templatesError }}
-          <button class="mt-3 underline" @click="loadTemplates">Prøv igjen</button>
+          <button style="margin-top:12px;color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600;font-size:14px" @click="loadTemplates">Prøv igjen</button>
         </div>
         <template v-else>
           <!-- Language toggle -->
-          <div class="mb-6 flex items-center gap-3">
-            <span class="text-sm font-medium text-gray-700">Språk:</span>
+          <div style="margin-bottom:24px;display:flex;align-items:center;gap:12px">
+            <span style="font-size:14px;font-weight:600;color:var(--muted)">Språk:</span>
             <button
               type="button"
-              class="border-2 rounded-lg px-4 py-1.5 text-sm font-medium transition"
-              :class="language === 'nb'
-                ? 'border-blue-700 bg-blue-50 text-blue-800'
-                : 'border-gray-200 text-gray-600 hover:border-gray-300'"
+              class="lang-btn"
+              :class="{ 'lang-btn-active': language === 'nb' }"
               @click="language = 'nb'"
             >
               🇳🇴 Norsk
             </button>
             <button
               type="button"
-              class="border-2 rounded-lg px-4 py-1.5 text-sm font-medium transition"
-              :class="language === 'en'
-                ? 'border-blue-700 bg-blue-50 text-blue-800'
-                : 'border-gray-200 text-gray-600 hover:border-gray-300'"
+              class="lang-btn"
+              :class="{ 'lang-btn-active': language === 'en' }"
               @click="language = 'en'"
             >
               🇬🇧 English
@@ -436,21 +421,21 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- Template grid -->
-          <div class="mb-8">
-            <h2 class="text-xl font-semibold text-gray-900 mb-4">Velg feiringsmal</h2>
-            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          <div style="margin-bottom:2rem">
+            <h2 class="display" style="font-size:20px;color:var(--text);margin-bottom:16px">Velg feiringsmal</h2>
+            <div class="tpl-grid">
               <button
                 v-for="t in templates"
                 :key="t.id"
                 type="button"
-                class="flex flex-col items-center gap-2 border-2 rounded-xl p-4 transition hover:shadow-md"
-                :class="selectedTemplateId === t.id
-                  ? 'border-blue-700 ring-2 ring-blue-200 bg-blue-50 shadow-md'
-                  : 'border-gray-200 bg-white'"
+                class="tpl-card"
+                :class="{ 'tpl-card-sel': selectedTemplateId === t.id }"
                 @click="selectedTemplateId = t.id"
               >
-                <span class="text-4xl leading-none">{{ categoryEmoji[t.category] ?? '🎊' }}</span>
-                <span class="text-sm font-semibold text-gray-900 text-center leading-tight">
+                <span class="tpl-ico">
+                  <i :class="['fa-solid', categoryIconClass[t.category] ?? 'fa-star']"></i>
+                </span>
+                <span style="font-size:13.5px;font-weight:600;color:var(--text);text-align:center;line-height:1.3">
                   {{ language === 'en' ? t.nameEn : t.nameNb }}
                 </span>
               </button>
@@ -458,36 +443,33 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- Portrait photo upload — REQUIRED -->
-          <div class="mb-8">
-            <h2 class="text-xl font-semibold text-gray-900 mb-1">
+          <div style="margin-bottom:2rem">
+            <h2 class="display" style="font-size:20px;color:var(--text);margin-bottom:4px">
               Portrettfoto
-              <span class="text-red-500 ml-1">*</span>
-              <span class="text-base font-normal text-gray-500 ml-2">(obligatorisk)</span>
+              <span style="color:var(--accent)">*</span>
+              <span style="font-size:14px;font-weight:400;color:var(--faint);margin-left:8px">(obligatorisk)</span>
             </h2>
-            <p class="text-sm text-gray-600 mb-4">
+            <p style="font-size:14px;color:var(--muted);margin-bottom:16px">
               Vi trenger et bilde av personen som feires for å designe banneret.
               Designeren vil bruke bildet som referanse.
             </p>
 
-            <div v-if="photoPreviewUrl" class="flex items-start gap-4">
+            <div v-if="photoPreviewUrl" style="display:flex;align-items:flex-start;gap:18px">
               <img
                 :src="photoPreviewUrl"
                 alt="Opplastet portrettfoto"
-                class="w-32 h-32 object-cover rounded-xl border border-gray-200 shadow-sm"
+                style="width:120px;height:120px;object-fit:cover;border-radius:12px;border:1px solid var(--line-soft)"
               />
-              <div class="flex flex-col gap-2 mt-2">
-                <span class="text-sm text-green-700 font-medium flex items-center gap-1">
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                  Foto lastet opp
+              <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+                <span style="font-size:14px;color:#4ade80;font-weight:600;display:flex;align-items:center;gap:7px">
+                  <i class="fa-solid fa-circle-check"></i> Foto lastet opp
                 </span>
                 <button
                   type="button"
-                  class="text-sm text-red-600 hover:text-red-800 underline"
+                  style="font-size:13.5px;color:var(--accent);font-weight:600;background:none;border:none;cursor:pointer;padding:0;text-align:left"
                   @click="removePhoto"
                 >
-                  Fjern og velg nytt foto
+                  <i class="fa-solid fa-trash-can" style="font-size:12px"></i> Fjern og velg nytt foto
                 </button>
               </div>
             </div>
@@ -496,13 +478,8 @@ onBeforeUnmount(() => {
               <div
                 role="button"
                 tabindex="0"
-                class="relative w-full rounded-xl border-2 border-dashed transition cursor-pointer select-none flex flex-col items-center justify-center text-center px-6 py-8"
-                :class="[
-                  photoDragging
-                    ? 'border-blue-600 bg-blue-50'
-                    : 'border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400',
-                  photoUploading ? 'opacity-60 cursor-progress' : '',
-                ]"
+                class="upload-zone"
+                :class="{ 'upload-zone-drag': photoDragging, 'upload-zone-busy': photoUploading }"
                 @click="openPhotoPicker"
                 @keydown.enter.prevent="openPhotoPicker"
                 @keydown.space.prevent="openPhotoPicker"
@@ -513,74 +490,55 @@ onBeforeUnmount(() => {
                 <input
                   ref="photoFileInput"
                   type="file"
-                  class="hidden"
+                  style="display:none"
                   accept="image/jpeg,image/png,image/webp"
                   @change="onPhotoFileChange"
                 />
-                <svg class="w-10 h-10 text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="1.5"
-                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                  />
-                </svg>
-                <p class="text-sm font-semibold text-gray-900 mb-0.5">
+                <i class="fa-solid fa-user-circle" style="font-size:36px;color:var(--faint);margin-bottom:10px"></i>
+                <p style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px">
                   Slipp bilde her, eller klikk for å velge
                 </p>
-                <p class="text-xs text-gray-500">JPEG, PNG, WEBP – maks 10 MB</p>
+                <p style="font-size:12.5px;color:var(--faint)">JPEG, PNG, WEBP – maks 10 MB</p>
 
                 <!-- Upload progress overlay -->
-                <div
-                  v-if="photoUploading"
-                  class="absolute inset-0 flex flex-col items-center justify-center bg-white/80 rounded-xl"
-                >
-                  <div class="w-2/3 max-w-xs">
-                    <div class="text-sm font-medium text-gray-800 text-center mb-2">
+                <div v-if="photoUploading" class="upload-overlay">
+                  <div style="width:66%;max-width:260px">
+                    <div style="font-size:14px;font-weight:600;color:var(--text);text-align:center;margin-bottom:10px">
                       Laster opp… {{ photoUploadProgress }}%
                     </div>
-                    <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div style="width:100%;height:6px;background:var(--line);border-radius:999px;overflow:hidden">
                       <div
-                        class="h-full bg-blue-600 transition-all"
+                        style="height:100%;background:var(--accent);border-radius:999px;transition:width .2s"
                         :style="{ width: `${photoUploadProgress}%` }"
                       />
                     </div>
                   </div>
                 </div>
               </div>
-              <p
-                v-if="photoUploadError"
-                class="mt-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2"
-              >
-                {{ photoUploadError }}
-              </p>
+              <div v-if="photoUploadError" class="error-box" style="margin-top:10px">
+                <i class="fa-solid fa-circle-exclamation"></i> {{ photoUploadError }}
+              </div>
             </div>
           </div>
 
           <!-- Next button -->
-          <div class="flex justify-end">
+          <div style="display:flex;justify-content:flex-end;flex-direction:column;align-items:flex-end;gap:8px">
             <button
               type="button"
-              class="bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold px-8 py-3 rounded-lg transition"
+              class="btn btn-primary"
+              style="padding:12px 28px;font-size:15px"
               :disabled="!step1Valid"
               @click="goToStep(2)"
             >
-              Neste: Tilpass →
+              Neste: Tilpass <i class="fa-solid fa-arrow-right" style="font-size:12px"></i>
             </button>
+            <p v-if="!selectedTemplateId" style="font-size:12px;color:var(--faint)">
+              Velg en mal for å gå videre
+            </p>
+            <p v-else-if="!uploadedPhotoBannerDesignId && !photoUploading" style="font-size:12px;color:var(--faint)">
+              Last opp et portrettfoto for å gå videre
+            </p>
           </div>
-
-          <p
-            v-if="!selectedTemplateId"
-            class="mt-2 text-right text-xs text-gray-400"
-          >
-            Velg en mal for å gå videre
-          </p>
-          <p
-            v-else-if="!uploadedPhotoBannerDesignId && !photoUploading"
-            class="mt-2 text-right text-xs text-gray-400"
-          >
-            Last opp et portrettfoto for å gå videre
-          </p>
         </template>
       </div>
 
@@ -588,26 +546,26 @@ onBeforeUnmount(() => {
            STEP 2: Personalize
       ════════════════════════════════════════════════════════════════════════ -->
       <div v-else-if="step === 2">
-        <div class="bg-white border border-gray-200 rounded-xl p-6 sm:p-8 space-y-5">
+        <div class="bb-panel" style="display:grid;gap:20px">
           <!-- Person name -->
           <div>
-            <label for="personName" class="block text-sm font-semibold text-gray-800 mb-1">
-              Navn <span class="text-red-500">*</span>
+            <label for="personName" class="field-label">
+              Navn <span style="color:var(--accent)">*</span>
             </label>
             <input
               id="personName"
               v-model="personName"
               type="text"
               maxlength="200"
-              class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              class="dark-input"
               placeholder="f.eks. Ole Petter"
             />
           </div>
 
           <!-- Age -->
           <div>
-            <label for="personAge" class="block text-sm font-semibold text-gray-800 mb-1">
-              Alder <span class="text-gray-400 font-normal">(valgfritt)</span>
+            <label for="personAge" class="field-label">
+              Alder <span style="color:var(--faint);font-weight:400">(valgfritt)</span>
             </label>
             <input
               id="personAge"
@@ -615,73 +573,71 @@ onBeforeUnmount(() => {
               type="number"
               min="0"
               max="130"
-              class="w-32 border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              class="dark-input"
+              style="width:120px"
               placeholder="f.eks. 50"
             />
           </div>
 
           <!-- Banner text -->
           <div>
-            <label for="textContent" class="block text-sm font-semibold text-gray-800 mb-1">
-              Tekst på banneret <span class="text-red-500">*</span>
+            <label for="textContent" class="field-label">
+              Tekst på banneret <span style="color:var(--accent)">*</span>
             </label>
             <textarea
               id="textContent"
               v-model="textContent"
               rows="3"
               maxlength="500"
-              class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+              class="dark-input"
+              style="resize:none"
               placeholder="f.eks. Gratulerer med 50-årsdagen!"
             />
-            <p class="mt-1 text-xs text-gray-500">{{ textContent.length }} / 500 tegn</p>
+            <p style="margin-top:5px;font-size:12px;color:var(--faint)">{{ textContent.length }} / 500 tegn</p>
           </div>
 
           <!-- Theme description -->
           <div>
-            <label for="themeDescription" class="block text-sm font-semibold text-gray-800 mb-1">
-              Tema / stil <span class="text-red-500">*</span>
+            <label for="themeDescription" class="field-label">
+              Tema / stil <span style="color:var(--accent)">*</span>
             </label>
             <input
               id="themeDescription"
               v-model="themeDescription"
               type="text"
               maxlength="500"
-              class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              class="dark-input"
               placeholder="f.eks. Tropisk fest, lilla og gull"
             />
           </div>
 
           <!-- Aspect ratio -->
           <div>
-            <div class="text-sm font-semibold text-gray-800 mb-2">Størrelsesformat</div>
-            <div class="flex gap-3">
+            <div class="field-label" style="margin-bottom:10px">Størrelsesformat</div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
               <button
                 type="button"
-                class="border-2 rounded-xl px-5 py-3 text-sm font-medium transition flex-1 sm:flex-none"
-                :class="aspectRatio === '16:9'
-                  ? 'border-blue-700 bg-blue-50 text-blue-800'
-                  : 'border-gray-200 text-gray-700 hover:border-gray-300'"
+                class="ratio-btn"
+                :class="{ 'ratio-btn-active': aspectRatio === '16:9' }"
                 @click="aspectRatio = '16:9'"
               >
-                <div class="font-semibold">16:9 (Standard)</div>
-                <div class="text-xs mt-0.5 opacity-75">ca. 266 × 150 cm</div>
+                <div style="font-weight:700;margin-bottom:2px">16:9 (Standard)</div>
+                <div style="font-size:12px;opacity:.7">ca. 266 × 150 cm</div>
               </button>
               <button
                 type="button"
-                class="border-2 rounded-xl px-5 py-3 text-sm font-medium transition flex-1 sm:flex-none"
-                :class="aspectRatio === '18:9'
-                  ? 'border-blue-700 bg-blue-50 text-blue-800'
-                  : 'border-gray-200 text-gray-700 hover:border-gray-300'"
+                class="ratio-btn"
+                :class="{ 'ratio-btn-active': aspectRatio === '18:9' }"
                 @click="aspectRatio = '18:9'"
               >
-                <div class="font-semibold">18:9 (Bred)</div>
-                <div class="text-xs mt-0.5 opacity-75">ca. 300 × 150 cm</div>
+                <div style="font-weight:700;margin-bottom:2px">18:9 (Bred)</div>
+                <div style="font-size:12px;opacity:.7">ca. 300 × 150 cm</div>
               </button>
             </div>
             <!-- Size preview -->
-            <div class="mt-4 bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center gap-4">
+            <div class="size-preview" style="margin-top:16px">
               <div
-                class="border-2 border-blue-400 bg-blue-50 rounded shrink-0 flex items-center justify-center text-xs text-blue-600 font-medium"
+                class="ratio-visual"
                 :style="aspectRatio === '16:9'
                   ? { width: '96px', height: '54px' }
                   : { width: '108px', height: '54px' }"
@@ -689,10 +645,10 @@ onBeforeUnmount(() => {
                 {{ aspectRatio }}
               </div>
               <div>
-                <div class="text-sm font-semibold text-gray-900">
+                <div style="font-size:14.5px;font-weight:700;color:var(--text)">
                   Ca. {{ aspectDimensions.width }} × {{ aspectDimensions.height }} cm
                 </div>
-                <div class="text-xs text-gray-500 mt-0.5">
+                <div style="font-size:12.5px;color:var(--faint);margin-top:2px">
                   {{ aspectRatio === '16:9'
                     ? 'Standard panoramabanner – passer de fleste anledninger'
                     : 'Bredere format – flott for lange vegger og rekkverk'
@@ -704,21 +660,18 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Nav buttons -->
-        <div class="mt-6 flex justify-between">
-          <button
-            type="button"
-            class="border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium px-6 py-2.5 rounded-lg transition"
-            @click="step = 1"
-          >
-            ← Tilbake
+        <div style="margin-top:24px;display:flex;justify-content:space-between">
+          <button type="button" class="btn btn-ghost" @click="step = 1">
+            <i class="fa-solid fa-arrow-left" style="font-size:12px"></i> Tilbake
           </button>
           <button
             type="button"
-            class="bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold px-8 py-3 rounded-lg transition"
+            class="btn btn-primary"
+            style="padding:12px 28px"
             :disabled="!step2Valid"
             @click="goToStep(3)"
           >
-            Neste: Se over og betal →
+            Neste: Se over og betal <i class="fa-solid fa-arrow-right" style="font-size:12px"></i>
           </button>
         </div>
       </div>
@@ -727,138 +680,131 @@ onBeforeUnmount(() => {
            STEP 3: Review + pay (495 kr)
       ════════════════════════════════════════════════════════════════════════ -->
       <div v-else-if="step === 3">
-        <div class="grid lg:grid-cols-5 gap-6">
+        <div style="display:grid;grid-template-columns:1.2fr .8fr;gap:24px" class="pay-grid">
 
           <!-- Left: Explanation + payment -->
-          <div class="lg:col-span-3 space-y-5">
+          <div style="display:grid;gap:20px">
 
             <!-- Information box -->
-            <div class="bg-blue-50 border border-blue-200 rounded-xl p-5 text-sm text-blue-900">
-              <div class="font-semibold text-blue-800 mb-2 flex items-center gap-2">
-                <span>🎨</span>
-                <span>Slik fungerer manuell design</span>
+            <div style="display:grid;gap:12px;background:rgba(255,106,61,.07);border:1px solid rgba(255,106,61,.25);border-radius:14px;padding:20px">
+              <div style="font-weight:700;color:var(--accent-2);display:flex;align-items:center;gap:8px;font-size:15px">
+                <i class="fa-solid fa-palette" style="color:var(--accent)"></i>
+                Slik fungerer manuell design
               </div>
-              <ul class="space-y-1.5 text-blue-800">
-                <li class="flex items-start gap-2">
-                  <span class="mt-0.5 text-blue-500 shrink-0">✓</span>
+              <ul style="display:grid;gap:9px;list-style:none;padding:0;margin:0">
+                <li style="display:flex;align-items:flex-start;gap:10px;font-size:14px;color:var(--muted)">
+                  <i class="fa-solid fa-check" style="color:var(--accent);margin-top:2px;flex-shrink:0"></i>
                   Vi designer banneret ditt manuelt og sender deg en forhåndsvisning innen 2–3 virkedager.
                 </li>
-                <li class="flex items-start gap-2">
-                  <span class="mt-0.5 text-blue-500 shrink-0">✓</span>
+                <li style="display:flex;align-items:flex-start;gap:10px;font-size:14px;color:var(--muted)">
+                  <i class="fa-solid fa-check" style="color:var(--accent);margin-top:2px;flex-shrink:0"></i>
                   Du kan be om én gratis korrigering.
                 </li>
-                <li class="flex items-start gap-2">
-                  <span class="mt-0.5 text-blue-500 shrink-0">✓</span>
+                <li style="display:flex;align-items:flex-start;gap:10px;font-size:14px;color:var(--muted)">
+                  <i class="fa-solid fa-check" style="color:var(--accent);margin-top:2px;flex-shrink:0"></i>
                   Deretter godkjenner du og banneret sendes i produksjon.
                 </li>
               </ul>
             </div>
 
             <!-- Stripe not configured -->
-            <div
-              v-if="stripeError"
-              class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800"
-            >
-              <strong>Stripe ikke tilgjengelig:</strong> {{ stripeError }}
+            <div v-if="stripeError" class="notice-gold">
+              <i class="fa-solid fa-triangle-exclamation"></i>
+              <span><strong>Stripe ikke tilgjengelig:</strong> {{ stripeError }}</span>
             </div>
 
             <template v-else>
-              <section class="bg-white border border-gray-200 rounded-xl p-6">
-                <h2 class="text-lg font-semibold text-gray-900 mb-4">
+              <section class="bb-panel">
+                <h2 class="display" style="font-size:18px;color:var(--text);margin-bottom:18px;display:flex;align-items:center;gap:10px">
+                  <i class="fa-solid fa-credit-card" style="color:var(--accent)"></i>
                   Kortbetaling
-                  <span class="ml-2 text-xs font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                  <span style="font-size:12px;font-weight:400;color:var(--faint);background:var(--surface-2);border:1px solid var(--line);padding:3px 10px;border-radius:6px;font-family:var(--font-ui)">
                     Sikret av Stripe
                   </span>
                 </h2>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Kortdetaljer</label>
-                <div
-                  ref="cardMountEl"
-                  class="border border-gray-300 rounded-lg px-3 py-3 min-h-[44px] focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition"
-                />
-                <p v-if="stripeCardError" class="mt-2 text-sm text-red-600">
-                  {{ stripeCardError }}
+                <label class="field-label" style="margin-bottom:8px">Kortdetaljer</label>
+                <div ref="cardMountEl" class="stripe-mount" />
+                <p v-if="stripeCardError" class="error-box" style="margin-top:10px">
+                  <i class="fa-solid fa-circle-exclamation"></i> {{ stripeCardError }}
                 </p>
               </section>
 
-              <p
-                v-if="paymentApiError"
-                class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3"
-              >
-                {{ paymentApiError }}
-              </p>
+              <div v-if="paymentApiError" class="error-box">
+                <i class="fa-solid fa-circle-exclamation"></i> {{ paymentApiError }}
+              </div>
 
               <button
                 type="button"
-                class="w-full bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-xl transition flex items-center justify-center gap-2 text-base"
+                class="btn btn-primary"
+                style="width:100%;justify-content:center;padding:15px;font-size:16px;border-radius:13px"
                 :disabled="processingPayment || !stripeReady"
                 @click="pay"
               >
-                <span
-                  v-if="processingPayment"
-                  class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"
-                />
-                <span>{{ processingPayment ? 'Behandler…' : 'Bestill og betal 495 kr' }}</span>
+                <i v-if="processingPayment" class="fa-solid fa-circle-notch fa-spin"></i>
+                <i v-else class="fa-solid fa-palette"></i>
+                {{ processingPayment ? 'Behandler…' : 'Bestill og betal 495 kr' }}
               </button>
 
-              <p class="text-xs text-gray-500 text-center">
-                🔒 Betalingen er kryptert og håndteres av Stripe. Vi lagrer ikke kortinformasjon.
+              <p style="font-size:12.5px;color:var(--faint);text-align:center;display:flex;align-items:center;justify-content:center;gap:6px">
+                <i class="fa-solid fa-lock"></i>
+                Betalingen er kryptert og håndteres av Stripe. Vi lagrer ikke kortinformasjon.
               </p>
             </template>
           </div>
 
           <!-- Right: Summary -->
-          <aside class="lg:col-span-2">
-            <div class="bg-white border border-gray-200 rounded-xl p-6 sticky top-4 space-y-4 text-sm">
-              <h2 class="text-base font-semibold text-gray-900">Oppsummering</h2>
+          <aside>
+            <div class="bb-panel" style="position:sticky;top:20px;display:grid;gap:16px">
+              <h2 class="display" style="font-size:17px;color:var(--text)">Oppsummering</h2>
 
-              <dl class="space-y-2">
+              <dl style="display:grid;gap:12px">
                 <div>
-                  <dt class="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-0.5">Mal</dt>
-                  <dd class="text-gray-900 font-medium flex items-center gap-1.5">
-                    <span>{{ categoryEmoji[selectedTemplate?.category ?? ''] ?? '🎊' }}</span>
-                    <span>{{ templateName }}</span>
+                  <dt class="field-label" style="margin-bottom:3px">Mal</dt>
+                  <dd style="color:var(--text);font-weight:600;display:flex;align-items:center;gap:8px">
+                    <i :class="['fa-solid', categoryIconClass[selectedTemplate?.category ?? ''] ?? 'fa-star']" style="color:var(--accent)"></i>
+                    {{ templateName }}
                   </dd>
                 </div>
                 <div>
-                  <dt class="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-0.5">Navn</dt>
-                  <dd class="text-gray-900">{{ personName }}<span v-if="personAge">, {{ personAge }} år</span></dd>
+                  <dt class="field-label" style="margin-bottom:3px">Navn</dt>
+                  <dd style="color:var(--text)">{{ personName }}<span v-if="personAge">, {{ personAge }} år</span></dd>
                 </div>
                 <div>
-                  <dt class="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-0.5">Bannertekst</dt>
-                  <dd class="text-gray-900 italic">{{ textContent }}</dd>
+                  <dt class="field-label" style="margin-bottom:3px">Bannertekst</dt>
+                  <dd style="color:var(--muted);font-style:italic">{{ textContent }}</dd>
                 </div>
                 <div>
-                  <dt class="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-0.5">Tema</dt>
-                  <dd class="text-gray-900">{{ themeDescription }}</dd>
+                  <dt class="field-label" style="margin-bottom:3px">Tema</dt>
+                  <dd style="color:var(--text)">{{ themeDescription }}</dd>
                 </div>
                 <div>
-                  <dt class="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-0.5">Format</dt>
-                  <dd class="text-gray-900">{{ aspectRatio }} — ca. {{ aspectDimensions.width }} × {{ aspectDimensions.height }} cm</dd>
+                  <dt class="field-label" style="margin-bottom:3px">Format</dt>
+                  <dd style="color:var(--text)">{{ aspectRatio }} — ca. {{ aspectDimensions.width }} × {{ aspectDimensions.height }} cm</dd>
                 </div>
                 <div>
-                  <dt class="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-0.5">Portrettfoto</dt>
-                  <dd class="text-gray-900 flex items-center gap-2">
+                  <dt class="field-label" style="margin-bottom:3px">Portrettfoto</dt>
+                  <dd style="color:var(--text);display:flex;align-items:center;gap:8px">
                     <img
                       v-if="photoPreviewUrl"
                       :src="photoPreviewUrl"
-                      class="w-10 h-10 object-cover rounded border border-gray-200"
+                      style="width:38px;height:38px;object-fit:cover;border-radius:8px;border:1px solid var(--line-soft)"
                       alt="Portrettfoto"
                     />
-                    <span>Lastet opp ✓</span>
+                    <span><i class="fa-solid fa-circle-check" style="color:#4ade80"></i> Lastet opp</span>
                   </dd>
                 </div>
                 <div>
-                  <dt class="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-0.5">Språk</dt>
-                  <dd class="text-gray-900">{{ language === 'nb' ? '🇳🇴 Norsk' : '🇬🇧 English' }}</dd>
+                  <dt class="field-label" style="margin-bottom:3px">Språk</dt>
+                  <dd style="color:var(--text)">{{ language === 'nb' ? '🇳🇴 Norsk' : '🇬🇧 English' }}</dd>
                 </div>
               </dl>
 
-              <div class="border-t border-gray-200 pt-3 flex justify-between font-semibold text-base">
-                <span class="text-gray-900">Totalt</span>
-                <span class="text-blue-700">495 kr</span>
+              <div style="border-top:1px solid var(--line-soft);padding-top:14px;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-weight:700;color:var(--text)">Totalt</span>
+                <span style="font-weight:800;color:var(--accent);font-size:20px;font-family:var(--font-display)">495 kr</span>
               </div>
 
-              <p class="text-xs text-gray-400">
+              <p style="font-size:12.5px;color:var(--faint)">
                 Inkl. én gratis korrigering og levering innen 2–3 virkedager.
               </p>
             </div>
@@ -866,16 +812,262 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Back button -->
-        <div class="mt-6 flex justify-start">
-          <button
-            type="button"
-            class="border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium px-6 py-2.5 rounded-lg transition"
-            @click="step = 2"
-          >
-            ← Tilbake
+        <div style="margin-top:24px">
+          <button type="button" class="btn btn-ghost" @click="step = 2">
+            <i class="fa-solid fa-arrow-left" style="font-size:12px"></i> Tilbake
           </button>
         </div>
       </div>
     </template>
   </div>
 </template>
+
+<style scoped>
+/* ── Step indicator ──────────────────────────────────────────── */
+.step-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.step-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  transition: color 0.15s;
+}
+.step-active { color: var(--text); cursor: default; }
+.step-done { color: var(--muted); }
+.step-done:hover { color: var(--accent); }
+.step-future { color: var(--faint); cursor: default; }
+
+.step-circle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.step-circle-active { background: var(--accent); color: var(--accent-ink); }
+.step-circle-done { background: #3a9d7e; color: #fff; }
+.step-circle-future { background: var(--surface-2); color: var(--faint); border: 1px solid var(--line); }
+
+.step-label { display: none; }
+@media (min-width: 480px) { .step-label { display: inline; } }
+
+/* ── Language toggle ─────────────────────────────────────────── */
+.lang-btn {
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+}
+.lang-btn:hover { color: var(--text); }
+.lang-btn-active { border-color: var(--accent); color: var(--accent-2); background: rgba(255,106,61,.08); }
+
+/* ── Template grid ───────────────────────────────────────────── */
+.tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+@media (max-width: 600px) { .tpl-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.tpl-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  border: 2px solid var(--line-soft);
+  border-radius: 14px;
+  padding: 18px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+  background: var(--surface);
+  font-family: var(--font-ui);
+}
+.tpl-card:hover { border-color: var(--line); transform: translateY(-2px); }
+.tpl-card-sel {
+  border-color: var(--accent);
+  background: rgba(255,106,61,.07);
+  box-shadow: 0 0 0 2px rgba(255,106,61,.25);
+}
+.tpl-ico {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  color: var(--accent);
+}
+
+/* ── Photo upload zone ───────────────────────────────────────── */
+.upload-zone {
+  position: relative;
+  width: 100%;
+  border-radius: 14px;
+  border: 2px dashed var(--line);
+  background: var(--surface-2);
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  transition: border-color 0.15s, background 0.15s;
+}
+.upload-zone:hover { border-color: var(--accent); background: rgba(255,106,61,.05); }
+.upload-zone-drag { border-color: var(--accent); background: rgba(255,106,61,.1); }
+.upload-zone-busy { opacity: 0.6; cursor: progress; }
+
+.upload-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(21,18,14,.85);
+  border-radius: 12px;
+}
+
+/* ── Panel ───────────────────────────────────────────────────── */
+.bb-panel {
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 26px;
+}
+
+/* ── Form inputs ─────────────────────────────────────────────── */
+.field-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.dark-input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 15px;
+  color: var(--text);
+  font-family: var(--font-ui);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.dark-input::placeholder { color: var(--faint); }
+.dark-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,106,61,.18); }
+
+/* ── Aspect ratio buttons ────────────────────────────────────── */
+.ratio-btn {
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  text-align: left;
+}
+.ratio-btn:hover { color: var(--text); }
+.ratio-btn-active { border-color: var(--accent); color: var(--text); background: rgba(255,106,61,.08); }
+
+/* ── Size preview ────────────────────────────────────────────── */
+.size-preview {
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.ratio-visual {
+  border: 2px solid var(--accent);
+  background: rgba(255,106,61,.08);
+  border-radius: 6px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11.5px;
+  color: var(--accent-2);
+  font-weight: 700;
+}
+
+/* ── Stripe mount ────────────────────────────────────────────── */
+.stripe-mount {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  min-height: 44px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.stripe-mount:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255,106,61,.18);
+}
+
+/* ── Notices + errors ────────────────────────────────────────── */
+.notice-gold {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(231,185,78,.1);
+  border: 1px solid rgba(231,185,78,.28);
+  border-radius: 12px;
+  padding: 14px 18px;
+  font-size: 14px;
+  color: var(--gold);
+}
+.notice-gold i { margin-top: 2px; flex-shrink: 0; }
+.notice-gold a { color: var(--accent); font-weight: 600; text-decoration: none; }
+
+.error-box {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #f4a57a;
+  background: rgba(255,106,61,.1);
+  border: 1px solid rgba(255,106,61,.3);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+.error-box i { color: var(--accent); flex-shrink: 0; }
+
+/* ── Responsive ──────────────────────────────────────────────── */
+.pay-grid { grid-template-columns: 1.2fr .8fr; }
+@media (max-width: 768px) {
+  .pay-grid { grid-template-columns: 1fr !important; }
+}
+</style>

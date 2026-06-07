@@ -136,92 +136,94 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="max-w-5xl mx-auto px-4 py-8 sm:py-12">
+  <div style="max-width:1100px;margin:0 auto;padding:2rem 1.5rem 4rem">
     <!-- Header -->
-    <header class="mb-8 text-center">
-      <div class="mb-4">
+    <header style="margin-bottom:2.5rem;text-align:center">
+      <div style="margin-bottom:14px">
         <RouterLink
           to="/banner-builder"
-          class="text-sm text-blue-700 hover:underline"
+          style="font-size:14px;color:var(--accent);font-weight:600;display:inline-flex;align-items:center;gap:6px"
         >
-          ← Tilbake til bannervalgene
+          <i class="fa-solid fa-arrow-left" style="font-size:12px"></i> Tilbake til bannervalgene
         </RouterLink>
       </div>
-      <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 mb-3">
+      <h1 class="display" style="font-size:clamp(28px,4vw,44px);color:var(--text);margin-bottom:12px">
         Eget bilde eller PDF
       </h1>
-      <p class="text-lg text-gray-600 max-w-2xl mx-auto">
+      <p style="font-size:18px;color:var(--muted);max-width:36em;margin:0 auto 20px">
         Last opp din egen design — vi beregner størrelsen automatisk og trykker
         på det banneret du velger.
       </p>
-      <!-- AI builder promo card -->
+      <!-- AI builder promo -->
       <RouterLink
         to="/banner-builder/ai"
-        class="inline-flex items-center gap-2 mt-5 bg-purple-700 hover:bg-purple-800 text-white font-semibold px-5 py-2.5 rounded-lg text-sm shadow-sm transition"
+        class="btn btn-primary"
+        style="font-size:14px;padding:10px 20px"
       >
-        ✨ AI-generert feiringsbanner — 95 kr
+        <i class="fa-solid fa-wand-magic-sparkles"></i> AI-generert feiringsbanner — 95 kr
       </RouterLink>
     </header>
 
     <!-- Auth notice (page is public, but upload requires login) -->
     <div
       v-if="!auth.isLoggedIn && !design"
-      class="mb-6 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-900"
+      class="notice-gold"
+      style="margin-bottom:1.5rem"
     >
-      <strong>Tips:</strong> Du må være innlogget for å lagre designet ditt.
-      <RouterLink to="/login?redirect=/banner-builder" class="underline font-medium">
-        Logg inn
-      </RouterLink>
-      eller
-      <RouterLink to="/register" class="underline font-medium">
-        registrer en konto
-      </RouterLink>
-      før du laster opp.
+      <i class="fa-solid fa-circle-info"></i>
+      <span>
+        <strong>Tips:</strong> Du må være innlogget for å lagre designet ditt.
+        <RouterLink to="/login?redirect=/banner-builder" style="color:var(--accent);font-weight:600">Logg inn</RouterLink>
+        eller
+        <RouterLink to="/register" style="color:var(--accent);font-weight:600">registrer en konto</RouterLink>
+        før du laster opp.
+      </span>
     </div>
 
     <!-- Step 1: Upload -->
-    <section v-if="!design" class="mb-10">
-      <div class="flex items-baseline gap-3 mb-4">
-        <span class="bg-blue-700 text-white rounded-full w-7 h-7 flex items-center justify-center font-bold text-sm">1</span>
-        <h2 class="text-xl font-semibold text-gray-900">Last opp din design</h2>
+    <section v-if="!design" style="margin-bottom:2.5rem">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+        <span class="step-badge">1</span>
+        <h2 class="display" style="font-size:20px;color:var(--text)">Last opp din design</h2>
       </div>
       <UploadZone @uploaded="onUploaded" />
 
-      <!-- Empty-state hint -->
-      <div class="mt-6 grid sm:grid-cols-3 gap-3 text-sm text-gray-600">
-        <div class="bg-gray-50 rounded-lg p-3 border border-gray-200">
-          <div class="text-2xl mb-1">📐</div>
-          <strong class="text-gray-800 block">Automatisk størrelse</strong>
-          Vi beregner bredden ut fra bildets størrelsesforhold.
+      <!-- Hint cards -->
+      <div class="hint-grid" style="margin-top:20px">
+        <div class="hint-card">
+          <div class="hint-ico"><i class="fa-solid fa-ruler-combined"></i></div>
+          <strong style="color:var(--text);display:block;margin-bottom:4px">Automatisk størrelse</strong>
+          <span style="color:var(--muted);font-size:13.5px">Vi beregner bredden ut fra bildets størrelsesforhold.</span>
         </div>
-        <div class="bg-gray-50 rounded-lg p-3 border border-gray-200">
-          <div class="text-2xl mb-1">↻</div>
-          <strong class="text-gray-800 block">Roter</strong>
-          Snu bildet 90° om det er feil vei.
+        <div class="hint-card">
+          <div class="hint-ico"><i class="fa-solid fa-rotate"></i></div>
+          <strong style="color:var(--text);display:block;margin-bottom:4px">Roter</strong>
+          <span style="color:var(--muted);font-size:13.5px">Snu bildet 90° om det er feil vei.</span>
         </div>
-        <div class="bg-gray-50 rounded-lg p-3 border border-gray-200">
-          <div class="text-2xl mb-1">🧵</div>
-          <strong class="text-gray-800 block">Klar til trykk</strong>
-          Sydde kanter og maljer i hjørnene inkludert.
+        <div class="hint-card">
+          <div class="hint-ico"><i class="fa-solid fa-scissors"></i></div>
+          <strong style="color:var(--text);display:block;margin-bottom:4px">Klar til trykk</strong>
+          <span style="color:var(--muted);font-size:13.5px">Sydde kanter og maljer i hjørnene inkludert.</span>
         </div>
       </div>
     </section>
 
     <!-- Step 2: Preview + edit -->
     <template v-else>
-      <section class="grid lg:grid-cols-2 gap-8 mb-8">
-        <div class="bg-white border border-gray-200 rounded-xl p-6">
-          <div class="flex items-baseline justify-between mb-4">
-            <div class="flex items-baseline gap-3">
-              <span class="bg-blue-700 text-white rounded-full w-7 h-7 flex items-center justify-center font-bold text-sm">2</span>
-              <h2 class="text-xl font-semibold text-gray-900">Tilpass</h2>
+      <section style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:2rem" class="step-grid">
+        <!-- Preview / edit panel -->
+        <div class="bb-panel">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span class="step-badge">2</span>
+              <h2 class="display" style="font-size:20px;color:var(--text)">Tilpass</h2>
             </div>
             <button
               type="button"
-              class="text-sm text-gray-500 hover:text-blue-700 underline"
+              style="font-size:13.5px;color:var(--accent);font-weight:600;background:none;border:none;cursor:pointer;padding:0"
               @click="design = null"
             >
-              Last opp en annen
+              <i class="fa-solid fa-arrow-rotate-left" style="font-size:11px;margin-right:4px"></i> Last opp en annen
             </button>
           </div>
           <BannerPreviewEditor
@@ -233,88 +235,181 @@ onMounted(async () => {
           />
         </div>
 
-        <!-- Step 3: Dimensions summary + add to cart -->
-        <div class="bg-white border border-gray-200 rounded-xl p-6 flex flex-col">
-          <div class="flex items-baseline gap-3 mb-4">
-            <span class="bg-blue-700 text-white rounded-full w-7 h-7 flex items-center justify-center font-bold text-sm">3</span>
-            <h2 class="text-xl font-semibold text-gray-900">Oppsummering</h2>
+        <!-- Step 3: Summary + cart -->
+        <div class="bb-panel" style="display:flex;flex-direction:column">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+            <span class="step-badge">3</span>
+            <h2 class="display" style="font-size:20px;color:var(--text)">Oppsummering</h2>
           </div>
 
-          <div class="space-y-4 flex-1">
+          <div style="flex:1;display:grid;gap:18px">
             <div>
-              <div class="text-xs uppercase tracking-wider text-gray-500 font-semibold">Endelig størrelse</div>
-              <div class="text-2xl font-bold text-gray-900 mt-1">
+              <div class="field-label">Endelig størrelse</div>
+              <div class="display" style="font-size:26px;color:var(--text);margin-top:4px">
                 {{ computedWidthCm }} × {{ heightCm }} cm
               </div>
             </div>
 
             <div>
-              <div class="text-xs uppercase tracking-wider text-gray-500 font-semibold">Materiale</div>
-              <div class="text-base font-medium text-gray-900 mt-1">
+              <div class="field-label">Materiale</div>
+              <div style="font-size:15px;color:var(--text);margin-top:4px;font-weight:500">
                 {{ materialLabel }}
               </div>
-              <div v-if="selectedMaterial" class="text-xs text-gray-500">
+              <div v-if="selectedMaterial" style="font-size:12.5px;color:var(--faint);margin-top:2px">
                 Rull-bredde: {{ selectedMaterial.widthCm }} cm
               </div>
             </div>
 
             <!-- Quantity -->
-            <div class="flex items-center gap-3">
-              <label for="qty" class="text-sm text-gray-700 font-medium">Antall</label>
+            <div style="display:flex;align-items:center;gap:12px">
+              <label for="qty" style="font-size:14px;color:var(--muted);font-weight:600">Antall</label>
               <input
                 id="qty"
                 v-model.number="qty"
                 type="number"
                 min="1"
                 max="1000"
-                class="w-24 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="dark-input"
+                style="width:90px"
               />
             </div>
 
             <!-- Price box -->
-            <div class="border-t border-gray-200 pt-4">
-              <div class="flex justify-between text-sm">
-                <span class="text-gray-600">Stykkpris</span>
-                <span class="text-gray-900 font-medium">
-                  <span v-if="priceLoading || sizesLoading" class="text-gray-400">Beregner…</span>
+            <div style="border-top:1px solid var(--line-soft);padding-top:16px;display:grid;gap:8px">
+              <div style="display:flex;justify-content:space-between;font-size:14px">
+                <span style="color:var(--muted)">Stykkpris</span>
+                <span style="color:var(--text);font-weight:500">
+                  <span v-if="priceLoading || sizesLoading" style="color:var(--faint)">Beregner…</span>
                   <span v-else-if="customPriceNok != null">{{ formatNok(customPriceNok) }}</span>
-                  <span v-else class="text-gray-400">–</span>
+                  <span v-else style="color:var(--faint)">–</span>
                 </span>
               </div>
-              <div class="flex justify-between text-sm mt-1">
-                <span class="text-gray-600">Antall × pris</span>
-                <span class="text-gray-900 font-medium">
+              <div style="display:flex;justify-content:space-between;font-size:14px">
+                <span style="color:var(--muted)">Antall × pris</span>
+                <span style="color:var(--text);font-weight:500">
                   <span v-if="customPriceNok != null">{{ qty }} × {{ formatNok(customPriceNok) }}</span>
-                  <span v-else class="text-gray-400">–</span>
+                  <span v-else style="color:var(--faint)">–</span>
                 </span>
               </div>
-              <div class="flex justify-between text-base pt-2 mt-2 border-t border-gray-100">
-                <span class="font-semibold text-gray-900">Delsum</span>
-                <span class="font-bold text-blue-700">
+              <div style="display:flex;justify-content:space-between;font-size:16px;padding-top:10px;border-top:1px solid var(--line-soft)">
+                <span style="font-weight:700;color:var(--text)">Delsum</span>
+                <span style="font-weight:800;color:var(--accent)">
                   <span v-if="customPriceNok != null">{{ formatNok(lineTotal) }}</span>
-                  <span v-else class="text-gray-400">–</span>
+                  <span v-else style="color:var(--faint)">–</span>
                 </span>
               </div>
-              <p class="text-xs text-gray-500 mt-2">
+              <p style="font-size:12.5px;color:var(--faint)">
                 Frakt og eventuelt ekspressgebyr beregnes i kassen.
               </p>
             </div>
 
-            <p v-if="priceError" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-              {{ priceError }}
-            </p>
+            <div v-if="priceError" class="error-box">
+              <i class="fa-solid fa-circle-exclamation"></i> {{ priceError }}
+            </div>
           </div>
 
           <button
             type="button"
-            class="mt-6 w-full bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-lg transition"
+            class="btn btn-primary"
+            style="width:100%;justify-content:center;padding:14px;font-size:16px;border-radius:12px;margin-top:20px"
             :disabled="customPriceNok == null || qty < 1 || priceLoading || sizesLoading"
             @click="addToCartAndCheckout"
           >
-            🛒 Legg i handlekurv og gå til kasse
+            <i class="fa-solid fa-cart-shopping"></i>
+            Legg i handlekurv og gå til kasse
           </button>
         </div>
       </section>
     </template>
   </div>
 </template>
+
+<style scoped>
+.step-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.bb-panel {
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 26px;
+}
+.hint-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+@media (max-width: 640px) {
+  .hint-grid { grid-template-columns: 1fr; }
+  .step-grid { grid-template-columns: 1fr !important; }
+}
+.hint-card {
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+.hint-ico {
+  font-size: 20px;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+.field-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--faint);
+  font-weight: 700;
+}
+.dark-input {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px 12px;
+  font-size: 15px;
+  color: var(--text);
+  font-family: var(--font-ui);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.dark-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255,106,61,.18);
+}
+.notice-gold {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(231,185,78,.1);
+  border: 1px solid rgba(231,185,78,.28);
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 14px;
+  color: var(--gold);
+}
+.notice-gold i {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.notice-gold a { text-decoration: none; }
+.error-box {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #f4a57a;
+  background: rgba(255,106,61,.1);
+  border: 1px solid rgba(255,106,61,.3);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+</style>
