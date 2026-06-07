@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BannerShop.no — Bannere for de store øyeblikkene</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:        #15120e;
+    --bg-2:      #1b1812;
+    --surface:   #221e18;
+    --surface-2: #2a251e;
+    --line:      #38322a;
+    --line-soft: #2e2922;
+    --text:      #f4efe8;
+    --muted:     #b3a99a;
+    --faint:     #8a8073;
+    --accent:    #ff6a3d;
+    --accent-2:  #ff8a5c;
+    --accent-ink:#1a0d06;
+    --gold:      #e7b94e;
+    --glow:      rgba(255,106,61,.35);
+    --radius:    18px;
+    --maxw:      1200px;
+    --font-display:'Bricolage Grotesque', system-ui, sans-serif;
+    --font-ui:'Hanken Grotesk', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--font-ui);
+    font-size:17px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  a{color:inherit;text-decoration:none}
+  img{display:block;max-width:100%}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px}
+  .display{font-family:var(--font-display);font-weight:700;letter-spacing:-.02em;line-height:1.02}
+
+  /* ---------- NAV ---------- */
+  header.nav{
+    position:sticky;top:0;z-index:50;
+    background:rgba(21,18,14,.78);
+    backdrop-filter:saturate(140%) blur(14px);
+    border-bottom:1px solid var(--line-soft);
+  }
+  .nav-inner{display:flex;align-items:center;justify-content:space-between;height:72px}
+  .brand{display:flex;align-items:center;gap:11px;font-family:var(--font-display);font-weight:700;font-size:20px;letter-spacing:-.02em}
+  .brand .mark{
+    width:34px;height:34px;border-radius:9px;
+    display:grid;place-items:center;overflow:hidden;
+  }
+  .brand .mark img{width:100%;height:100%;object-fit:contain;display:block}
+  .brand .word{display:inline-flex;align-items:baseline}
+  .brand b{color:var(--accent)}
+  nav.links{display:flex;align-items:center;gap:30px}
+  nav.links a{color:var(--muted);font-weight:500;font-size:15.5px;transition:color .15s}
+  nav.links a:hover{color:var(--text)}
+  .btn{
+    font-family:var(--font-ui);font-weight:600;font-size:15px;
+    border:none;border-radius:11px;padding:11px 18px;cursor:pointer;
+    transition:transform .12s ease, box-shadow .2s ease, background .2s;
+    display:inline-flex;align-items:center;gap:8px;white-space:nowrap;
+  }
+  .btn:active{transform:translateY(1px)}
+  .btn-primary{background:var(--accent);color:var(--accent-ink);box-shadow:0 8px 24px -8px var(--glow)}
+  .btn-primary:hover{background:var(--accent-2);box-shadow:0 10px 30px -8px var(--glow)}
+  .btn-ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+  .btn-ghost:hover{border-color:var(--accent);color:var(--accent-2)}
+  .btn-lg{padding:15px 26px;font-size:16.5px;border-radius:13px}
+  .nav-cta{display:flex;align-items:center;gap:14px}
+  .nav-cta a.login{color:var(--muted);font-weight:500;font-size:15.5px}
+  .nav-cta a.login:hover{color:var(--text)}
+
+  /* ---------- HERO ---------- */
+  .hero{position:relative;padding:74px 0 30px;overflow:hidden}
+  .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:54px;align-items:center}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:9px;
+    font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--accent-2);background:rgba(255,106,61,.1);
+    border:1px solid rgba(255,106,61,.25);border-radius:999px;padding:7px 14px;margin-bottom:22px;
+  }
+  .eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(255,106,61,.2)}
+  .hero h1{font-size:clamp(40px,5.4vw,68px);margin-bottom:20px}
+  .hero h1 .em{color:var(--accent);font-style:normal;position:relative;white-space:nowrap}
+  .hero p.lede{font-size:19px;color:var(--muted);max-width:30em;margin-bottom:30px}
+  .hero-cta{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+  .trust-row{display:flex;gap:22px;flex-wrap:wrap;margin-top:30px}
+  .trust-item{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:14.5px;font-weight:500}
+  .trust-item .chk{color:var(--accent);font-weight:700}
+
+  /* hero visual */
+  .hero-visual{position:relative;height:440px}
+  .banner-card{
+    position:absolute;border-radius:14px;overflow:hidden;
+    box-shadow:0 30px 60px -22px rgba(0,0,0,.7);
+    border:1px solid rgba(255,255,255,.07);
+  }
+  .banner-card .grommet{position:absolute;width:11px;height:11px;border-radius:50%;background:#d8d2c6;box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}
+  .banner-card .grommet.tl{top:9px;left:9px}.banner-card .grommet.tr{top:9px;right:9px}
+  .banner-card .grommet.bl{bottom:9px;left:9px}.banner-card .grommet.br{bottom:9px;right:9px}
+  /* PINK princess birthday banner */
+  .bc-main{top:54px;left:0;width:77%;height:210px;z-index:3;transform:rotate(-3deg)}
+  .bc-main .face{width:100%;height:100%;position:relative;overflow:hidden;color:#fff;background:#f7c8e0}
+  .face-princess img{width:100%;height:100%;object-fit:cover;display:block}
+  .face-summer img{width:100%;height:100%;object-fit:cover;display:block}
+  .face-princess .castle{position:absolute;left:10px;right:10px;bottom:9px;height:42px;display:flex;align-items:flex-end;justify-content:space-between;opacity:.3}
+  .face-princess .turret{width:15px;background:#5e1742;border-radius:1px;position:relative}
+  .face-princess .turret::after{content:'';position:absolute;left:50%;bottom:100%;transform:translateX(-50%);border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:13px solid #5e1742}
+  .face-princess .moon{position:absolute;top:13px;right:16px;width:22px;height:22px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fff,#ffe9a8);box-shadow:0 0 16px rgba(255,233,168,.7)}
+  .spark{position:absolute;background:#fff;opacity:.92;z-index:1}
+  .spark.d{width:6px;height:6px;transform:rotate(45deg)}
+  .spark.o{width:5px;height:5px;border-radius:50%}
+  .pr-content{position:absolute;inset:0;display:flex;align-items:center;gap:14px;padding:0 20px;z-index:2}
+  .pr-photo{flex:none;width:78px;height:78px;border-radius:50%;box-shadow:0 0 0 3px rgba(255,255,255,.85),0 6px 16px rgba(0,0,0,.3)}
+  .pr-text{text-align:left;min-width:0;flex:1}
+  .pr-text .big{font-family:var(--font-display);font-weight:800;font-size:19.5px;line-height:1.1;text-shadow:0 1px 6px rgba(0,0,0,.3)}
+  .pr-text .sub{font-size:12px;margin-top:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:#ffe9a8;text-shadow:0 1px 4px rgba(0,0,0,.4)}
+
+  /* GREEN summer fest banner */
+  .bc-sec{bottom:6px;right:0;width:64%;height:152px;z-index:2;transform:rotate(4deg)}
+  .bc-sec .face{width:100%;height:100%;position:relative;overflow:hidden;color:#fff;
+      background:linear-gradient(165deg,#63c9a6 0%,#2ea587 58%,#1d8270 100%)}
+  .face-summer .sun{position:absolute;top:-14px;left:-14px;width:60px;height:60px;border-radius:50%;
+      background:radial-gradient(circle at 60% 60%,#fff2b0,#ffd166 55%,#ffb02e);box-shadow:0 0 30px rgba(255,209,102,.6)}
+  .face-summer .palm{position:absolute;width:46px;height:46px;background:#15705c;border-radius:0 100% 0 100%;opacity:.5}
+  .face-summer .p1{top:-10px;right:-8px;transform:rotate(20deg)}
+  .face-summer .p2{top:-6px;right:14px;transform:rotate(62deg);width:38px;height:38px}
+  .face-summer .p3{bottom:-12px;left:-10px;transform:rotate(210deg);opacity:.4}
+  .sm-content{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:2;text-align:center;padding:0 14px}
+  .sm-content .big{font-family:var(--font-display);font-weight:800;font-size:27px;text-shadow:0 2px 8px rgba(0,0,0,.28)}
+  .sm-content .sub2{font-size:11.5px;margin-top:9px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;opacity:.95}
+  .confetti{position:absolute;border-radius:2px;opacity:.85;z-index:1}
+
+  /* glow blobs */
+  .glow{position:absolute;border-radius:50%;filter:blur(90px);z-index:0;pointer-events:none}
+  .glow.g1{width:520px;height:520px;background:rgba(255,106,61,.18);top:-160px;right:-120px}
+  .glow.g2{width:420px;height:420px;background:rgba(197,65,122,.14);bottom:-200px;left:-140px}
+
+  /* ---------- SECTION SHELL ---------- */
+  section.block{position:relative;padding:64px 0;z-index:1}
+  .sec-head{margin-bottom:34px;max-width:640px}
+  .sec-head.center{margin-left:auto;margin-right:auto;text-align:center}
+  .sec-kicker{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-2);margin-bottom:12px}
+  .sec-head h2{font-size:clamp(28px,3.4vw,42px);margin-bottom:12px}
+  .sec-head p{color:var(--muted);font-size:18px}
+
+  /* ---------- CATEGORY CARDS ---------- */
+  .cat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  .cat-card{
+    position:relative;border-radius:var(--radius);overflow:hidden;cursor:pointer;
+    background:var(--surface);border:1px solid var(--line-soft);
+    transition:transform .18s ease, border-color .18s ease, box-shadow .25s ease;
+    text-align:left;min-height:260px;display:flex;flex-direction:column;color:var(--text);
+    font-family:var(--font-ui);
+  }
+  .cat-card:hover{transform:translateY(-4px);border-color:var(--accent);box-shadow:0 24px 46px -26px var(--glow)}
+  .cat-card.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent), 0 24px 46px -26px var(--glow)}
+  .cat-media{position:relative;height:172px;background:var(--surface-2)}
+  .cat-media image-slot{width:100%;height:100%}
+  .cat-media .cat-img{width:100%;height:100%;object-fit:cover;display:block}
+  .cat-media .scrim{position:absolute;inset:0;background:linear-gradient(180deg,rgba(21,18,14,0) 40%,rgba(21,18,14,.82) 100%);pointer-events:none}
+  .cat-emoji{position:absolute;top:12px;left:12px;width:38px;height:38px;border-radius:10px;background:rgba(21,18,14,.6);backdrop-filter:blur(6px);display:grid;place-items:center;font-size:20px;border:1px solid rgba(255,255,255,.1)}
+  .cat-body{padding:16px 18px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex:1}
+  .cat-body h3{font-family:var(--font-display);font-weight:700;font-size:21px;letter-spacing:-.01em;color:var(--text)}
+  .cat-body .from{font-size:13px;color:var(--faint);margin-top:3px}
+  .cat-body .from b{color:var(--text);font-weight:600}
+  .cat-arrow{flex:none;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;color:var(--muted);transition:all .18s}
+  .cat-card:hover .cat-arrow,.cat-card.sel .cat-arrow{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  .cat-card.custom{background:linear-gradient(160deg,var(--surface-2),var(--surface));border-style:dashed;border-color:var(--line)}
+  .cat-card.custom .cat-media{display:none}
+  .cat-card.custom{min-height:auto;justify-content:center;align-items:center;text-align:center;padding:30px 20px}
+  .cat-card.custom .cat-body{flex-direction:column;text-align:center}
+  .cat-card.custom .cat-arrow{margin-top:6px}
+
+  /* ---------- PREVIEW + PRICE ---------- */
+  #bestill{scroll-margin-top:90px}
+  .order-grid{display:grid;grid-template-columns:1.25fr .85fr;gap:24px;align-items:stretch}
+  .panel{background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--radius);padding:26px}
+  .panel-title{font-family:var(--font-display);font-weight:700;font-size:18px;margin-bottom:18px;display:flex;align-items:center;gap:10px}
+  .panel-title .badge-sel{font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--accent-2);background:rgba(255,106,61,.12);border:1px solid rgba(255,106,61,.25);padding:3px 10px;border-radius:999px}
+
+  .stage{
+    background:
+      linear-gradient(0deg,rgba(0,0,0,.25),rgba(0,0,0,.25)),
+      repeating-linear-gradient(45deg,#1d1a14 0 14px,#201c16 14px 28px);
+    border:1px solid var(--line-soft);border-radius:14px;
+    padding:34px;display:grid;place-items:center;min-height:280px;position:relative;
+  }
+  .pv-banner{position:relative;width:86%;max-width:440px;aspect-ratio:300/150;border-radius:8px;
+    box-shadow:0 22px 44px -18px rgba(0,0,0,.7);display:grid;place-items:center;text-align:center;
+    color:#fff;padding:20px;overflow:hidden;transition:background .35s ease}
+  .pv-banner .pv-grommet{position:absolute;width:12px;height:12px;border-radius:50%;background:#e6e0d4;box-shadow:inset 0 1px 2px rgba(0,0,0,.55);z-index:2}
+  .pv-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;z-index:0}
+  .pv-banner .g-tl{top:10px;left:10px}.pv-banner .g-tr{top:10px;right:10px}
+  .pv-banner .g-bl{bottom:10px;left:10px}.pv-banner .g-br{bottom:10px;right:10px}
+  .pv-banner .pv-big{font-family:var(--font-display);font-weight:800;font-size:clamp(20px,3.4vw,30px);line-height:1.04;text-shadow:0 2px 14px rgba(0,0,0,.3)}
+  .pv-banner .pv-sub{font-size:13px;letter-spacing:.1em;text-transform:uppercase;opacity:.92;margin-top:8px}
+  .stage .dim-tag{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-size:12px;color:var(--faint);background:rgba(21,18,14,.7);padding:4px 10px;border-radius:6px;font-variant-numeric:tabular-nums}
+  .feat-list{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px;margin-top:20px}
+  .feat-list li{list-style:none;display:flex;align-items:center;gap:9px;color:var(--muted);font-size:14.5px}
+  .feat-list .chk{color:var(--accent);font-weight:700}
+
+  /* price card */
+  .price-card{display:flex;flex-direction:column;height:100%}
+  .pc-occasion{font-size:14px;color:var(--faint);margin-bottom:2px}
+  .pc-name{font-family:var(--font-display);font-weight:700;font-size:24px;margin-bottom:18px}
+  .pc-price-row{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
+  .pc-from{font-size:14px;color:var(--faint)}
+  .pc-price{font-family:var(--font-display);font-weight:800;font-size:40px;color:var(--text);white-space:nowrap}
+  .pc-price .kr{font-size:22px;color:var(--muted);font-weight:600}
+  .pc-note{font-size:13.5px;color:var(--faint);margin-bottom:20px}
+  .pc-rule{height:1px;background:var(--line-soft);margin:4px 0 18px}
+  .pc-includes{display:grid;gap:9px;margin-bottom:22px}
+  .pc-includes li{list-style:none;display:flex;align-items:center;gap:10px;font-size:14.5px;color:var(--muted)}
+  .pc-includes .chk{color:var(--accent);font-weight:700}
+  .pc-actions{margin-top:auto;display:grid;gap:10px}
+  .pc-actions .btn{justify-content:center;width:100%}
+  .pc-sizes{font-size:13px;color:var(--faint);text-align:center;margin-top:2px}
+  .pc-sizes b{color:var(--muted);font-weight:600}
+
+  /* ---------- MAKE YOUR OWN ---------- */
+  .make-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  .make-card{background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--radius);padding:26px;display:flex;flex-direction:column;transition:border-color .18s,transform .18s}
+  .make-card:hover{border-color:var(--line);transform:translateY(-3px)}
+  .make-card.feat{border-color:rgba(255,106,61,.4);background:linear-gradient(170deg,rgba(255,106,61,.07),var(--surface))}
+  .make-ico{width:48px;height:48px;border-radius:13px;display:grid;place-items:center;font-size:24px;background:var(--surface-2);border:1px solid var(--line-soft);margin-bottom:16px}
+  .make-card.feat .make-ico{background:rgba(255,106,61,.14);border-color:rgba(255,106,61,.3)}
+  .make-tag{position:absolute;top:18px;right:18px;font-size:12px;font-weight:600;color:var(--gold);background:rgba(231,185,78,.12);border:1px solid rgba(231,185,78,.28);padding:4px 10px;border-radius:999px}
+  .make-card{position:relative}
+  .make-card h3{font-family:var(--font-display);font-weight:700;font-size:20px;margin-bottom:8px}
+  .make-card p{color:var(--muted);font-size:15px;flex:1;margin-bottom:16px}
+  .make-price{font-size:14px;color:var(--faint);margin-bottom:14px}
+  .make-price b{color:var(--text);font-family:var(--font-display);font-weight:700;font-size:18px}
+  .make-card .btn{justify-content:center;width:100%}
+  .btn-soft{background:var(--surface-2);color:var(--text);border:1px solid var(--line)}
+  .btn-soft:hover{border-color:var(--accent);color:var(--accent-2)}
+
+  /* ---------- TRUST STRIP ---------- */
+  .strip{border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);background:var(--bg-2)}
+  .strip-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;padding:42px 0}
+  .strip-item{display:flex;flex-direction:column;gap:6px}
+  .strip-item .ico{font-size:22px;margin-bottom:4px}
+  .strip-item h4{font-family:var(--font-display);font-weight:700;font-size:17px}
+  .strip-item p{color:var(--muted);font-size:14px}
+
+  /* ---------- CTA BAND ---------- */
+  .cta-band{background:linear-gradient(120deg,#ff6a3d,#ff4d6d 60%,#c5417a);border-radius:24px;padding:48px;text-align:center;position:relative;overflow:hidden}
+  .cta-band h2{font-family:var(--font-display);font-weight:800;font-size:clamp(28px,3.6vw,40px);color:#fff;margin-bottom:12px}
+  .cta-band p{color:rgba(255,255,255,.92);font-size:18px;margin-bottom:26px;max-width:34em;margin-left:auto;margin-right:auto}
+  .cta-band .btn{background:#1a0d06;color:#fff}
+  .cta-band .btn:hover{background:#000}
+  .cta-band .confetti{opacity:.5}
+
+  /* ---------- FOOTER ---------- */
+  footer{padding:46px 0 40px;border-top:1px solid var(--line-soft);margin-top:8px}
+  .foot-grid{display:flex;justify-content:space-between;align-items:flex-start;gap:30px;flex-wrap:wrap}
+  .foot-col h5{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin-bottom:12px;font-weight:700}
+  .foot-col a{display:block;color:var(--muted);font-size:14.5px;margin-bottom:8px;transition:color .15s}
+  .foot-col a:hover{color:var(--text)}
+  .foot-bottom{margin-top:34px;padding-top:22px;border-top:1px solid var(--line-soft);color:var(--faint);font-size:13.5px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+
+  @media(max-width:980px){
+    .hero-grid{grid-template-columns:1fr;gap:30px}
+    .hero-visual{height:340px;order:-1}
+    .order-grid{grid-template-columns:1fr}
+    .cat-grid,.make-grid{grid-template-columns:repeat(2,1fr)}
+    .strip-grid{grid-template-columns:repeat(2,1fr)}
+  }
+  @media(max-width:620px){
+    body{font-size:16px}
+    .wrap{padding:0 18px}
+    nav.links{display:none}
+    .cat-grid,.make-grid,.strip-grid{grid-template-columns:1fr}
+    .feat-list{grid-template-columns:1fr}
+    .cta-band{padding:34px 22px}
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top"><span class="mark"><img src="assets/logo.png" alt="BannerShop.no"></span><span class="word">Banner<b>Shop</b>.no</span></a>
+    <nav class="links">
+      <a href="#anledninger">Anledninger</a>
+      <a href="#bestill">Bestill</a>
+      <a href="#lagselv">Lag ditt banner</a>
+      <a href="#">Om oss</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="login" href="#">Logg inn</a>
+      <button class="btn btn-primary">Registrer</button>
+    </div>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero" id="top">
+  <div class="glow g1"></div>
+  <div class="glow g2"></div>
+  <div class="wrap hero-grid">
+    <div class="hero-text">
+      <span class="eyebrow"><span class="dot"></span> Norsk trykkeri · Levering i hele Norge</span>
+      <h1 class="display">Bannere for de <span class="em">store øyeblikkene</span> i livet.</h1>
+      <p class="lede">Fra dåp til bryllup, konfirmasjon til sommerfest – vi trykker værbestandige bannere i fullfarge på kraftig PVC. Velg en anledning, så er du i gang.</p>
+      <div class="hero-cta">
+        <a href="#anledninger" class="btn btn-primary btn-lg">Velg anledning →</a>
+        <a href="#lagselv" class="btn btn-ghost btn-lg">Lag ditt eget design</a>
+      </div>
+      <div class="trust-row">
+        <span class="trust-item"><span class="chk">✓</span> Kraftig værbestandig PVC</span>
+        <span class="trust-item"><span class="chk">✓</span> UV-bestandig fullfargetrykk</span>
+        <span class="trust-item"><span class="chk">✓</span> Levering i hele Norge</span>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <span class="confetti" style="top:18px;left:30%;width:10px;height:10px;background:var(--gold);transform:rotate(20deg)"></span>
+      <span class="confetti" style="top:60px;right:8%;width:8px;height:8px;background:var(--accent-2);transform:rotate(-15deg)"></span>
+      <span class="confetti" style="bottom:40px;left:6%;width:9px;height:9px;background:#3a9d7e;border-radius:50%"></span>
+      <span class="confetti" style="top:0;left:62%;width:7px;height:7px;background:#c5417a;border-radius:50%"></span>
+      <div class="banner-card bc-main">
+        <div class="face face-princess">
+          <img src="assets/banner-emma-princess.png" alt="Bursdagsbanner: Emma 6 år – Gratulerer med dagen">
+        </div>
+        <span class="grommet tl"></span><span class="grommet tr"></span><span class="grommet bl"></span><span class="grommet br"></span>
+      </div>
+      <div class="banner-card bc-sec">
+        <div class="face face-summer">
+          <img src="assets/banner-sommerfest.png" alt="Sommerfestbanner: Velkommen til Firma AS Sommerfest">
+        </div>
+        <span class="grommet tl"></span><span class="grommet tr"></span><span class="grommet bl"></span><span class="grommet br"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CATEGORIES -->
+<section class="block" id="anledninger">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-kicker">Hva feirer du?</div>
+      <h2 class="display">Velg anledning</h2>
+      <p>Vi har ferdige oppsett for de vanligste feiringene. Trykk på en anledning for å se forhåndsvisning og pris.</p>
+    </div>
+    <div class="cat-grid" id="catGrid"><!-- cards injected by JS --></div>
+  </div>
+</section>
+
+<!-- PREVIEW + PRICE -->
+<section class="block" id="bestill" style="padding-top:8px">
+  <div class="wrap">
+    <div class="order-grid">
+      <div class="panel">
+        <div class="panel-title">Forhåndsvisning <span class="badge-sel" id="selBadge">Bursdag</span></div>
+        <div class="stage">
+          <div class="pv-banner" id="pvBanner">
+            <img id="pvImg" class="pv-img" alt="">
+            <span class="pv-grommet g-tl"></span><span class="pv-grommet g-tr"></span>
+            <span class="pv-grommet g-bl"></span><span class="pv-grommet g-br"></span>
+            <div id="pvText">
+              <div class="pv-big" id="pvBig">Gratulerer med dagen!</div>
+              <div class="pv-sub" id="pvSub">Emma fyller 6 år</div>
+            </div>
+          </div>
+          <span class="dim-tag">300 × 150 cm · mest populær</span>
+        </div>
+        <ul class="feat-list">
+          <li><span class="chk">✓</span> UV-bestandig trykk i fullfarge</li>
+          <li><span class="chk">✓</span> Klart for både inne og ute</li>
+          <li><span class="chk">✓</span> Kraftig, værbestandig PVC</li>
+          <li><span class="chk">✓</span> Maljer i hjørnene som tilvalg</li>
+        </ul>
+      </div>
+
+      <div class="panel price-card">
+        <div>
+          <div class="pc-occasion" id="pcOcc">Anledning</div>
+          <div class="pc-name" id="pcName">Bursdagsbanner</div>
+        </div>
+        <div class="pc-price-row">
+          <span class="pc-from">fra</span>
+          <span class="pc-price"><span id="pcPrice">810</span> <span class="kr">kr</span></span>
+        </div>
+        <div class="pc-note">Standardstørrelse 300 × 150 cm. Pris inkl. trykk &amp; ferdigstilling.</div>
+        <div class="pc-rule"></div>
+        <ul class="pc-includes">
+          <li><span class="chk">✓</span> Ferdig oppsett – bare bytt navn &amp; dato</li>
+          <li><span class="chk">✓</span> Gratis korrektur før trykk</li>
+          <li><span class="chk">✓</span> Maljer i hjørnene som rimelig tilvalg</li>
+        </ul>
+        <div class="pc-actions">
+          <button class="btn btn-primary btn-lg">🛒 Kom i gang med dette</button>
+          <div class="pc-sizes">Trenger du en annen størrelse? <b>Velg egen størrelse i neste steg.</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MAKE YOUR OWN -->
+<section class="block" id="lagselv">
+  <div class="wrap">
+    <div class="sec-head center">
+      <div class="sec-kicker">Helt ditt eget</div>
+      <h2 class="display">Lag ditt eget banner</h2>
+      <p>Last opp et ferdig design, la AI lage det for deg, eller få proffene våre til å designe – du velger.</p>
+    </div>
+    <div class="make-grid">
+      <div class="make-card">
+        <div class="make-ico">📁</div>
+        <h3>Last opp eget design</h3>
+        <p>Har du fil klar? Last opp bilde eller PDF, så regner vi ut bredden automatisk og viser forhåndsvisning.</p>
+        <div class="make-price">Samme pris som standardbanner</div>
+        <button class="btn btn-soft">Last opp fil →</button>
+      </div>
+      <div class="make-card feat">
+        <span class="make-tag">Ferdig på minutter</span>
+        <div class="make-ico">✦</div>
+        <h3>AI-designet banner</h3>
+        <p>Velg anledning, skriv inn navn og tekst – så lager AI et unikt banner for deg på minutter.</p>
+        <div class="make-price"><b>95 kr</b> for AI-design</div>
+        <button class="btn btn-primary">Lag AI-banner →</button>
+      </div>
+      <div class="make-card">
+        <span class="make-tag">2–3 virkedager</span>
+        <div class="make-ico">🎨</div>
+        <h3>Vi designer for deg</h3>
+        <p>Fyll inn ønskene dine, så lager designteamet vårt et forslag og sender til godkjenning.</p>
+        <div class="make-price"><b>495 kr</b> for designtjeneste</div>
+        <button class="btn btn-soft">Bestill design →</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TRUST STRIP -->
+<div class="strip">
+  <div class="wrap strip-grid">
+    <div class="strip-item"><span class="ico">🏭</span><h4>Eget lokalt trykkeri</h4><p>Vi trykker alt selv – full kontroll på kvalitet og leveringstid.</p></div>
+    <div class="strip-item"><span class="ico">🚚</span><h4>Levering i hele Norge</h4><p>Normal leveringstid er ca. 10 virkedager fra godkjent korrektur.</p></div>
+    <div class="strip-item"><span class="ico">💪</span><h4>Værbestandig</h4><p>UV-bestandig fullfargetrykk på kraftig PVC – tåler norsk vær.</p></div>
+    <div class="strip-item"><span class="ico">🔩</span><h4>Maljer som tilvalg</h4><p>Trenger du maljer i hjørnene for opphenging? Legg det enkelt til i bestillingen.</p></div>
+  </div>
+</div>
+
+<!-- CTA BAND -->
+<section class="block">
+  <div class="wrap">
+    <div class="cta-band">
+      <span class="confetti" style="top:24px;left:12%;width:12px;height:12px;background:#fff;transform:rotate(20deg)"></span>
+      <span class="confetti" style="top:54px;right:14%;width:10px;height:10px;background:var(--gold);border-radius:50%"></span>
+      <span class="confetti" style="bottom:30px;left:22%;width:9px;height:9px;background:#1a0d06;transform:rotate(-15deg)"></span>
+      <h2>Klar til å feire?</h2>
+      <p>Velg en anledning, tilpass teksten, og ha banneret hengende før festen starter.</p>
+      <a href="#anledninger" class="btn btn-lg">Kom i gang nå →</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-col" style="max-width:280px">
+        <a class="brand" href="#top" style="margin-bottom:12px"><span class="mark"><img src="assets/logo.png" alt="BannerShop.no"></span><span class="word">Banner<b>Shop</b>.no</span></a>
+        <p style="color:var(--muted);font-size:14.5px">Kvalitetsbannere fra norsk trykkeri. Vi gjør de store øyeblikkene synlige.</p>
+      </div>
+      <div class="foot-col">
+        <h5>Anledninger</h5>
+        <a href="#anledninger">Bursdag</a><a href="#anledninger">Konfirmasjon</a><a href="#anledninger">Dåp</a><a href="#anledninger">Bryllup</a><a href="#anledninger">Sommerfest</a>
+      </div>
+      <div class="foot-col">
+        <h5>Lag banner</h5>
+        <a href="#lagselv">Last opp design</a><a href="#lagselv">AI-banner</a><a href="#lagselv">Vi designer for deg</a>
+      </div>
+      <div class="foot-col">
+        <h5>Kundeservice</h5>
+        <a href="#">Frakt &amp; levering</a><a href="#">Materialer</a><a href="#">Kontakt oss</a><a href="#">Logg inn</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 BannerShop.no — Kvalitetsbannere fra norsk trykkeri</span>
+      <span>Org. 999 888 777 · Laget i Norge 🇳🇴</span>
+    </div>
+  </div>
+</footer>
+
+<script src="image-slot.js"></script>
+<script>
+  const CATS = [
+    { id:'bursdag', emoji:'🎈', name:'Bursdag', occ:'Bursdagsbanner', price:810,
+      g1:'#ff6a3d', g2:'#ff4d6d', big:'Gratulerer med dagen!', sub:'Emma fyller 6 år', photo:'Bursdagsfoto', img:'assets/banner-emma-princess.png' },
+    { id:'konfirmasjon', emoji:'🎓', name:'Konfirmasjon', occ:'Konfirmasjonsbanner', price:810,
+      g1:'#2f6df0', g2:'#5b8def', big:'Konfirmant 2026', sub:'Gratulerer, Jonas!', photo:'Konfirmasjonsfoto', img:'assets/banner-konfirmasjon.png' },
+    { id:'dap', emoji:'🌿', name:'Dåp', occ:'Dåpsbanner', price:810,
+      g1:'#2f7d68', g2:'#46a888', big:'Velkommen til verden', sub:'Lille Markus', photo:'Dåpsfoto', img:'assets/banner-dap.png' },
+    { id:'bryllup', emoji:'💍', name:'Bryllup', occ:'Bryllupsbanner', price:945,
+      g1:'#9a4d8f', g2:'#c5417a', big:'Maria &amp; Johan', sub:'For alltid · 12.07.2026', photo:'Bryllupsfoto', img:'assets/banner-bryllup.png' },
+    { id:'sommerfest', emoji:'☀️', name:'Sommerfest', occ:'Sommerfestbanner', price:810,
+      g1:'#e7951f', g2:'#e7b94e', big:'Sommerfest 2026', sub:'Velkommen alle sammen', photo:'Sommerfest-foto', img:'assets/banner-sommerfest.png' },
+  ];
+
+  const grid = document.getElementById('catGrid');
+  CATS.forEach((c,i)=>{
+    const el = document.createElement('button');
+    el.className = 'cat-card' + (i===0?' sel':'');
+    el.dataset.id = c.id;
+    el.innerHTML = `
+      <div class="cat-media">
+        ${c.img?`<img class="cat-img" src="${c.img}" alt="${c.name}sbanner">`:`<image-slot id="cat-${c.id}" shape="rect" placeholder="${c.photo}"></image-slot>`}
+        <div class="cat-emoji">${c.emoji}</div>
+        <div class="scrim"></div>
+      </div>
+      <div class="cat-body">
+        <div>
+          <h3>${c.name}</h3>
+          <div class="from">fra <b>${c.price} kr</b></div>
+        </div>
+        <span class="cat-arrow">→</span>
+      </div>`;
+    el.addEventListener('click', ()=>select(c.id));
+    grid.appendChild(el);
+  });
+
+  // custom card
+  const custom = document.createElement('button');
+  custom.className = 'cat-card custom';
+  custom.innerHTML = `
+    <div class="cat-body">
+      <div class="cat-emoji" style="position:static;background:var(--surface-2)">✨</div>
+      <h3>Noe annet?</h3>
+      <div class="from" style="margin-top:6px">Egendesignet banner – din anledning, din tekst</div>
+      <span class="cat-arrow">→</span>
+    </div>`;
+  custom.addEventListener('click', ()=>{ document.getElementById('lagselv').scrollIntoView({block:'start'}); });
+  grid.appendChild(custom);
+
+  const pvBanner = document.getElementById('pvBanner');
+  const pvImg = document.getElementById('pvImg');
+  const pvText = document.getElementById('pvText');
+  function renderPreview(c){
+    document.getElementById('selBadge').textContent = c.name;
+    document.getElementById('pcOcc').textContent = c.name;
+    document.getElementById('pcName').textContent = c.occ;
+    document.getElementById('pcPrice').textContent = c.price;
+    if(c.img){
+      pvImg.src = c.img; pvImg.style.display = 'block';
+      pvText.style.display = 'none';
+      pvBanner.style.background = 'transparent';
+    } else {
+      pvImg.style.display = 'none';
+      pvText.style.display = '';
+      document.getElementById('pvBig').innerHTML = c.big;
+      document.getElementById('pvSub').innerHTML = c.sub;
+      pvBanner.style.background = `linear-gradient(135deg, ${c.g1}, ${c.g2})`;
+    }
+  }
+  function select(id){
+    const c = CATS.find(x=>x.id===id); if(!c) return;
+    document.querySelectorAll('.cat-card').forEach(card=>card.classList.toggle('sel', card.dataset.id===id));
+    renderPreview(c);
+    document.getElementById('bestill').scrollIntoView({block:'start'});
+  }
+  // init preview for first cat
+  renderPreview(CATS[0]);
+</script>
+</body>
+</html>
