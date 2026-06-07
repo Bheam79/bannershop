@@ -44,17 +44,17 @@ const STATUS_LABELS: Record<string, string> = {
   Cancelled: 'Kansellert',
 }
 const STATUS_CLASSES: Record<string, string> = {
-  Draft: 'bg-gray-100 text-gray-600',
-  PendingPayment: 'bg-yellow-100 text-yellow-800',
-  Paid: 'bg-blue-100 text-blue-800',
-  InProduction: 'bg-blue-100 text-blue-800',
-  ReadyToShip: 'bg-purple-100 text-purple-800',
-  Shipped: 'bg-green-100 text-green-800',
-  Delivered: 'bg-green-100 text-green-700',
-  Cancelled: 'bg-red-100 text-red-700',
+  Draft:          'badge-draft',
+  PendingPayment: 'badge-pending',
+  Paid:           'badge-paid',
+  InProduction:   'badge-paid',
+  ReadyToShip:    'badge-ready',
+  Shipped:        'badge-shipped',
+  Delivered:      'badge-shipped',
+  Cancelled:      'badge-cancelled',
 }
 function statusLabel(s: string) { return STATUS_LABELS[s] ?? s }
-function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'bg-gray-100 text-gray-600' }
+function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'badge-draft' }
 function formatNok(n: number): string {
   return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
 }
@@ -80,7 +80,6 @@ async function saveProfile() {
       name: profile.name,
       phone: profile.phone || null,
     })
-    // Update local auth store
     auth.setAuth({
       accessToken: auth.accessToken!,
       refreshToken: auth.refreshTokenValue!,
@@ -134,172 +133,399 @@ async function changePassword() {
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto px-4 py-12 space-y-10">
-    <div>
-      <h1 class="text-2xl font-bold text-gray-900">
-        Hei{{ auth.user?.name ? `, ${auth.user.name.split(' ')[0]}` : '' }}! 👋
+  <div class="account-wrap">
+
+    <!-- Greeting -->
+    <div class="account-header">
+      <h1 class="display account-title">
+        <i class="fa-solid fa-user greeting-icon"></i>
+        Hei{{ auth.user?.name ? `, ${auth.user.name.split(' ')[0]}` : '' }}!
       </h1>
-      <p class="text-gray-500 text-sm mt-1">{{ auth.user?.email }}</p>
+      <p class="account-email">{{ auth.user?.email }}</p>
     </div>
 
     <!-- Active orders summary -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold text-gray-800">Aktive ordrer</h2>
-        <RouterLink to="/account/orders" class="text-sm text-blue-700 hover:underline font-medium">
-          Se alle ordrer →
+    <div class="panel">
+      <div class="section-header">
+        <h2 class="section-title">
+          <i class="fa-solid fa-box"></i>
+          Aktive ordrer
+        </h2>
+        <RouterLink to="/account/orders" class="link-more">
+          Se alle ordrer
+          <i class="fa-solid fa-arrow-right"></i>
         </RouterLink>
       </div>
 
-      <div v-if="ordersLoading" class="text-center py-4">
-        <div class="inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      <div v-if="ordersLoading" class="spinner-wrap">
+        <i class="fa-solid fa-circle-notch fa-spin spinner-icon"></i>
       </div>
 
-      <div v-else-if="activeOrders.length === 0 && recentOrders.length === 0" class="text-center py-4 text-gray-400 text-sm">
+      <div v-else-if="activeOrders.length === 0 && recentOrders.length === 0" class="empty-msg">
         Ingen ordrer ennå.
-        <RouterLink to="/" class="text-blue-700 hover:underline ml-1">Handle nå</RouterLink>
+        <RouterLink to="/" class="link-inline">Handle nå</RouterLink>
       </div>
 
-      <div v-else-if="activeOrders.length === 0" class="text-sm text-gray-500 py-2">
+      <div v-else-if="activeOrders.length === 0" class="empty-msg">
         Ingen aktive ordrer for øyeblikket.
-        <RouterLink to="/account/orders" class="text-blue-700 hover:underline ml-1">Se ordrehistorikk</RouterLink>
+        <RouterLink to="/account/orders" class="link-inline">Se ordrehistorikk</RouterLink>
       </div>
 
-      <ul v-else class="divide-y divide-gray-100">
+      <ul v-else class="order-mini-list">
         <li
           v-for="order in activeOrders"
           :key="order.id"
-          class="flex items-center justify-between py-3 cursor-pointer hover:bg-gray-50 -mx-2 px-2 rounded-lg transition"
+          class="order-mini-row"
           @click="router.push(`/account/orders/${order.id}`)"
         >
-          <div class="space-y-0.5">
-            <div class="font-medium text-blue-700 text-sm">#{{ order.id }}</div>
-            <div class="text-xs text-gray-400">{{ formatDate(order.createdAt) }}</div>
+          <div>
+            <div class="order-mini-id">#{{ order.id }}</div>
+            <div class="order-mini-date">{{ formatDate(order.createdAt) }}</div>
           </div>
-          <div class="flex items-center gap-3">
-            <span class="text-xs font-semibold px-2 py-0.5 rounded-full" :class="statusClass(order.status)">
+          <div class="order-mini-right">
+            <span class="badge" :class="statusClass(order.status)">
               {{ statusLabel(order.status) }}
             </span>
-            <span class="text-sm font-semibold text-gray-800">{{ formatNok(order.totalNok) }}</span>
+            <span class="order-mini-total">{{ formatNok(order.totalNok) }}</span>
           </div>
         </li>
       </ul>
 
-      <div v-if="activeOrders.length > 0" class="mt-3 text-center">
-        <RouterLink to="/account/orders" class="text-xs text-gray-400 hover:text-blue-700">
-          Se alle ordrer →
+      <div v-if="activeOrders.length > 0" class="more-link-row">
+        <RouterLink to="/account/orders" class="link-faint">
+          Se alle ordrer
+          <i class="fa-solid fa-arrow-right fa-xs"></i>
         </RouterLink>
       </div>
     </div>
 
     <!-- Design requests quick link -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-      <div class="flex items-center justify-between">
+    <div class="panel design-link-panel">
+      <div class="design-link-inner">
         <div>
-          <h2 class="text-lg font-semibold text-gray-800">Mine design-bestillinger</h2>
-          <p class="text-sm text-gray-500 mt-1">AI-banner (95 kr) og manuelt design (495 kr)</p>
+          <h2 class="section-title">
+            <i class="fa-solid fa-paintbrush"></i>
+            Mine design-bestillinger
+          </h2>
+          <p class="design-link-sub">AI-banner (95 kr) og manuelt design (495 kr)</p>
         </div>
-        <RouterLink
-          to="/account/design-requests"
-          class="text-sm text-blue-700 hover:underline font-medium"
-        >
-          Se alle →
+        <RouterLink to="/account/design-requests" class="link-more">
+          Se alle
+          <i class="fa-solid fa-arrow-right"></i>
         </RouterLink>
       </div>
     </div>
 
     <!-- Profile section -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-      <h2 class="text-lg font-semibold text-gray-800 mb-4">Profilinformasjon</h2>
-      <form @submit.prevent="saveProfile" class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Navn</label>
+    <div class="panel">
+      <h2 class="section-title">
+        <i class="fa-solid fa-user"></i>
+        Profilinformasjon
+      </h2>
+      <form @submit.prevent="saveProfile" class="form-grid">
+        <div class="form-field">
+          <label class="field-label">Navn</label>
           <input
             v-model="profile.name"
             type="text"
             required
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            class="field-input"
           />
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Telefon</label>
+        <div class="form-field">
+          <label class="field-label">Telefon</label>
           <input
             v-model="profile.phone"
             type="tel"
             placeholder="+47 900 00 000"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            class="field-input"
           />
         </div>
 
-        <p v-if="profileError" class="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+        <div v-if="profileError" class="alert-error full-col">
+          <i class="fa-solid fa-circle-exclamation"></i>
           {{ profileError }}
-        </p>
-        <p v-if="profileSuccess" class="text-green-700 text-sm bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+        </div>
+        <div v-if="profileSuccess" class="alert-success full-col">
+          <i class="fa-solid fa-circle-check"></i>
           {{ profileSuccess }}
-        </p>
+        </div>
 
-        <button
-          type="submit"
-          :disabled="profileLoading"
-          class="bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-60 transition"
-        >
-          {{ profileLoading ? 'Lagrer…' : 'Lagre endringer' }}
-        </button>
+        <div class="full-col">
+          <button
+            type="submit"
+            :disabled="profileLoading"
+            class="btn btn-primary"
+          >
+            <i v-if="profileLoading" class="fa-solid fa-circle-notch fa-spin"></i>
+            {{ profileLoading ? 'Lagrer…' : 'Lagre endringer' }}
+          </button>
+        </div>
       </form>
     </div>
 
     <!-- Change password section -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-      <h2 class="text-lg font-semibold text-gray-800 mb-4">Endre passord</h2>
-      <form @submit.prevent="changePassword" class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Nåværende passord</label>
+    <div class="panel">
+      <h2 class="section-title">
+        <i class="fa-solid fa-lock"></i>
+        Endre passord
+      </h2>
+      <form @submit.prevent="changePassword" class="form-grid">
+        <div class="form-field full-col">
+          <label class="field-label">Nåværende passord</label>
           <input
             v-model="pwForm.currentPassword"
             type="password"
             required
             autocomplete="current-password"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            class="field-input"
           />
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Nytt passord</label>
+        <div class="form-field">
+          <label class="field-label">Nytt passord</label>
           <input
             v-model="pwForm.newPassword"
             type="password"
             required
             autocomplete="new-password"
             placeholder="Minst 8 tegn"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            class="field-input"
           />
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Bekreft nytt passord</label>
+        <div class="form-field">
+          <label class="field-label">Bekreft nytt passord</label>
           <input
             v-model="pwForm.confirmPassword"
             type="password"
             required
             autocomplete="new-password"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            class="field-input"
           />
         </div>
 
-        <p v-if="pwError" class="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+        <div v-if="pwError" class="alert-error full-col">
+          <i class="fa-solid fa-circle-exclamation"></i>
           {{ pwError }}
-        </p>
-        <p v-if="pwSuccess" class="text-green-700 text-sm bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+        </div>
+        <div v-if="pwSuccess" class="alert-success full-col">
+          <i class="fa-solid fa-circle-check"></i>
           {{ pwSuccess }}
-        </p>
+        </div>
 
-        <button
-          type="submit"
-          :disabled="pwLoading"
-          class="bg-gray-800 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-gray-900 disabled:opacity-60 transition"
-        >
-          {{ pwLoading ? 'Endrer passord…' : 'Endre passord' }}
-        </button>
+        <div class="full-col">
+          <button
+            type="submit"
+            :disabled="pwLoading"
+            class="btn btn-soft"
+          >
+            <i v-if="pwLoading" class="fa-solid fa-circle-notch fa-spin"></i>
+            {{ pwLoading ? 'Endrer passord…' : 'Endre passord' }}
+          </button>
+        </div>
       </form>
     </div>
 
   </div>
 </template>
+
+<style scoped>
+/* ── Layout ─────────────────────────────────────────────────── */
+.account-wrap {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 3.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* ── Greeting ───────────────────────────────────────────────── */
+.account-header { margin-bottom: 0.25rem; }
+.account-title {
+  font-size: clamp(1.4rem, 3vw, 1.875rem);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.greeting-icon { color: var(--accent); font-size: 1.2rem; }
+.account-email { color: var(--faint); font-size: 0.875rem; margin-top: 4px; }
+
+/* ── Section header ─────────────────────────────────────────── */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.section-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  font-family: var(--font-display);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.section-title i { color: var(--accent); font-size: 0.9rem; }
+.section-header .section-title { margin-bottom: 0; }
+
+.link-more {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  transition: color 0.15s;
+  white-space: nowrap;
+}
+.link-more:hover { color: var(--accent-2); }
+
+.link-inline {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+.link-inline:hover { color: var(--accent-2); }
+
+/* ── Spinner ────────────────────────────────────────────────── */
+.spinner-wrap { display: flex; justify-content: center; padding: 1rem 0; }
+.spinner-icon { font-size: 1.375rem; color: var(--accent); }
+
+/* ── Empty message ──────────────────────────────────────────── */
+.empty-msg {
+  font-size: 0.875rem;
+  color: var(--muted);
+  padding: 0.5rem 0;
+}
+
+/* ── Order mini list ────────────────────────────────────────── */
+.order-mini-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.order-mini-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.625rem 0.5rem;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.order-mini-row:hover { background: var(--surface-2); }
+.order-mini-id { font-size: 0.875rem; font-weight: 600; color: var(--accent); }
+.order-mini-date { font-size: 0.75rem; color: var(--faint); margin-top: 1px; }
+.order-mini-right { display: flex; align-items: center; gap: 0.625rem; }
+.order-mini-total { font-size: 0.875rem; font-weight: 700; color: var(--text); }
+
+.more-link-row {
+  margin-top: 0.625rem;
+  text-align: center;
+}
+.link-faint {
+  font-size: 0.78rem;
+  color: var(--faint);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: color 0.15s;
+}
+.link-faint:hover { color: var(--accent); }
+
+/* ── Design link panel ──────────────────────────────────────── */
+.design-link-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.design-link-sub {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+/* ── Form ───────────────────────────────────────────────────── */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 540px) { .form-grid { grid-template-columns: 1fr; } }
+
+.form-field { display: flex; flex-direction: column; }
+.full-col { grid-column: 1 / -1; }
+
+.field-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.field-input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.9375rem;
+  color: var(--text);
+  font-family: var(--font-ui);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.field-input::placeholder { color: var(--faint); }
+.field-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255,106,61,.18);
+}
+
+/* ── Alerts ─────────────────────────────────────────────────── */
+.alert-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(220,60,60,.12);
+  border: 1px solid rgba(220,60,60,.3);
+  border-radius: 10px;
+  color: #f4a57a;
+  font-size: 0.875rem;
+}
+.alert-error i { color: #e05252; flex-shrink: 0; }
+
+.alert-success {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(60,180,100,.1);
+  border: 1px solid rgba(60,180,100,.25);
+  border-radius: 10px;
+  color: #7de0a8;
+  font-size: 0.875rem;
+}
+.alert-success i { color: #4ec984; flex-shrink: 0; }
+
+/* ── Status badges ──────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 99px;
+  letter-spacing: 0.01em;
+}
+.badge-draft    { background: rgba(138,128,115,.18); color: var(--muted); border: 1px solid rgba(138,128,115,.3); }
+.badge-pending  { background: rgba(231,185,78,.15);  color: #e7d08a;      border: 1px solid rgba(231,185,78,.3); }
+.badge-paid     { background: rgba(255,106,61,.13);  color: var(--accent-2); border: 1px solid rgba(255,106,61,.3); }
+.badge-ready    { background: rgba(160,110,220,.15); color: #c9a8f5;      border: 1px solid rgba(160,110,220,.3); }
+.badge-shipped  { background: rgba(60,180,100,.13);  color: #7de0a8;      border: 1px solid rgba(60,180,100,.28); }
+.badge-cancelled{ background: rgba(220,60,60,.12);   color: #f4a57a;      border: 1px solid rgba(220,60,60,.28); }
+</style>

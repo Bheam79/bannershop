@@ -55,58 +55,59 @@ const STATUS_LABELS: Record<string, string> = {
   Cancelled:         'Kansellert',
 }
 const STATUS_CLASSES: Record<string, string> = {
-  Pending:           'bg-yellow-100 text-yellow-800',
-  InProgress:        'bg-blue-100 text-blue-800',
-  AwaitingApproval:  'bg-purple-100 text-purple-800',
-  Approved:          'bg-green-100 text-green-700',
-  RevisionRequested: 'bg-orange-100 text-orange-800',
-  Revised:           'bg-sky-100 text-sky-800',
-  Final:             'bg-green-100 text-green-800',
-  Failed:            'bg-red-100 text-red-700',
-  Cancelled:         'bg-red-100 text-red-700',
+  Pending:           'badge-pending',
+  InProgress:        'badge-inprogress',
+  AwaitingApproval:  'badge-awaiting',
+  Approved:          'badge-approved',
+  RevisionRequested: 'badge-revision',
+  Revised:           'badge-revised',
+  Final:             'badge-approved',
+  Failed:            'badge-cancelled',
+  Cancelled:         'badge-cancelled',
 }
 function statusLabel(s: string) { return STATUS_LABELS[s] ?? s }
-function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'bg-gray-100 text-gray-600' }
+function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'badge-draft' }
 </script>
 
 <template>
-  <div class="max-w-5xl mx-auto px-4 py-10">
-    <div class="flex items-center justify-between mb-6">
+  <div class="dr-wrap">
+    <div class="page-header">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">Mine design-bestillinger</h1>
-        <p v-if="!loading && requests.length > 0" class="text-sm text-gray-500 mt-0.5">
+        <h1 class="display page-title">
+          <i class="fa-solid fa-paintbrush"></i>
+          Mine design-bestillinger
+        </h1>
+        <p v-if="!loading && requests.length > 0" class="page-sub">
           {{ requests.length }} bestilling{{ requests.length !== 1 ? 'er' : '' }} totalt
         </p>
       </div>
-      <RouterLink to="/account" class="text-sm text-blue-700 hover:underline">← Min konto</RouterLink>
+      <RouterLink to="/account" class="back-link">
+        <i class="fa-solid fa-arrow-left"></i>
+        Min konto
+      </RouterLink>
     </div>
 
     <!-- Loading -->
-    <div v-if="loading" class="flex justify-center py-16">
-      <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+    <div v-if="loading" class="loading-state">
+      <i class="fa-solid fa-circle-notch fa-spin loading-spinner"></i>
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" class="bg-red-50 border border-red-200 text-red-800 rounded-xl p-6 text-center">
+    <div v-else-if="error" class="alert-error">
+      <i class="fa-solid fa-circle-exclamation"></i>
       {{ error }}
     </div>
 
     <!-- Empty -->
-    <div v-else-if="requests.length === 0" class="text-center py-16 text-gray-500">
-      <div class="text-4xl mb-3">🎨</div>
-      <p class="text-lg font-medium text-gray-700">Ingen design-bestillinger ennå</p>
-      <p class="text-sm mt-1">Bestill et AI-generert eller manuelt designet banner.</p>
-      <div class="mt-5 flex justify-center gap-3">
-        <RouterLink
-          to="/banner-builder/ai"
-          class="bg-blue-700 text-white px-5 py-2 rounded-lg font-medium hover:bg-blue-800 text-sm"
-        >
+    <div v-else-if="requests.length === 0" class="empty-state">
+      <i class="fa-solid fa-paintbrush empty-icon"></i>
+      <p class="empty-title">Ingen design-bestillinger ennå</p>
+      <p class="empty-sub">Bestill et AI-generert eller manuelt designet banner.</p>
+      <div class="empty-actions">
+        <RouterLink to="/banner-builder/ai" class="btn btn-primary">
           AI-banner (95 kr)
         </RouterLink>
-        <RouterLink
-          to="/banner-builder/manual"
-          class="bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium hover:bg-indigo-800 text-sm"
-        >
+        <RouterLink to="/banner-builder/manual" class="btn btn-ghost">
           Manuelt design (495 kr)
         </RouterLink>
       </div>
@@ -114,83 +115,67 @@ function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'bg-gray-100 text-
 
     <!-- Table -->
     <template v-else>
-      <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div class="dr-panel">
         <!-- Desktop table -->
-        <table class="w-full text-sm hidden sm:table">
-          <thead class="bg-gray-50 border-b border-gray-200">
+        <table class="dr-table">
+          <thead class="table-head">
             <tr>
-              <th class="text-left px-5 py-3 font-semibold text-gray-600">ID</th>
-              <th class="text-left px-5 py-3 font-semibold text-gray-600">Mal</th>
-              <th class="text-left px-5 py-3 font-semibold text-gray-600">Modus</th>
-              <th class="text-left px-5 py-3 font-semibold text-gray-600">Status</th>
-              <th class="text-left px-5 py-3 font-semibold text-gray-600">Dato</th>
-              <th class="text-right px-5 py-3 font-semibold text-gray-600">Pris</th>
+              <th class="th">ID</th>
+              <th class="th">Mal</th>
+              <th class="th">Modus</th>
+              <th class="th">Status</th>
+              <th class="th">Dato</th>
+              <th class="th th--right">Pris</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-100">
+          <tbody>
             <tr
               v-for="req in requests"
               :key="req.id"
-              class="hover:bg-gray-50 cursor-pointer transition"
+              class="dr-row"
               @click="router.push(`/account/design-requests/${req.id}`)"
             >
-              <td class="px-5 py-4 font-medium text-blue-700">#{{ req.id }}</td>
-              <td class="px-5 py-4 text-gray-700">{{ templateName(req.bannerTemplateId) }}</td>
-              <td class="px-5 py-4">
-                <span
-                  class="text-xs font-semibold px-2 py-0.5 rounded-full"
-                  :class="req.mode === 'Manual'
-                    ? 'bg-indigo-100 text-indigo-800'
-                    : 'bg-cyan-100 text-cyan-800'"
-                >
+              <td class="td td--id">#{{ req.id }}</td>
+              <td class="td td--muted">{{ templateName(req.bannerTemplateId) }}</td>
+              <td class="td">
+                <span class="badge" :class="req.mode === 'Manual' ? 'badge-manual' : 'badge-ai'">
                   {{ modeLabel(req.mode) }}
                 </span>
               </td>
-              <td class="px-5 py-4">
-                <span
-                  class="text-xs font-semibold px-2 py-0.5 rounded-full"
-                  :class="statusClass(req.status)"
-                >
+              <td class="td">
+                <span class="badge" :class="statusClass(req.status)">
                   {{ statusLabel(req.status) }}
                 </span>
               </td>
-              <td class="px-5 py-4 text-gray-600">{{ formatDate(req.createdAt) }}</td>
-              <td class="px-5 py-4 text-right font-semibold text-gray-800">{{ formatNok(req.priceNok) }}</td>
+              <td class="td td--muted">{{ formatDate(req.createdAt) }}</td>
+              <td class="td td--right td--bold">{{ formatNok(req.priceNok) }}</td>
             </tr>
           </tbody>
         </table>
 
         <!-- Mobile card list -->
-        <ul class="sm:hidden divide-y divide-gray-100">
+        <ul class="mobile-list">
           <li
             v-for="req in requests"
             :key="req.id"
-            class="px-4 py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50"
+            class="mobile-row"
             @click="router.push(`/account/design-requests/${req.id}`)"
           >
-            <div class="space-y-1">
-              <div class="font-medium text-blue-700">#{{ req.id }}</div>
-              <div class="text-xs text-gray-600">{{ templateName(req.bannerTemplateId) }}</div>
-              <div class="flex gap-1.5 flex-wrap">
-                <span
-                  class="text-xs font-semibold px-2 py-0.5 rounded-full"
-                  :class="req.mode === 'Manual'
-                    ? 'bg-indigo-100 text-indigo-800'
-                    : 'bg-cyan-100 text-cyan-800'"
-                >
+            <div class="mobile-row__left">
+              <div class="mobile-row__id">#{{ req.id }}</div>
+              <div class="mobile-row__template">{{ templateName(req.bannerTemplateId) }}</div>
+              <div class="mobile-row__badges">
+                <span class="badge" :class="req.mode === 'Manual' ? 'badge-manual' : 'badge-ai'">
                   {{ modeLabel(req.mode) }}
                 </span>
-                <span
-                  class="text-xs font-semibold px-2 py-0.5 rounded-full"
-                  :class="statusClass(req.status)"
-                >
+                <span class="badge" :class="statusClass(req.status)">
                   {{ statusLabel(req.status) }}
                 </span>
               </div>
             </div>
-            <div class="text-right shrink-0 ml-4">
-              <div class="font-semibold text-gray-800 text-sm">{{ formatNok(req.priceNok) }}</div>
-              <div class="text-xs text-gray-400 mt-0.5">{{ formatDate(req.createdAt) }}</div>
+            <div class="mobile-row__right">
+              <div class="mobile-row__price">{{ formatNok(req.priceNok) }}</div>
+              <div class="mobile-row__date">{{ formatDate(req.createdAt) }}</div>
             </div>
           </li>
         </ul>
@@ -198,3 +183,172 @@ function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'bg-gray-100 text-
     </template>
   </div>
 </template>
+
+<style scoped>
+/* ── Layout ─────────────────────────────────────────────────── */
+.dr-wrap {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 3rem;
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.page-title {
+  font-size: clamp(1.4rem, 3vw, 1.875rem);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.page-title i { color: var(--accent); }
+.page-sub { font-size: 0.8125rem; color: var(--muted); margin-top: 3px; }
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.15s;
+  white-space: nowrap;
+  padding-top: 4px;
+}
+.back-link:hover { color: var(--accent); }
+
+/* ── Loading ────────────────────────────────────────────────── */
+.loading-state { display: flex; justify-content: center; padding: 4rem 0; }
+.loading-spinner { font-size: 2rem; color: var(--accent); }
+
+/* ── Alerts ─────────────────────────────────────────────────── */
+.alert-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 18px;
+  background: rgba(220,60,60,.12);
+  border: 1px solid rgba(220,60,60,.3);
+  border-radius: 14px;
+  color: #f4a57a;
+  font-size: 0.9rem;
+}
+.alert-error i { color: #e05252; flex-shrink: 0; margin-top: 2px; }
+
+/* ── Empty ──────────────────────────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: 4rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+.empty-icon { font-size: 2.5rem; color: var(--faint); margin-bottom: 0.5rem; }
+.empty-title { font-size: 1.125rem; font-weight: 700; color: var(--text); }
+.empty-sub { font-size: 0.875rem; color: var(--muted); }
+.empty-actions { display: flex; gap: 0.75rem; margin-top: 1rem; flex-wrap: wrap; justify-content: center; }
+
+/* ── Table panel ────────────────────────────────────────────── */
+.dr-panel {
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.dr-table {
+  width: 100%;
+  font-size: 0.875rem;
+  border-collapse: collapse;
+  display: none;
+}
+@media (min-width: 640px) { .dr-table { display: table; } }
+
+.table-head { background: var(--surface-2); border-bottom: 1px solid var(--line-soft); }
+.th {
+  text-align: left;
+  padding: 10px 18px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.th--right { text-align: right; }
+
+.dr-row {
+  border-bottom: 1px solid var(--line-soft);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.dr-row:last-child { border-bottom: none; }
+.dr-row:hover { background: var(--surface-2); }
+
+.td { padding: 13px 18px; color: var(--text); vertical-align: middle; }
+.td--id { font-weight: 700; color: var(--accent); }
+.td--muted { color: var(--muted); }
+.td--right { text-align: right; }
+.td--bold { font-weight: 700; }
+
+/* Mobile list */
+.mobile-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+@media (min-width: 640px) { .mobile-list { display: none; } }
+
+.mobile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  border-bottom: 1px solid var(--line-soft);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.mobile-row:last-child { border-bottom: none; }
+.mobile-row:hover { background: var(--surface-2); }
+.mobile-row__left { display: flex; flex-direction: column; gap: 4px; }
+.mobile-row__id { font-size: 0.9375rem; font-weight: 700; color: var(--accent); }
+.mobile-row__template { font-size: 0.8125rem; color: var(--muted); }
+.mobile-row__badges { display: flex; gap: 5px; flex-wrap: wrap; }
+.mobile-row__right { text-align: right; flex-shrink: 0; margin-left: 1rem; }
+.mobile-row__price { font-size: 0.9375rem; font-weight: 700; color: var(--text); }
+.mobile-row__date { font-size: 0.75rem; color: var(--faint); margin-top: 2px; }
+
+/* ── Badges ─────────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 99px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+/* Mode badges */
+.badge-manual  { background: rgba(130,100,220,.15); color: #c9a8f5; border: 1px solid rgba(130,100,220,.3); }
+.badge-ai      { background: rgba(34,200,230,.12);  color: #7ddce8; border: 1px solid rgba(34,200,230,.28); }
+
+/* Status badges */
+.badge-draft     { background: rgba(138,128,115,.18); color: var(--muted);     border: 1px solid rgba(138,128,115,.3); }
+.badge-pending   { background: rgba(231,185,78,.15);  color: #e7d08a;          border: 1px solid rgba(231,185,78,.3); }
+.badge-inprogress{ background: rgba(255,106,61,.13);  color: var(--accent-2);  border: 1px solid rgba(255,106,61,.3); }
+.badge-awaiting  { background: rgba(160,110,220,.15); color: #c9a8f5;          border: 1px solid rgba(160,110,220,.3); }
+.badge-approved  { background: rgba(60,180,100,.13);  color: #7de0a8;          border: 1px solid rgba(60,180,100,.28); }
+.badge-revision  { background: rgba(255,140,60,.15);  color: #ffb07a;          border: 1px solid rgba(255,140,60,.3); }
+.badge-revised   { background: rgba(34,200,230,.12);  color: #7ddce8;          border: 1px solid rgba(34,200,230,.28); }
+.badge-cancelled { background: rgba(220,60,60,.12);   color: #f4a57a;          border: 1px solid rgba(220,60,60,.28); }
+</style>
