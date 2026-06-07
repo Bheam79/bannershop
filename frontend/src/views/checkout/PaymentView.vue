@@ -48,12 +48,13 @@ async function initStripe() {
     const card = elements.create('card', {
       style: {
         base: {
-          fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+          fontFamily: 'Hanken Grotesk, ui-sans-serif, system-ui, sans-serif',
           fontSize: '16px',
-          color: '#111827',
-          '::placeholder': { color: '#9ca3af' },
+          color: '#f4efe8',
+          '::placeholder': { color: '#8a8073' },
+          backgroundColor: '#2a251e',
         },
-        invalid: { color: '#ef4444' },
+        invalid: { color: '#f4a57a' },
       },
       hidePostalCode: true,
     })
@@ -180,132 +181,143 @@ async function pay() {
 </script>
 
 <template>
-  <div class="max-w-6xl mx-auto px-4 py-8 sm:py-12">
+  <div class="checkout-wrap">
     <!-- Header / stepper -->
-    <header class="mb-8">
-      <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Kasse</h1>
-      <nav class="flex items-center gap-2 text-sm">
-        <RouterLink to="/checkout" class="text-blue-700 hover:underline">1. Oversikt &amp; levering</RouterLink>
-        <span class="text-gray-400">›</span>
-        <span class="font-semibold text-blue-700">2. Betaling</span>
-        <span class="text-gray-400">›</span>
-        <span class="text-gray-400">3. Bekreftelse</span>
+    <header class="checkout-header">
+      <h1 class="display checkout-title">Kasse</h1>
+      <nav class="stepper">
+        <RouterLink to="/checkout" class="stepper-step stepper-link">1. Oversikt &amp; levering</RouterLink>
+        <span class="stepper-sep">›</span>
+        <span class="stepper-step active">2. Betaling</span>
+        <span class="stepper-sep">›</span>
+        <span class="stepper-step">3. Bekreftelse</span>
       </nav>
     </header>
 
-    <div class="grid lg:grid-cols-3 gap-8">
+    <div class="checkout-grid">
       <!-- ── Left col: payment form ─────────────────────────────────────── -->
-      <div class="lg:col-span-2 space-y-6">
+      <div class="checkout-main">
+
         <!-- Delivery address review -->
-        <section class="bg-white border border-gray-200 rounded-xl p-6">
-          <div class="flex items-center justify-between mb-3">
-            <h2 class="text-base font-semibold text-gray-900">Leveringsadresse</h2>
-            <RouterLink to="/checkout" class="text-sm text-blue-600 hover:underline">Endre</RouterLink>
+        <section class="panel">
+          <div class="addr-header">
+            <h2 class="section-title" style="margin-bottom:0">Leveringsadresse</h2>
+            <RouterLink to="/checkout" class="addr-edit">
+              <i class="fa-solid fa-pen-to-square"></i> Endre
+            </RouterLink>
           </div>
-          <address class="not-italic text-sm text-gray-700 space-y-0.5">
-            <div class="font-medium">{{ checkout.recipientName }}</div>
+          <address class="addr-block">
+            <div class="addr-name">{{ checkout.recipientName }}</div>
             <div>{{ checkout.address.line1 }}</div>
             <div>{{ checkout.address.postalCode }} {{ checkout.address.city }}</div>
           </address>
-          <div class="mt-2 text-sm text-gray-600">
+          <div class="addr-delivery">
+            <i class="fa-solid fa-truck"></i>
             Levering:
-            <span class="font-medium">
+            <span class="addr-delivery__type">
               {{ checkout.deliveryType === 'Express' ? 'Ekspress (3 dager)' : 'Standard (2 uker)' }}
             </span>
           </div>
         </section>
 
         <!-- Card payment -->
-        <section class="bg-white border border-gray-200 rounded-xl p-6">
-          <h2 class="text-lg font-semibold text-gray-900 mb-4">
+        <section class="panel">
+          <h2 class="section-title">
             Kortbetaling
-            <span class="ml-2 text-xs font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+            <span class="stripe-badge">
+              <i class="fa-solid fa-lock"></i>
               Sikret av Stripe
             </span>
           </h2>
 
           <!-- Stripe not configured warning -->
-          <div v-if="stripeError" class="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
-            <strong>Stripe ikke tilgjengelig:</strong> {{ stripeError }}
+          <div v-if="stripeError" class="alert-warn">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <div><strong>Stripe ikke tilgjengelig:</strong> {{ stripeError }}</div>
           </div>
 
           <template v-else>
             <!-- Card element mount point -->
-            <div class="mb-4">
-              <label class="block text-sm font-medium text-gray-700 mb-2">Kortdetaljer</label>
+            <div class="card-field-wrap">
+              <label class="field-label">
+                <i class="fa-solid fa-credit-card"></i>
+                Kortdetaljer
+              </label>
               <div
                 ref="cardMountEl"
-                class="border border-gray-300 rounded-lg px-3 py-3 min-h-[44px] focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition"
+                class="stripe-mount"
               />
-              <p v-if="paymentError" class="mt-2 text-sm text-red-600">{{ paymentError }}</p>
+              <p v-if="paymentError" class="field-error">
+                <i class="fa-solid fa-circle-exclamation"></i>
+                {{ paymentError }}
+              </p>
             </div>
 
             <!-- API / network error -->
-            <p v-if="apiError" class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            <div v-if="apiError" class="alert-error">
+              <i class="fa-solid fa-circle-exclamation"></i>
               {{ apiError }}
-            </p>
+            </div>
 
             <button
               type="button"
               :disabled="processing || !stripeReady"
-              class="w-full bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-lg transition flex items-center justify-center gap-2"
+              class="btn btn-primary btn-pay"
               @click="pay"
             >
-              <span v-if="processing" class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <i v-if="processing" class="fa-solid fa-circle-notch fa-spin"></i>
+              <i v-else class="fa-solid fa-lock"></i>
               <span>{{ processing ? 'Behandler…' : `Betal ${formatNok(total)}` }}</span>
             </button>
 
-            <p class="mt-3 text-xs text-gray-500 text-center">
-              🔒 Betalingen er kryptert og håndteres av Stripe. Vi lagrer ikke kortinformasjon.
+            <p class="secure-note">
+              <i class="fa-solid fa-shield-halved"></i>
+              Betalingen er kryptert og håndteres av Stripe. Vi lagrer ikke kortinformasjon.
             </p>
           </template>
         </section>
       </div>
 
       <!-- ── Right col: order summary ──────────────────────────────────── -->
-      <aside>
-        <div class="bg-white border border-gray-200 rounded-xl p-6 sticky top-4">
-          <h2 class="text-lg font-semibold text-gray-900 mb-4">Ordresammendrag</h2>
+      <aside class="checkout-aside">
+        <div class="panel summary-sticky">
+          <h2 class="section-title">Ordresammendrag</h2>
 
-          <ul class="divide-y divide-gray-100 mb-4 text-sm">
+          <ul class="item-list">
             <li
               v-for="(item, idx) in cart.items"
               :key="idx"
-              class="py-2"
+              class="item-row"
             >
-              <div class="flex justify-between items-start">
-                <div>
-                  <div class="font-medium text-gray-900">{{ item.bannerSizeName }}</div>
-                  <div class="text-gray-500">{{ item.quantity }} stk</div>
-                </div>
-                <div class="font-medium text-gray-900 ml-3 shrink-0">
-                  {{ formatNok(item.unitPriceNok * item.quantity) }}
-                </div>
+              <div>
+                <div class="item-name">{{ item.bannerSizeName }}</div>
+                <div class="item-sub">{{ item.quantity }} stk</div>
               </div>
+              <div class="item-price">{{ formatNok(item.unitPriceNok * item.quantity) }}</div>
             </li>
           </ul>
 
-          <dl class="space-y-2 text-sm">
-            <div class="flex justify-between">
-              <dt class="text-gray-600">Varer</dt>
-              <dd class="font-medium text-gray-900">{{ formatNok(subtotal) }}</dd>
+          <dl class="summary-list">
+            <div class="summary-row">
+              <dt class="summary-label">Varer</dt>
+              <dd class="summary-value">{{ formatNok(subtotal) }}</dd>
             </div>
-            <div class="flex justify-between">
-              <dt class="text-gray-600">Frakt</dt>
-              <dd class="font-medium text-gray-900">{{ formatNok(shippingCost) }}</dd>
+            <div class="summary-row">
+              <dt class="summary-label">Frakt</dt>
+              <dd class="summary-value">{{ formatNok(shippingCost) }}</dd>
             </div>
-            <div v-if="expressFee > 0" class="flex justify-between">
-              <dt class="text-gray-600">Ekspressgebyr</dt>
-              <dd class="font-medium text-gray-900">{{ formatNok(expressFee) }}</dd>
+            <div v-if="expressFee > 0" class="summary-row">
+              <dt class="summary-label">Ekspressgebyr</dt>
+              <dd class="summary-value">{{ formatNok(expressFee) }}</dd>
             </div>
-            <div class="border-t border-gray-200 pt-3 mt-2">
-              <div class="flex justify-between font-bold text-base">
-                <dt class="text-gray-900">Totalt inkl. MVA</dt>
-                <dd class="text-blue-700">{{ formatNok(total) }}</dd>
+            <div class="summary-divider">
+              <div class="summary-row summary-row--total">
+                <dt>Totalt inkl. MVA</dt>
+                <dd class="summary-total-price">{{ formatNok(total) }}</dd>
               </div>
-              <div class="flex justify-between text-xs text-gray-500 mt-1">
-                <dt>Herav MVA (25%)</dt>
-                <dd>{{ formatNok(vatAmount) }}</dd>
+              <div class="summary-row">
+                <dt class="summary-faint">Herav MVA (25%)</dt>
+                <dd class="summary-faint">{{ formatNok(vatAmount) }}</dd>
               </div>
             </div>
           </dl>
@@ -314,3 +326,228 @@ async function pay() {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* ── Layout ─────────────────────────────────────────────────── */
+.checkout-wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+}
+.checkout-header { margin-bottom: 2rem; }
+.checkout-title {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  color: var(--text);
+  margin-bottom: 0.5rem;
+}
+.checkout-grid { display: grid; gap: 2rem; }
+@media (min-width: 1024px) {
+  .checkout-grid { grid-template-columns: 1fr minmax(0, 340px); }
+}
+.checkout-main { display: flex; flex-direction: column; gap: 1.25rem; }
+.checkout-aside { display: flex; flex-direction: column; }
+
+/* ── Stepper ────────────────────────────────────────────────── */
+.stepper { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; }
+.stepper-step { color: var(--faint); }
+.stepper-step.active { color: var(--accent); font-weight: 600; }
+.stepper-link { color: var(--muted); text-decoration: none; transition: color 0.15s; }
+.stepper-link:hover { color: var(--accent); }
+.stepper-sep { color: var(--line); }
+
+/* ── Section title ──────────────────────────────────────────── */
+.section-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 1rem;
+  font-family: var(--font-display);
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+}
+
+/* ── Address review ─────────────────────────────────────────── */
+.addr-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.addr-edit {
+  font-size: 0.8125rem;
+  color: var(--accent);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: color 0.15s;
+}
+.addr-edit:hover { color: var(--accent-2); }
+.addr-block {
+  font-style: normal;
+  font-size: 0.9rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.addr-name { font-weight: 600; color: var(--text); }
+.addr-delivery {
+  margin-top: 0.625rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.addr-delivery i { color: var(--faint); }
+.addr-delivery__type { font-weight: 600; color: var(--text); }
+
+/* ── Stripe badge ───────────────────────────────────────────── */
+.stripe-badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--faint);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  padding: 2px 8px;
+  border-radius: 99px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ── Card field ─────────────────────────────────────────────── */
+.card-field-wrap { margin-bottom: 1rem; }
+.field-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.field-label i { color: var(--faint); font-size: 0.75rem; }
+
+.stripe-mount {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  min-height: 44px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.stripe-mount:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 106, 61, 0.18);
+}
+
+.field-error {
+  margin-top: 6px;
+  font-size: 0.8125rem;
+  color: #f4a57a;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Alerts ─────────────────────────────────────────────────── */
+.alert-error {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 0.75rem;
+  padding: 10px 14px;
+  background: rgba(220, 60, 60, 0.12);
+  border: 1px solid rgba(220, 60, 60, 0.3);
+  border-radius: 10px;
+  color: #f4a57a;
+  font-size: 0.875rem;
+}
+.alert-error i { color: #e05252; flex-shrink: 0; }
+
+.alert-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 12px 14px;
+  background: rgba(231, 185, 78, 0.1);
+  border: 1px solid rgba(231, 185, 78, 0.3);
+  border-radius: 10px;
+  color: #e7d08a;
+  font-size: 0.875rem;
+}
+.alert-warn i { color: var(--gold); flex-shrink: 0; margin-top: 2px; }
+
+/* ── Pay button ─────────────────────────────────────────────── */
+.btn-pay {
+  width: 100%;
+  justify-content: center;
+  padding: 13px;
+  font-size: 1rem;
+  border-radius: 12px;
+  margin-top: 4px;
+}
+.btn-pay:disabled {
+  background: var(--surface-2) !important;
+  color: var(--faint) !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+}
+
+.secure-note {
+  margin-top: 0.75rem;
+  font-size: 0.78rem;
+  color: var(--faint);
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* ── Item list ──────────────────────────────────────────────── */
+.item-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+  display: flex;
+  flex-direction: column;
+}
+.item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.625rem 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 0.875rem;
+}
+.item-row:last-child { border-bottom: none; }
+.item-name { font-weight: 600; color: var(--text); }
+.item-sub { font-size: 0.8rem; color: var(--muted); }
+.item-price { font-weight: 700; color: var(--text); }
+
+/* ── Summary sidebar ────────────────────────────────────────── */
+.summary-sticky { position: sticky; top: 1rem; }
+.summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+.summary-row { display: flex; justify-content: space-between; align-items: baseline; }
+.summary-label { color: var(--muted); }
+.summary-value { font-weight: 600; color: var(--text); }
+.summary-faint { color: var(--faint); font-size: 0.8125rem; }
+.summary-divider {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 0.75rem;
+  margin-top: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.summary-row--total { font-weight: 700; font-size: 1rem; color: var(--text); }
+.summary-total-price { color: var(--accent); }
+</style>

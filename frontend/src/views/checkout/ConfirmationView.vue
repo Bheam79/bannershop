@@ -36,107 +36,115 @@ function formatDate(isoDate: string | null): string {
 </script>
 
 <template>
-  <div class="max-w-3xl mx-auto px-4 py-12">
-    <!-- Header / stepper -->
-    <nav class="flex items-center gap-2 text-sm mb-8 text-gray-500">
-      <span>1. Oversikt &amp; levering</span>
-      <span class="text-gray-300">›</span>
-      <span>2. Betaling</span>
-      <span class="text-gray-300">›</span>
-      <span class="font-semibold text-blue-700">3. Bekreftelse</span>
+  <div class="confirm-wrap">
+    <!-- Stepper -->
+    <nav class="stepper">
+      <span class="stepper-step">1. Oversikt &amp; levering</span>
+      <span class="stepper-sep">›</span>
+      <span class="stepper-step">2. Betaling</span>
+      <span class="stepper-sep">›</span>
+      <span class="stepper-step active">3. Bekreftelse</span>
     </nav>
 
     <!-- Loading -->
-    <div v-if="loading" class="text-center py-16 text-gray-500">
-      <div class="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
+    <div v-if="loading" class="loading-state">
+      <i class="fa-solid fa-circle-notch fa-spin loading-spinner"></i>
       <p>Laster ordredetaljer…</p>
     </div>
 
     <template v-else>
       <!-- Thank you banner -->
-      <div class="bg-green-50 border border-green-200 rounded-2xl p-8 text-center mb-8">
-        <div class="text-5xl mb-3">🎉</div>
-        <h1 class="text-2xl sm:text-3xl font-bold text-green-900 mb-2">
-          Tusen takk for din bestilling!
-        </h1>
-        <p class="text-green-800">
-          Din ordre er mottatt og er under behandling.
-        </p>
+      <div class="thanks-banner">
+        <div class="thanks-icon">
+          <i class="fa-solid fa-circle-check"></i>
+        </div>
+        <h1 class="display thanks-title">Tusen takk for din bestilling!</h1>
+        <p class="thanks-sub">Din ordre er mottatt og er under behandling.</p>
       </div>
 
       <!-- Error fallback -->
-      <div v-if="error" class="bg-amber-50 border border-amber-200 rounded-xl p-5 text-amber-800 mb-6">
-        {{ error }}
+      <div v-if="error" class="alert-warn">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <div>{{ error }}</div>
       </div>
 
       <template v-if="order">
         <!-- Order number + status -->
-        <div class="bg-white border border-gray-200 rounded-xl p-6 mb-4">
-          <div class="grid sm:grid-cols-3 gap-4 text-center sm:text-left">
-            <div>
-              <div class="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Ordrenummer</div>
-              <div class="text-2xl font-bold text-gray-900">#{{ order.id }}</div>
+        <div class="panel order-meta">
+          <div class="meta-grid">
+            <div class="meta-cell">
+              <div class="meta-label">Ordrenummer</div>
+              <div class="meta-value meta-value--big">#{{ order.id }}</div>
             </div>
-            <div>
-              <div class="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Status</div>
-              <div class="text-base font-medium text-blue-700">
-                <span v-if="order.status === 'PendingPayment'">Venter på betaling</span>
-                <span v-else-if="order.status === 'Paid'">Betalt ✓</span>
-                <span v-else-if="order.status === 'InProduction'">Under produksjon</span>
+            <div class="meta-cell">
+              <div class="meta-label">Status</div>
+              <div class="meta-value meta-value--accent">
+                <span v-if="order.status === 'PendingPayment'">
+                  <i class="fa-solid fa-clock"></i> Venter på betaling
+                </span>
+                <span v-else-if="order.status === 'Paid'">
+                  <i class="fa-solid fa-circle-check"></i> Betalt
+                </span>
+                <span v-else-if="order.status === 'InProduction'">
+                  <i class="fa-solid fa-gears"></i> Under produksjon
+                </span>
                 <span v-else>{{ order.status }}</span>
               </div>
             </div>
-            <div>
-              <div class="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Estimert levering</div>
-              <div class="text-base font-medium text-gray-900">
-                {{ formatDate(order.estimatedDelivery) }}
-              </div>
+            <div class="meta-cell">
+              <div class="meta-label">Estimert levering</div>
+              <div class="meta-value">{{ formatDate(order.estimatedDelivery) }}</div>
             </div>
           </div>
         </div>
 
         <!-- Order items -->
-        <div class="bg-white border border-gray-200 rounded-xl p-6 mb-4">
-          <h2 class="text-base font-semibold text-gray-900 mb-3">Bestilte varer</h2>
-          <ul class="divide-y divide-gray-100">
+        <div class="panel">
+          <h2 class="section-title">Bestilte varer</h2>
+          <ul class="item-list">
             <li
               v-for="item in order.items"
               :key="item.id"
-              class="flex items-center justify-between py-3 text-sm"
+              class="item-row"
             >
               <div>
-                <div class="font-medium text-gray-900">{{ item.bannerSizeName }}</div>
-                <div class="text-gray-500">{{ item.quantity }} stk × {{ formatNok(item.unitPriceNok) }}</div>
+                <div class="item-name">{{ item.bannerSizeName }}</div>
+                <div class="item-sub">{{ item.quantity }} stk × {{ formatNok(item.unitPriceNok) }}</div>
               </div>
-              <div class="font-semibold text-gray-900">{{ formatNok(item.lineTotalNok) }}</div>
+              <div class="item-price">{{ formatNok(item.lineTotalNok) }}</div>
             </li>
           </ul>
 
           <!-- Price breakdown -->
-          <dl class="mt-4 border-t border-gray-100 pt-4 space-y-1.5 text-sm">
-            <div class="flex justify-between">
-              <dt class="text-gray-600">Frakt</dt>
-              <dd class="font-medium">{{ formatNok(order.shippingCostNok) }}</dd>
+          <dl class="summary-list">
+            <div class="summary-row">
+              <dt class="summary-label">Frakt</dt>
+              <dd class="summary-value">{{ formatNok(order.shippingCostNok) }}</dd>
             </div>
-            <div v-if="order.expressFeeNok > 0" class="flex justify-between">
-              <dt class="text-gray-600">Ekspressgebyr</dt>
-              <dd class="font-medium">{{ formatNok(order.expressFeeNok) }}</dd>
+            <div v-if="order.expressFeeNok > 0" class="summary-row">
+              <dt class="summary-label">Ekspressgebyr</dt>
+              <dd class="summary-value">{{ formatNok(order.expressFeeNok) }}</dd>
             </div>
-            <div class="flex justify-between font-bold text-base border-t border-gray-200 pt-2 mt-1">
-              <dt class="text-gray-900">Totalt inkl. MVA</dt>
-              <dd class="text-blue-700">{{ formatNok(order.totalNok) }}</dd>
-            </div>
-            <div class="flex justify-between text-xs text-gray-500">
-              <dt>Herav MVA (25%)</dt>
-              <dd>{{ formatNok(order.totalNok * 0.2) }}</dd>
+            <div class="summary-divider">
+              <div class="summary-row summary-row--total">
+                <dt>Totalt inkl. MVA</dt>
+                <dd class="summary-total-price">{{ formatNok(order.totalNok) }}</dd>
+              </div>
+              <div class="summary-row">
+                <dt class="summary-faint">Herav MVA (25%)</dt>
+                <dd class="summary-faint">{{ formatNok(order.totalNok * 0.2) }}</dd>
+              </div>
             </div>
           </dl>
         </div>
 
         <!-- Delivery address -->
-        <div v-if="order.shippingAddress" class="bg-white border border-gray-200 rounded-xl p-6 mb-4">
-          <h2 class="text-base font-semibold text-gray-900 mb-2">Leveringsadresse</h2>
-          <address class="not-italic text-sm text-gray-700 space-y-0.5">
+        <div v-if="order.shippingAddress" class="panel">
+          <h2 class="section-title">
+            <i class="fa-solid fa-location-dot"></i>
+            Leveringsadresse
+          </h2>
+          <address class="addr-block">
             <div>{{ order.shippingAddress.line1 }}</div>
             <div v-if="order.shippingAddress.line2">{{ order.shippingAddress.line2 }}</div>
             <div>{{ order.shippingAddress.postalCode }} {{ order.shippingAddress.city }}</div>
@@ -145,20 +153,189 @@ function formatDate(isoDate: string | null): string {
       </template>
 
       <!-- Actions -->
-      <div class="flex flex-col sm:flex-row gap-3 mt-6">
-        <RouterLink
-          to="/account/orders"
-          class="flex-1 text-center bg-blue-700 hover:bg-blue-800 text-white font-semibold py-3 px-5 rounded-lg transition"
-        >
-          Følg ordren din →
+      <div class="actions">
+        <RouterLink to="/account/orders" class="btn btn-primary btn-action">
+          <i class="fa-solid fa-box-open"></i>
+          Følg ordren din
         </RouterLink>
-        <RouterLink
-          to="/"
-          class="flex-1 text-center bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold py-3 px-5 rounded-lg transition"
-        >
+        <RouterLink to="/" class="btn btn-ghost btn-action">
+          <i class="fa-solid fa-arrow-left"></i>
           Fortsett å handle
         </RouterLink>
       </div>
     </template>
   </div>
 </template>
+
+<style scoped>
+/* ── Layout ─────────────────────────────────────────────────── */
+.confirm-wrap {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* ── Stepper ────────────────────────────────────────────────── */
+.stepper { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; }
+.stepper-step { color: var(--faint); }
+.stepper-step.active { color: var(--accent); font-weight: 600; }
+.stepper-sep { color: var(--line); }
+
+/* ── Loading ────────────────────────────────────────────────── */
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 4rem 0;
+  color: var(--muted);
+}
+.loading-spinner { font-size: 2rem; color: var(--accent); }
+
+/* ── Thank-you banner ───────────────────────────────────────── */
+.thanks-banner {
+  background: linear-gradient(135deg, rgba(60,180,100,.12) 0%, rgba(60,180,100,.06) 100%);
+  border: 1px solid rgba(60,180,100,.25);
+  border-radius: var(--radius);
+  padding: 2.25rem 2rem;
+  text-align: center;
+}
+.thanks-icon {
+  font-size: 3rem;
+  color: #4ec984;
+  margin-bottom: 0.75rem;
+  line-height: 1;
+}
+.thanks-title {
+  font-size: clamp(1.4rem, 3vw, 1.875rem);
+  color: var(--text);
+  margin-bottom: 0.5rem;
+}
+.thanks-sub { color: #7de0a8; font-size: 0.9375rem; }
+
+/* ── Alerts ─────────────────────────────────────────────────── */
+.alert-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 12px 14px;
+  background: rgba(231, 185, 78, 0.1);
+  border: 1px solid rgba(231, 185, 78, 0.3);
+  border-radius: 10px;
+  color: #e7d08a;
+  font-size: 0.875rem;
+}
+.alert-warn i { color: var(--gold); flex-shrink: 0; margin-top: 2px; }
+
+/* ── Order meta grid ────────────────────────────────────────── */
+.order-meta { }
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  text-align: center;
+}
+@media (max-width: 540px) {
+  .meta-grid { grid-template-columns: 1fr; text-align: left; }
+}
+.meta-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.meta-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.meta-value--big { font-size: 1.5rem; font-weight: 800; font-family: var(--font-display); }
+.meta-value--accent { color: var(--accent); }
+
+/* ── Section title ──────────────────────────────────────────── */
+.section-title {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.875rem;
+  font-family: var(--font-display);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.section-title i { color: var(--faint); font-size: 0.875rem; }
+
+/* ── Item list ──────────────────────────────────────────────── */
+.item-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+  display: flex;
+  flex-direction: column;
+}
+.item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.625rem 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 0.875rem;
+}
+.item-row:last-child { border-bottom: none; }
+.item-name { font-weight: 600; color: var(--text); }
+.item-sub { font-size: 0.8rem; color: var(--muted); }
+.item-price { font-weight: 700; color: var(--text); }
+
+/* ── Summary ────────────────────────────────────────────────── */
+.summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.875rem;
+}
+.summary-row { display: flex; justify-content: space-between; align-items: baseline; }
+.summary-label { color: var(--muted); }
+.summary-value { font-weight: 600; color: var(--text); }
+.summary-faint { color: var(--faint); font-size: 0.8125rem; }
+.summary-divider {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 0.625rem;
+  margin-top: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.summary-row--total { font-weight: 700; font-size: 1rem; color: var(--text); }
+.summary-total-price { color: var(--accent); }
+
+/* ── Address ────────────────────────────────────────────────── */
+.addr-block {
+  font-style: normal;
+  font-size: 0.9rem;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+/* ── Actions ────────────────────────────────────────────────── */
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+@media (min-width: 480px) {
+  .actions { flex-direction: row; }
+}
+.btn-action {
+  flex: 1;
+  justify-content: center;
+  padding: 13px;
+  font-size: 0.9375rem;
+  border-radius: 12px;
+}
+</style>

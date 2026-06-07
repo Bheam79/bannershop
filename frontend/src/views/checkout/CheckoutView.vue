@@ -135,42 +135,42 @@ function proceed() {
 
 // ── Formatting helpers ───────────────────────────────────────────────────────
 function formatNok(n: number): string {
-  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
+  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
 }
 </script>
 
 <template>
-  <div class="max-w-6xl mx-auto px-4 py-8 sm:py-12">
+  <div class="checkout-wrap">
     <!-- Header / stepper -->
-    <header class="mb-8">
-      <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Kasse</h1>
-      <nav class="flex items-center gap-2 text-sm">
-        <span class="font-semibold text-blue-700">1. Oversikt &amp; levering</span>
-        <span class="text-gray-400">›</span>
-        <span class="text-gray-400">2. Betaling</span>
-        <span class="text-gray-400">›</span>
-        <span class="text-gray-400">3. Bekreftelse</span>
+    <header class="checkout-header">
+      <h1 class="display checkout-title">Kasse</h1>
+      <nav class="stepper">
+        <span class="stepper-step active">1. Oversikt &amp; levering</span>
+        <span class="stepper-sep">›</span>
+        <span class="stepper-step">2. Betaling</span>
+        <span class="stepper-sep">›</span>
+        <span class="stepper-step">3. Bekreftelse</span>
       </nav>
     </header>
 
-    <div class="grid lg:grid-cols-3 gap-8">
+    <div class="checkout-grid">
       <!-- ── Left col: form ─────────────────────────────────────────────── -->
-      <div class="lg:col-span-2 space-y-6">
+      <div class="checkout-main">
 
         <!-- Order summary -->
-        <section class="bg-white border border-gray-200 rounded-xl p-6">
-          <h2 class="text-lg font-semibold text-gray-900 mb-4">Din bestilling</h2>
-          <ul class="divide-y divide-gray-100">
+        <section class="panel">
+          <h2 class="section-title">Din bestilling</h2>
+          <ul class="item-list">
             <li
               v-for="(item, idx) in cart.items"
               :key="idx"
-              class="flex items-center justify-between py-3"
+              class="item-row"
             >
               <div>
-                <div class="font-medium text-gray-900">{{ item.bannerSizeName }}</div>
-                <div class="text-sm text-gray-500">{{ item.quantity }} stk × {{ formatNok(item.unitPriceNok) }}</div>
+                <div class="item-name">{{ item.bannerSizeName }}</div>
+                <div class="item-sub">{{ item.quantity }} stk × {{ formatNok(item.unitPriceNok) }}</div>
               </div>
-              <div class="font-semibold text-gray-900">
+              <div class="item-price">
                 {{ formatNok(item.unitPriceNok * item.quantity) }}
               </div>
             </li>
@@ -178,52 +178,46 @@ function formatNok(n: number): string {
         </section>
 
         <!-- Delivery address -->
-        <section class="bg-white border border-gray-200 rounded-xl p-6">
-          <h2 class="text-lg font-semibold text-gray-900 mb-4">Leveringsadresse</h2>
-          <div class="grid sm:grid-cols-2 gap-4">
+        <section class="panel">
+          <h2 class="section-title">Leveringsadresse</h2>
+          <div class="form-grid">
             <!-- Recipient name -->
-            <div class="sm:col-span-2">
-              <label class="block text-sm font-medium text-gray-700 mb-1" for="recipientName">
-                Mottaker
-              </label>
+            <div class="form-field full">
+              <label class="field-label" for="recipientName">Mottaker</label>
               <input
                 id="recipientName"
                 v-model="recipientName"
                 type="text"
                 autocomplete="name"
                 placeholder="Fullt navn"
-                class="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                :class="formErrors.recipientName ? 'border-red-400' : 'border-gray-300'"
+                class="field-input"
+                :class="{ 'field-input--error': formErrors.recipientName }"
               />
-              <p v-if="formErrors.recipientName" class="mt-1 text-xs text-red-600">
+              <p v-if="formErrors.recipientName" class="field-error">
                 {{ formErrors.recipientName }}
               </p>
             </div>
 
             <!-- Address line 1 -->
-            <div class="sm:col-span-2">
-              <label class="block text-sm font-medium text-gray-700 mb-1" for="addressLine1">
-                Gateadresse
-              </label>
+            <div class="form-field full">
+              <label class="field-label" for="addressLine1">Gateadresse</label>
               <input
                 id="addressLine1"
                 v-model="addressLine1"
                 type="text"
                 autocomplete="address-line1"
                 placeholder="Gatenavn og husnummer"
-                class="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                :class="formErrors.addressLine1 ? 'border-red-400' : 'border-gray-300'"
+                class="field-input"
+                :class="{ 'field-input--error': formErrors.addressLine1 }"
               />
-              <p v-if="formErrors.addressLine1" class="mt-1 text-xs text-red-600">
+              <p v-if="formErrors.addressLine1" class="field-error">
                 {{ formErrors.addressLine1 }}
               </p>
             </div>
 
             <!-- Postal code -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1" for="postalCode">
-                Postnummer
-              </label>
+            <div class="form-field">
+              <label class="field-label" for="postalCode">Postnummer</label>
               <input
                 id="postalCode"
                 v-model="postalCode"
@@ -232,29 +226,27 @@ function formatNok(n: number): string {
                 maxlength="4"
                 autocomplete="postal-code"
                 placeholder="0000"
-                class="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                :class="formErrors.postalCode ? 'border-red-400' : 'border-gray-300'"
+                class="field-input"
+                :class="{ 'field-input--error': formErrors.postalCode }"
               />
-              <p v-if="formErrors.postalCode" class="mt-1 text-xs text-red-600">
+              <p v-if="formErrors.postalCode" class="field-error">
                 {{ formErrors.postalCode }}
               </p>
             </div>
 
             <!-- City -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1" for="city">
-                Poststed
-              </label>
+            <div class="form-field">
+              <label class="field-label" for="city">Poststed</label>
               <input
                 id="city"
                 v-model="city"
                 type="text"
                 autocomplete="address-level2"
                 placeholder="Oslo"
-                class="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                :class="formErrors.city ? 'border-red-400' : 'border-gray-300'"
+                class="field-input"
+                :class="{ 'field-input--error': formErrors.city }"
               />
-              <p v-if="formErrors.city" class="mt-1 text-xs text-red-600">
+              <p v-if="formErrors.city" class="field-error">
                 {{ formErrors.city }}
               </p>
             </div>
@@ -262,147 +254,476 @@ function formatNok(n: number): string {
         </section>
 
         <!-- Delivery type -->
-        <section class="bg-white border border-gray-200 rounded-xl p-6">
-          <h2 class="text-lg font-semibold text-gray-900 mb-4">Leveringstype</h2>
-          <div class="grid sm:grid-cols-2 gap-3">
+        <section class="panel">
+          <h2 class="section-title">Leveringstype</h2>
+          <div class="delivery-grid">
             <!-- Standard -->
             <button
               type="button"
-              class="text-left border-2 rounded-xl p-4 transition"
-              :class="deliveryType === 'Standard'
-                ? 'border-blue-700 bg-blue-50'
-                : 'border-gray-200 hover:border-gray-300'"
+              class="delivery-btn"
+              :class="{ 'delivery-btn--active': deliveryType === 'Standard' }"
               @click="deliveryType = 'Standard'"
             >
-              <div class="flex items-start justify-between">
-                <div>
-                  <div class="font-semibold text-gray-900">Standard</div>
-                  <div class="text-sm text-gray-600 mt-0.5">
-                    Estimert levering: ca. 2 uker
-                  </div>
-                  <div v-if="shippingEstimate && deliveryType === 'Standard'" class="text-sm text-gray-500 mt-1">
+              <div class="delivery-btn__inner">
+                <div class="delivery-btn__icon">
+                  <i class="fa-solid fa-truck"></i>
+                </div>
+                <div class="delivery-btn__body">
+                  <div class="delivery-btn__title">Standard</div>
+                  <div class="delivery-btn__sub">Estimert levering: ca. 2 uker</div>
+                  <div v-if="shippingEstimate && deliveryType === 'Standard'" class="delivery-btn__eta">
                     {{ estimatedDeliveryText }} ({{ shippingEstimate.standard.estimatedDays }} virkedager)
                   </div>
+                  <div v-if="shippingEstimate" class="delivery-btn__price">
+                    {{ formatNok(shippingEstimate.standard.costNok) }}
+                  </div>
+                  <div v-else-if="shippingLoading" class="delivery-btn__loading">Beregner…</div>
+                  <div v-else class="delivery-btn__hint">Skriv inn postnummer for pris</div>
                 </div>
-                <div class="ml-3 shrink-0">
-                  <div
-                    class="w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5"
-                    :class="deliveryType === 'Standard' ? 'border-blue-700' : 'border-gray-300'"
-                  >
-                    <div v-if="deliveryType === 'Standard'" class="w-2.5 h-2.5 rounded-full bg-blue-700" />
+                <div class="delivery-btn__radio">
+                  <div class="radio-outer" :class="{ 'radio-outer--active': deliveryType === 'Standard' }">
+                    <div v-if="deliveryType === 'Standard'" class="radio-inner"></div>
                   </div>
                 </div>
               </div>
-              <div v-if="shippingEstimate" class="mt-2 font-bold text-blue-700">
-                {{ formatNok(shippingEstimate.standard.costNok) }}
-              </div>
-              <div v-else-if="shippingLoading" class="mt-2 text-sm text-gray-400">Beregner…</div>
-              <div v-else class="mt-2 text-sm text-gray-400">Skriv inn postnummer for pris</div>
             </button>
 
             <!-- Express -->
             <button
               type="button"
-              class="text-left border-2 rounded-xl p-4 transition"
-              :class="deliveryType === 'Express'
-                ? 'border-yellow-500 bg-yellow-50'
-                : 'border-gray-200 hover:border-gray-300'"
+              class="delivery-btn"
+              :class="{ 'delivery-btn--active': deliveryType === 'Express' }"
               @click="deliveryType = 'Express'"
             >
-              <div class="flex items-start justify-between">
-                <div>
-                  <div class="font-semibold text-gray-900">
+              <div class="delivery-btn__inner">
+                <div class="delivery-btn__icon delivery-btn__icon--express">
+                  <i class="fa-solid fa-bolt"></i>
+                </div>
+                <div class="delivery-btn__body">
+                  <div class="delivery-btn__title">
                     Ekspress
-                    <span class="ml-1 text-xs font-normal bg-yellow-200 text-yellow-900 px-1.5 py-0.5 rounded-full">
-                      +500 kr gebyr
-                    </span>
+                    <span class="badge-express">+500 kr gebyr</span>
                   </div>
-                  <div class="text-sm text-gray-600 mt-0.5">
-                    Estimert levering: ca. 3 dager
-                  </div>
-                  <div v-if="shippingEstimate && deliveryType === 'Express'" class="text-sm text-gray-500 mt-1">
+                  <div class="delivery-btn__sub">Estimert levering: ca. 3 dager</div>
+                  <div v-if="shippingEstimate && deliveryType === 'Express'" class="delivery-btn__eta">
                     {{ estimatedDeliveryText }} ({{ shippingEstimate.express.estimatedDays }} virkedager)
                   </div>
+                  <div v-if="shippingEstimate" class="delivery-btn__price delivery-btn__price--express">
+                    {{ formatNok(shippingEstimate.express.costNok) }}
+                    <span class="delivery-btn__price-note">frakt + 500 kr gebyr</span>
+                  </div>
+                  <div v-else-if="shippingLoading" class="delivery-btn__loading">Beregner…</div>
+                  <div v-else class="delivery-btn__hint">Skriv inn postnummer for pris</div>
                 </div>
-                <div class="ml-3 shrink-0">
-                  <div
-                    class="w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5"
-                    :class="deliveryType === 'Express' ? 'border-yellow-500' : 'border-gray-300'"
-                  >
-                    <div v-if="deliveryType === 'Express'" class="w-2.5 h-2.5 rounded-full bg-yellow-500" />
+                <div class="delivery-btn__radio">
+                  <div class="radio-outer" :class="{ 'radio-outer--active': deliveryType === 'Express' }">
+                    <div v-if="deliveryType === 'Express'" class="radio-inner"></div>
                   </div>
                 </div>
               </div>
-              <div v-if="shippingEstimate" class="mt-2 font-bold text-yellow-700">
-                {{ formatNok(shippingEstimate.express.costNok) }}
-                <span class="text-xs font-normal text-gray-600">frakt + 500 kr gebyr</span>
-              </div>
-              <div v-else-if="shippingLoading" class="mt-2 text-sm text-gray-400">Beregner…</div>
-              <div v-else class="mt-2 text-sm text-gray-400">Skriv inn postnummer for pris</div>
             </button>
           </div>
 
-          <p v-if="shippingError" class="mt-3 text-sm text-red-600">{{ shippingError }}</p>
+          <p v-if="shippingError" class="alert-error">
+            <i class="fa-solid fa-circle-exclamation"></i>
+            {{ shippingError }}
+          </p>
         </section>
       </div>
 
       <!-- ── Right col: order total ──────────────────────────────────────── -->
-      <aside class="space-y-4">
-        <div class="bg-white border border-gray-200 rounded-xl p-6 sticky top-4">
-          <h2 class="text-lg font-semibold text-gray-900 mb-4">Ordresammendrag</h2>
+      <aside class="checkout-aside">
+        <div class="panel summary-sticky">
+          <h2 class="section-title">Ordresammendrag</h2>
 
-          <dl class="space-y-2 text-sm">
-            <div class="flex justify-between">
-              <dt class="text-gray-600">Varer ({{ cart.itemCount }} stk)</dt>
-              <dd class="font-medium text-gray-900">{{ formatNok(subtotal) }}</dd>
+          <dl class="summary-list">
+            <div class="summary-row">
+              <dt class="summary-label">Varer ({{ cart.itemCount }} stk)</dt>
+              <dd class="summary-value">{{ formatNok(subtotal) }}</dd>
             </div>
 
-            <div class="flex justify-between">
-              <dt class="text-gray-600">
+            <div class="summary-row">
+              <dt class="summary-label">
                 Frakt ({{ deliveryType === 'Express' ? 'ekspress' : 'standard' }})
               </dt>
-              <dd class="font-medium text-gray-900">
-                <span v-if="shippingLoading" class="text-gray-400">Beregner…</span>
+              <dd class="summary-value">
+                <span v-if="shippingLoading" class="summary-faint">Beregner…</span>
                 <span v-else-if="shippingEstimate">{{ formatNok(shippingCost) }}</span>
-                <span v-else class="text-gray-400">–</span>
+                <span v-else class="summary-faint">–</span>
               </dd>
             </div>
 
-            <div v-if="deliveryType === 'Express'" class="flex justify-between">
-              <dt class="text-gray-600">Ekspress produksjonsgebyr</dt>
-              <dd class="font-medium text-gray-900">{{ formatNok(expressFee) }}</dd>
+            <div v-if="deliveryType === 'Express'" class="summary-row">
+              <dt class="summary-label">Ekspress produksjonsgebyr</dt>
+              <dd class="summary-value">{{ formatNok(expressFee) }}</dd>
             </div>
 
-            <div class="border-t border-gray-200 pt-3 mt-3">
-              <div class="flex justify-between text-base font-bold">
-                <dt class="text-gray-900">Totalt inkl. MVA</dt>
-                <dd class="text-blue-700">{{ formatNok(total) }}</dd>
+            <div class="summary-divider">
+              <div class="summary-row summary-row--total">
+                <dt>Totalt inkl. MVA</dt>
+                <dd class="summary-total-price">{{ formatNok(total) }}</dd>
               </div>
-              <div class="flex justify-between text-xs text-gray-500 mt-1">
-                <dt>Herav MVA (25%)</dt>
-                <dd>{{ formatNok(vatAmount) }}</dd>
+              <div class="summary-row">
+                <dt class="summary-faint">Herav MVA (25%)</dt>
+                <dd class="summary-faint">{{ formatNok(vatAmount) }}</dd>
               </div>
             </div>
           </dl>
 
-          <div v-if="estimatedDeliveryText && shippingEstimate" class="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
-            <div class="font-medium">Estimert levering</div>
-            <div>{{ estimatedDeliveryText }}</div>
+          <div v-if="estimatedDeliveryText && shippingEstimate" class="alert-delivery">
+            <i class="fa-solid fa-truck"></i>
+            <div>
+              <div class="alert-delivery__label">Estimert levering</div>
+              <div>{{ estimatedDeliveryText }}</div>
+            </div>
           </div>
 
-          <p v-if="!shippingEstimate" class="mt-3 text-xs text-gray-500">
+          <p v-if="!shippingEstimate" class="summary-hint">
             Skriv inn leveringsadresse for å se fraktkostnader.
           </p>
 
           <button
             type="button"
-            class="mt-5 w-full bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-lg transition"
+            class="btn btn-primary btn-proceed"
             @click="proceed"
           >
-            Gå til betaling →
+            Gå til betaling
+            <i class="fa-solid fa-arrow-right"></i>
           </button>
         </div>
       </aside>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* ── Layout ─────────────────────────────────────────────────── */
+.checkout-wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+}
+
+.checkout-header {
+  margin-bottom: 2rem;
+}
+
+.checkout-title {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  color: var(--text);
+  margin-bottom: 0.5rem;
+}
+
+.checkout-grid {
+  display: grid;
+  gap: 2rem;
+}
+@media (min-width: 1024px) {
+  .checkout-grid { grid-template-columns: 1fr minmax(0, 340px); }
+}
+
+.checkout-main { display: flex; flex-direction: column; gap: 1.25rem; }
+.checkout-aside { display: flex; flex-direction: column; gap: 1rem; }
+
+/* ── Stepper ────────────────────────────────────────────────── */
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+.stepper-step {
+  color: var(--faint);
+}
+.stepper-step.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+.stepper-sep {
+  color: var(--line);
+}
+
+/* ── Section title ──────────────────────────────────────────── */
+.section-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 1rem;
+  font-family: var(--font-display);
+}
+
+/* ── Item list ──────────────────────────────────────────────── */
+.item-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+.item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.item-row:last-child { border-bottom: none; }
+.item-name { font-weight: 600; color: var(--text); }
+.item-sub { font-size: 0.8125rem; color: var(--muted); margin-top: 0.125rem; }
+.item-price { font-weight: 700; color: var(--text); }
+
+/* ── Form ───────────────────────────────────────────────────── */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.form-field { display: flex; flex-direction: column; }
+.form-field.full { grid-column: 1 / -1; }
+@media (max-width: 640px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .form-field.full { grid-column: auto; }
+}
+
+.field-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.field-input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.9375rem;
+  color: var(--text);
+  font-family: var(--font-ui);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.field-input::placeholder { color: var(--faint); }
+.field-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 106, 61, 0.18);
+}
+.field-input--error {
+  border-color: #e05252 !important;
+}
+.field-error {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #f4a57a;
+}
+
+/* ── Delivery buttons ───────────────────────────────────────── */
+.delivery-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+@media (max-width: 640px) { .delivery-grid { grid-template-columns: 1fr; } }
+
+.delivery-btn {
+  text-align: left;
+  background: var(--surface-2);
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  padding: 1rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+.delivery-btn:hover {
+  border-color: var(--muted);
+}
+.delivery-btn--active {
+  border-color: var(--accent) !important;
+  background: rgba(255, 106, 61, 0.08) !important;
+}
+
+.delivery-btn__inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.delivery-btn__icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 15px;
+  margin-top: 2px;
+}
+.delivery-btn--active .delivery-btn__icon {
+  background: rgba(255, 106, 61, 0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.delivery-btn__icon--express { color: var(--gold); }
+.delivery-btn--active .delivery-btn__icon--express {
+  background: rgba(231, 185, 78, 0.15);
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.delivery-btn__body { flex: 1; min-width: 0; }
+.delivery-btn__title {
+  font-weight: 700;
+  font-size: 0.9375rem;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.delivery-btn__sub {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.delivery-btn__eta {
+  font-size: 0.8rem;
+  color: var(--faint);
+  margin-top: 4px;
+}
+.delivery-btn__price {
+  margin-top: 8px;
+  font-weight: 700;
+  font-size: 0.9375rem;
+  color: var(--accent);
+}
+.delivery-btn__price--express { color: var(--gold); }
+.delivery-btn__price-note {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 4px;
+}
+.delivery-btn__loading,
+.delivery-btn__hint {
+  margin-top: 8px;
+  font-size: 0.8125rem;
+  color: var(--faint);
+}
+
+.badge-express {
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: rgba(231, 185, 78, 0.18);
+  color: var(--gold);
+  border: 1px solid rgba(231, 185, 78, 0.35);
+  padding: 1px 7px;
+  border-radius: 99px;
+}
+
+.delivery-btn__radio { flex-shrink: 0; margin-top: 2px; }
+.radio-outer {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s;
+}
+.radio-outer--active { border-color: var(--accent); }
+.radio-inner {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ── Alerts ─────────────────────────────────────────────────── */
+.alert-error {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 0.75rem;
+  padding: 10px 14px;
+  background: rgba(220, 60, 60, 0.12);
+  border: 1px solid rgba(220, 60, 60, 0.3);
+  border-radius: 10px;
+  color: #f4a57a;
+  font-size: 0.875rem;
+}
+.alert-error i { color: #e05252; flex-shrink: 0; }
+
+.alert-delivery {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 1rem;
+  padding: 10px 14px;
+  background: rgba(60, 180, 100, 0.1);
+  border: 1px solid rgba(60, 180, 100, 0.25);
+  border-radius: 10px;
+  font-size: 0.875rem;
+  color: #7de0a8;
+}
+.alert-delivery i { color: #4ec984; flex-shrink: 0; margin-top: 3px; }
+.alert-delivery__label { font-weight: 600; margin-bottom: 1px; }
+
+/* ── Summary sidebar ────────────────────────────────────────── */
+.summary-sticky {
+  position: sticky;
+  top: 1rem;
+}
+.summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0;
+  font-size: 0.875rem;
+}
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.summary-label { color: var(--muted); }
+.summary-value { font-weight: 600; color: var(--text); }
+.summary-faint { color: var(--faint); font-size: 0.8125rem; }
+.summary-divider {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 0.75rem;
+  margin-top: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.summary-row--total {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text);
+}
+.summary-total-price { color: var(--accent); }
+.summary-hint {
+  margin-top: 0.75rem;
+  font-size: 0.78rem;
+  color: var(--faint);
+}
+
+.btn-proceed {
+  width: 100%;
+  justify-content: center;
+  padding: 13px;
+  font-size: 1rem;
+  border-radius: 12px;
+  margin-top: 1.25rem;
+}
+</style>
