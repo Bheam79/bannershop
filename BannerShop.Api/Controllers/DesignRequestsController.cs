@@ -172,6 +172,22 @@ public class DesignRequestsController : ControllerBase
         };
     }
 
+    // ── POST /api/design-requests/{id}/generations/{generationId}/activate ──
+    /// <summary>
+    /// Switches the active generation to a previously-generated one. Free —
+    /// no credit consumed. Used by the account detail view so users can pick
+    /// whichever past attempt they liked best (BANNERSH-84).
+    /// </summary>
+    [HttpPost("{id:int}/generations/{generationId:int}/activate")]
+    public async Task<IActionResult> ActivateGeneration(int id, int generationId, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        if (userId == 0) return Unauthorized();
+        var result = await _service.ActivateGenerationAsync(id, generationId, userId, ct);
+        if (!result.Success) return BadRequest(new { error = result.Error });
+        return Ok(result.Detail);
+    }
+
     private int GetUserId()
     {
         var raw = User.FindFirstValue(ClaimTypes.NameIdentifier);

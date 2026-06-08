@@ -1,23 +1,32 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
 import {
   getDesignRequest,
   approveDesignRequest,
   requestRevision,
   fetchTemplates,
+  regenerateDesignRequest,
+  activateGeneration,
   type DesignRequestDetail,
   type BannerTemplateItem,
+  type BannerGenerationHistoryItem,
 } from '@/api/designRequests'
+import { uploadBannerFile } from '@/api/bannerBuilder'
+import { generateRequestIntegrity } from '@/composables/useRequestIntegrity'
+import { getAiCreditsBalance } from '@/api/aiCredits'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
 const requestId = Number(route.params.id)
+const auth = useAuthStore()
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 const request = ref<DesignRequestDetail | null>(null)
 const templates = ref<BannerTemplateItem[]>([])
 const loading = ref(true)
 const loadError = ref<string | null>(null)
+const creditsRemaining = ref<number | null>(null)
 
 async function loadRequest() {
   loading.value = true
@@ -26,14 +35,26 @@ async function loadRequest() {
     const [dr, tpls] = await Promise.all([getDesignRequest(requestId), fetchTemplates()])
     request.value = dr
     templates.value = tpls
+    syncEditBufferFromRequest()
+    // While a regenerate is in flight the status will be InProgress — start polling.
+    if (dr.status === 'InProgress' || dr.status === 'Pending') startPolling()
   } catch {
     loadError.value = 'Kunne ikke laste design-bestillingen.'
   } finally {
     loading.value = false
   }
+  if (auth.isLoggedIn) {
+    try {
+      const balance = await getAiCreditsBalance()
+      creditsRemaining.value = balance.creditsRemaining
+    } catch {
+      // non-critical — the regenerate button is gated server-side anyway.
+    }
+  }
 }
 
 onMounted(loadRequest)
+onBeforeUnmount(() => stopPolling())
 
 // ── Approve ───────────────────────────────────────────────────────────────────
 const approving = ref(false)
@@ -128,12 +149,208 @@ function statusLabel(s: string) { return STATUS_LABELS[s] ?? s }
 function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'badge-draft' }
 
 const isManual = computed(() => request.value?.mode === 'Manual')
+const isAi = computed(() => request.value?.mode === 'Ai')
 const canRequestRevision = computed(
   () =>
     request.value?.mode === 'Manual' &&
     request.value.status === 'AwaitingApproval' &&
     request.value.revisionCount < 1,
 )
+
+// ── Polling (BANNERSH-84) ─────────────────────────────────────────────────────
+// When a regenerate is in flight the request is InProgress; refresh until it
+// reaches AwaitingApproval / Approved / Final / Failed.
+let pollTimer: ReturnType<typeof setInterval> | null = null
+const TERMINAL_STATUSES = ['AwaitingApproval', 'Approved', 'Final', 'Failed', 'Cancelled']
+
+function startPolling() {
+  stopPolling()
+  pollTimer = setInterval(() => void pollOnce(), 3000)
+}
+function stopPolling() {
+  if (pollTimer !== null) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+async function pollOnce() {
+  try {
+    const dr = await getDesignRequest(requestId)
+    request.value = dr
+    if (TERMINAL_STATUSES.includes(dr.status)) {
+      stopPolling()
+      syncEditBufferFromRequest()
+    }
+  } catch {
+    // transient — keep polling
+  }
+}
+
+// ── Regenerate (AI only, BANNERSH-84) ─────────────────────────────────────────
+const showEditPanel = ref(false)
+const editPersonName = ref('')
+const editPersonAge = ref<number | null>(null)
+const editTextContent = ref('')
+const editThemeDescription = ref('')
+
+// Photo override (the request itself does not expose the current photo URL, so we
+// only track a NEW upload here — the server keeps the existing photo unchanged
+// when uploadedPhotoBannerDesignId is undefined).
+const newPhotoBannerDesignId = ref<number | null>(null)
+const newPhotoPreviewUrl = ref<string | null>(null)
+const photoUploading = ref(false)
+const photoUploadProgress = ref(0)
+const photoUploadError = ref<string | null>(null)
+const photoFileInput = ref<HTMLInputElement | null>(null)
+const PHOTO_ACCEPTED = ['image/jpeg', 'image/png', 'image/webp']
+const PHOTO_MAX_BYTES = 10 * 1024 * 1024
+
+const regenerating = ref(false)
+const regenerateError = ref<string | null>(null)
+const regenerateInfo = ref<string | null>(null)
+
+function syncEditBufferFromRequest() {
+  if (!request.value) return
+  editPersonName.value = request.value.personName
+  editPersonAge.value = request.value.personAge
+  editTextContent.value = request.value.textContent
+  editThemeDescription.value = request.value.themeDescription
+}
+
+function openPhotoPicker() {
+  if (photoUploading.value) return
+  photoFileInput.value?.click()
+}
+
+function onPhotoFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (file) void handlePhotoFile(file)
+  if (input) input.value = ''
+}
+
+async function handlePhotoFile(file: File) {
+  photoUploadError.value = null
+  if (!PHOTO_ACCEPTED.includes(file.type)) {
+    photoUploadError.value = `Filtypen ${file.type || 'ukjent'} støttes ikke. Bruk JPEG, PNG eller WEBP.`
+    return
+  }
+  if (file.size > PHOTO_MAX_BYTES) {
+    photoUploadError.value = `Filen er for stor (${(file.size / 1024 / 1024).toFixed(1)} MB). Maks 10 MB.`
+    return
+  }
+  if (newPhotoPreviewUrl.value) URL.revokeObjectURL(newPhotoPreviewUrl.value)
+  newPhotoPreviewUrl.value = URL.createObjectURL(file)
+  photoUploading.value = true
+  photoUploadProgress.value = 0
+  try {
+    const resp = await uploadBannerFile(file, (pct) => (photoUploadProgress.value = pct))
+    newPhotoBannerDesignId.value = resp.designId
+  } catch (e: unknown) {
+    const ex = e as { response?: { data?: { error?: string } }; message?: string }
+    photoUploadError.value = ex.response?.data?.error || ex.message || 'Opplasting feilet. Prøv igjen.'
+    if (newPhotoPreviewUrl.value) {
+      URL.revokeObjectURL(newPhotoPreviewUrl.value)
+      newPhotoPreviewUrl.value = null
+    }
+    newPhotoBannerDesignId.value = null
+  } finally {
+    photoUploading.value = false
+  }
+}
+
+function clearNewPhoto() {
+  if (newPhotoPreviewUrl.value) URL.revokeObjectURL(newPhotoPreviewUrl.value)
+  newPhotoPreviewUrl.value = null
+  newPhotoBannerDesignId.value = null
+  photoUploadError.value = null
+}
+
+async function regenerate() {
+  if (!request.value || regenerating.value) return
+  regenerating.value = true
+  regenerateError.value = null
+  regenerateInfo.value = null
+  try {
+    const integrity = await generateRequestIntegrity()
+    const params: Parameters<typeof regenerateDesignRequest>[1] = {}
+    // Only send overrides that actually changed — keeps the diff visible in server logs.
+    if (editPersonName.value.trim() && editPersonName.value.trim() !== request.value.personName)
+      params.personName = editPersonName.value.trim()
+    if (editPersonAge.value !== request.value.personAge)
+      params.personAge = editPersonAge.value ?? -1
+    if (editTextContent.value.trim() && editTextContent.value.trim() !== request.value.textContent)
+      params.textContent = editTextContent.value.trim()
+    if (
+      editThemeDescription.value.trim() &&
+      editThemeDescription.value.trim() !== request.value.themeDescription
+    )
+      params.themeDescription = editThemeDescription.value.trim()
+    if (newPhotoBannerDesignId.value !== null)
+      params.uploadedPhotoBannerDesignId = newPhotoBannerDesignId.value
+
+    const resp = await regenerateDesignRequest(requestId, params, integrity)
+    creditsRemaining.value = resp.creditsRemaining
+    regenerateInfo.value = 'Ny generering startet — venter på resultat…'
+    showEditPanel.value = false
+    clearNewPhoto()
+    await pollOnce()
+    startPolling()
+  } catch (e: unknown) {
+    const ex = e as {
+      response?: {
+        status?: number
+        data?: { error?: string; creditsRemaining?: number; paywallMetadata?: { reason?: string } }
+      }
+      message?: string
+    }
+    if (ex.response?.status === 402) {
+      regenerateError.value =
+        'Du har ingen AI-kreditter igjen. Kjøp en kredittpakke fra AI-banner-verktøyet for å fortsette.'
+    } else if (ex.response?.status === 401) {
+      regenerateError.value = 'Du må være innlogget for å generere på nytt.'
+    } else {
+      regenerateError.value =
+        ex.response?.data?.error || ex.message || 'Ny generering feilet. Prøv igjen.'
+    }
+  } finally {
+    regenerating.value = false
+  }
+}
+
+// ── Generation gallery (BANNERSH-84) ──────────────────────────────────────────
+const completedGenerations = computed<BannerGenerationHistoryItem[]>(() =>
+  (request.value?.generationHistory ?? []).filter(
+    (g) => g.status === 'Completed' && g.previewUrl !== null,
+  ),
+)
+const hasMultipleVersions = computed(() => completedGenerations.value.length > 1)
+
+const activatingId = ref<number | null>(null)
+const activateError = ref<string | null>(null)
+
+async function selectGeneration(gen: BannerGenerationHistoryItem) {
+  if (!request.value) return
+  if (gen.isActive) return
+  if (activatingId.value !== null) return
+  activatingId.value = gen.id
+  activateError.value = null
+  try {
+    request.value = await activateGeneration(requestId, gen.id)
+    syncEditBufferFromRequest()
+  } catch (e: unknown) {
+    const ex = e as { response?: { data?: { error?: string } }; message?: string }
+    activateError.value =
+      ex.response?.data?.error || ex.message || 'Kunne ikke bytte aktiv versjon.'
+  } finally {
+    activatingId.value = null
+  }
+}
+
+function formatGenTime(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })
+}
 </script>
 
 <template>
@@ -320,6 +537,130 @@ const canRequestRevision = computed(
           <i class="fa-solid fa-circle-info"></i>
           Du har allerede brukt din gratis korrigering.
         </p>
+
+        <!-- ── AI: regenerate + edit-and-regenerate (BANNERSH-84) ───────── -->
+        <div v-if="isAi" class="ai-actions">
+          <div class="ai-actions__row">
+            <button
+              type="button"
+              class="btn btn-regenerate"
+              :disabled="regenerating"
+              @click="regenerate"
+            >
+              <i v-if="regenerating" class="fa-solid fa-circle-notch fa-spin"></i>
+              <i v-else class="fa-solid fa-rotate"></i>
+              {{ regenerating ? 'Genererer…' : 'Generer ny versjon' }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost btn-edit-toggle"
+              @click="showEditPanel = !showEditPanel"
+            >
+              <i :class="['fa-solid', showEditPanel ? 'fa-chevron-up' : 'fa-pen-to-square']"></i>
+              {{ showEditPanel ? 'Skjul redigering' : 'Rediger detaljer' }}
+            </button>
+          </div>
+          <p v-if="creditsRemaining !== null" class="ai-actions__credits">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            {{ creditsRemaining }} AI-forslag igjen — hver ny generering bruker 1 kreditt
+          </p>
+          <div v-if="regenerateError" class="alert-error">
+            <i class="fa-solid fa-circle-exclamation"></i>
+            {{ regenerateError }}
+          </div>
+          <div v-if="regenerateInfo" class="alert-success">
+            <i class="fa-solid fa-circle-info"></i>
+            {{ regenerateInfo }}
+          </div>
+
+          <!-- Editable inputs panel -->
+          <div v-if="showEditPanel" class="edit-panel">
+            <h3 class="edit-panel__title">
+              <i class="fa-solid fa-pen-to-square"></i>
+              Rediger detaljer før ny generering
+            </h3>
+            <p class="edit-panel__hint">
+              Endringene tas i bruk når du klikker <em>Generer ny versjon</em>. Tomme felter
+              beholder eksisterende verdi.
+            </p>
+
+            <div class="field-row">
+              <label class="field-label" for="editName">Navn</label>
+              <input
+                id="editName"
+                v-model="editPersonName"
+                type="text"
+                maxlength="200"
+                class="text-input"
+              />
+            </div>
+
+            <div class="field-row">
+              <label class="field-label" for="editAge">Alder</label>
+              <input
+                id="editAge"
+                v-model.number="editPersonAge"
+                type="number"
+                min="0"
+                max="130"
+                class="text-input text-input--narrow"
+                placeholder="Valgfritt"
+              />
+            </div>
+
+            <div class="field-row">
+              <label class="field-label" for="editText">Tekst på banneret</label>
+              <textarea
+                id="editText"
+                v-model="editTextContent"
+                rows="3"
+                maxlength="500"
+                class="text-input"
+              />
+            </div>
+
+            <div class="field-row">
+              <label class="field-label" for="editTheme">Tema / stil</label>
+              <input
+                id="editTheme"
+                v-model="editThemeDescription"
+                type="text"
+                maxlength="500"
+                class="text-input"
+              />
+            </div>
+
+            <div class="field-row">
+              <span class="field-label">Nytt portrettfoto (valgfritt)</span>
+              <div v-if="newPhotoPreviewUrl" class="photo-preview">
+                <img :src="newPhotoPreviewUrl" alt="Nytt portrettfoto" />
+                <button type="button" class="link-btn" @click="clearNewPhoto">
+                  <i class="fa-solid fa-trash-can"></i> Fjern nytt bilde
+                </button>
+              </div>
+              <div v-else class="photo-upload-zone" @click="openPhotoPicker">
+                <input
+                  ref="photoFileInput"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  style="display:none"
+                  @change="onPhotoFileChange"
+                />
+                <i class="fa-solid fa-user-circle photo-upload-zone__icon"></i>
+                <span class="photo-upload-zone__text">
+                  Klikk for å laste opp et nytt portrettfoto
+                </span>
+                <div v-if="photoUploading" class="photo-upload-zone__progress">
+                  Laster opp… {{ photoUploadProgress }}%
+                </div>
+              </div>
+              <p v-if="photoUploadError" class="alert-error" style="margin-top:8px">
+                <i class="fa-solid fa-circle-exclamation"></i>
+                {{ photoUploadError }}
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- REVISION REQUESTED -->
@@ -402,6 +743,51 @@ const canRequestRevision = computed(
       <div v-if="revisionSuccess" class="alert-success">
         <i class="fa-solid fa-circle-check"></i>
         {{ revisionSuccess }}
+      </div>
+
+      <!-- ── Previous generations gallery (AI only, BANNERSH-84) ─────────── -->
+      <div v-if="isAi && hasMultipleVersions" class="panel">
+        <h2 class="section-title">
+          <i class="fa-solid fa-clock-rotate-left"></i>
+          Tidligere versjoner ({{ completedGenerations.length }})
+        </h2>
+        <p class="section-sub">
+          Klikk på en versjon for å gjøre den aktiv. Aktiv versjon vises øverst og
+          brukes når du godkjenner banneret.
+        </p>
+        <div v-if="activateError" class="alert-error" style="margin-bottom:0.75rem">
+          <i class="fa-solid fa-circle-exclamation"></i>
+          {{ activateError }}
+        </div>
+        <div class="gen-grid">
+          <button
+            v-for="(gen, idx) in completedGenerations"
+            :key="gen.id"
+            type="button"
+            class="gen-card"
+            :class="{ 'gen-card--active': gen.isActive, 'gen-card--busy': activatingId === gen.id }"
+            :disabled="activatingId !== null"
+            @click="selectGeneration(gen)"
+          >
+            <div class="gen-thumb">
+              <img
+                v-if="gen.previewUrl"
+                :src="gen.previewUrl"
+                :alt="`Versjon ${idx + 1}`"
+              />
+              <div v-if="gen.isActive" class="gen-thumb__badge">
+                <i class="fa-solid fa-circle-check"></i> Aktiv
+              </div>
+              <div v-if="activatingId === gen.id" class="gen-thumb__loading">
+                <i class="fa-solid fa-circle-notch fa-spin"></i>
+              </div>
+            </div>
+            <div class="gen-meta">
+              <span class="gen-meta__label">Versjon {{ idx + 1 }}</span>
+              <span class="gen-meta__time">{{ formatGenTime(gen.completedAt ?? gen.createdAt) }}</span>
+            </div>
+          </button>
+        </div>
       </div>
 
       <!-- ── Request details (read-only) ─────────────────────────────────── -->
@@ -825,6 +1211,260 @@ const canRequestRevision = computed(
   font-size: 0.875rem;
   line-height: 1.6;
   color: var(--muted);
+}
+
+/* ── AI actions (regenerate + edit panel) — BANNERSH-84 ────── */
+.ai-actions {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 1rem;
+}
+.ai-actions__row {
+  display: flex;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+}
+.ai-actions__credits {
+  font-size: 0.8125rem;
+  color: var(--faint);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ai-actions__credits i { color: var(--accent); }
+
+.btn-regenerate {
+  flex: 1;
+  min-width: 180px;
+  justify-content: center;
+  padding: 11px 18px;
+  border-radius: 12px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  background: rgba(34,200,230,.12);
+  color: #7ddce8;
+  border: 1px solid rgba(34,200,230,.32);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.15s, border-color 0.15s;
+  font-family: var(--font-ui);
+}
+.btn-regenerate:hover:not(:disabled) {
+  background: rgba(34,200,230,.2);
+  border-color: rgba(34,200,230,.5);
+}
+.btn-regenerate:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.btn-edit-toggle {
+  flex: 1;
+  min-width: 180px;
+  justify-content: center;
+  padding: 11px 18px;
+  border-radius: 12px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Edit panel */
+.edit-panel {
+  margin-top: 0.5rem;
+  background: rgba(34,200,230,.04);
+  border: 1px solid rgba(34,200,230,.2);
+  border-radius: 14px;
+  padding: 1.125rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+.edit-panel__title {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #7ddce8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.edit-panel__hint {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin: -0.25rem 0 0;
+}
+
+.field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.text-input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 14px;
+  font-size: 0.9rem;
+  color: var(--text);
+  font-family: var(--font-ui);
+  outline: none;
+  resize: vertical;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.text-input::placeholder { color: var(--faint); }
+.text-input:focus {
+  border-color: rgba(34,200,230,.55);
+  box-shadow: 0 0 0 3px rgba(34,200,230,.18);
+}
+.text-input--narrow { width: 140px; }
+
+.photo-preview {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.photo-preview img {
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid var(--line-soft);
+}
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  padding: 0;
+  font-family: var(--font-ui);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.link-btn:hover { color: var(--accent-2); }
+
+.photo-upload-zone {
+  position: relative;
+  width: 100%;
+  border-radius: 12px;
+  border: 2px dashed var(--line);
+  background: var(--surface-2);
+  cursor: pointer;
+  text-align: center;
+  padding: 1.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.photo-upload-zone:hover { border-color: var(--accent); background: rgba(255,106,61,.05); }
+.photo-upload-zone__icon { font-size: 1.5rem; color: var(--faint); }
+.photo-upload-zone__text { font-size: 0.8125rem; color: var(--muted); }
+.photo-upload-zone__progress {
+  font-size: 0.8125rem;
+  color: var(--accent);
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+/* ── Generation gallery — BANNERSH-84 ──────────────────────── */
+.section-sub {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin: -0.5rem 0 0.875rem;
+}
+
+.gen-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.875rem;
+}
+.gen-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-2);
+  border: 2px solid var(--line-soft);
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  padding: 0;
+  font-family: var(--font-ui);
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+.gen-card:hover:not(:disabled) {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+.gen-card:disabled { cursor: not-allowed; opacity: 0.6; }
+.gen-card--active {
+  border-color: #4ec984;
+  background: rgba(60,180,100,.06);
+  box-shadow: 0 0 0 2px rgba(60,180,100,.18);
+  cursor: default;
+}
+.gen-card--active:hover { transform: none; border-color: #4ec984; }
+.gen-card--busy { opacity: 0.65; }
+
+.gen-thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--surface);
+}
+.gen-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.gen-thumb__badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(60,180,100,.85);
+  color: #fff;
+  border-radius: 99px;
+  padding: 3px 9px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.gen-thumb__loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(10,8,6,.55);
+  color: var(--accent);
+  font-size: 1.25rem;
+}
+.gen-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px 10px;
+}
+.gen-meta__label {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.gen-meta__time {
+  font-size: 0.7rem;
+  color: var(--faint);
 }
 
 /* ── Back link ──────────────────────────────────────────────── */

@@ -86,6 +86,19 @@ export interface DesignRequestListItem {
   themeDescription: string
 }
 
+/** One entry in the generation history of a design request (BANNERSH-84). */
+export interface BannerGenerationHistoryItem {
+  id: number
+  status: string
+  isActive: boolean
+  createdAt: string
+  completedAt: string | null
+  /** Cropped/print-ready public URL for this attempt, or null if pipeline hasn't finished. */
+  previewUrl: string | null
+  /** Uncropped raw AI output URL. */
+  rawUrl: string | null
+}
+
 export interface DesignRequestDetail {
   id: number
   userId: number | null // nullable since BANNERSH-67 (anonymous requests have no user)
@@ -105,7 +118,10 @@ export interface DesignRequestDetail {
   previewUrl: string | null
   finalCroppedUrl: string | null
   finalBannerDesignId: number | null
+  currentGenerationId: number | null
   lastError: string | null
+  /** All AI generation attempts, oldest first. Always empty for Manual requests. (BANNERSH-84) */
+  generationHistory: BannerGenerationHistoryItem[]
   createdAt: string
   updatedAt: string
 }
@@ -156,16 +172,42 @@ export async function approveDesignRequest(id: number): Promise<void> {
  * Throws 402 with `RegeneratePaywall402` data when insufficient credits.
  *
  * The X-Request-Integrity header is attached for bot-protection.
+ *
+ * BANNERSH-84 extension: `personName`, `personAge`, and `uploadedPhotoBannerDesignId`
+ * are now accepted alongside `textContent` / `themeDescription` so the account detail
+ * view can edit the inputs in-place before regenerating. Pass `personAge: -1` to clear
+ * an existing age, and `uploadedPhotoBannerDesignId: -1` to drop a previously-attached
+ * portrait. Leave any field undefined/null to keep the current value.
  */
 export async function regenerateDesignRequest(
   id: number,
-  params: { textContent?: string; themeDescription?: string },
+  params: {
+    textContent?: string
+    themeDescription?: string
+    personName?: string
+    personAge?: number | null
+    uploadedPhotoBannerDesignId?: number | null
+  },
   integrityToken: string,
 ): Promise<RegenerateAiResult> {
   const { data } = await apiClient.post<RegenerateAiResult>(
     `/design-requests/${id}/regenerate`,
     params,
     { headers: { 'X-Request-Integrity': integrityToken } },
+  )
+  return data
+}
+
+/**
+ * Switch the active generation to a previously-completed one (BANNERSH-84). Free —
+ * does not consume a credit. Used by the design-request detail view's gallery.
+ */
+export async function activateGeneration(
+  id: number,
+  generationId: number,
+): Promise<DesignRequestDetail> {
+  const { data } = await apiClient.post<DesignRequestDetail>(
+    `/design-requests/${id}/generations/${generationId}/activate`,
   )
   return data
 }

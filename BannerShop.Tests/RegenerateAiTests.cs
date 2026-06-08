@@ -176,6 +176,139 @@ public class RegenerateAiTests
         saved.ThemeDescription.Should().Be("tropisk");
     }
 
+    // ── BANNERSH-84 extension: edit personName / personAge / uploaded photo ──
+
+    [Fact]
+    public async Task RegenerateAsync_applies_person_name_and_age_overrides()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var req = MakeAiRequest();
+        req.PersonAge = 50;
+        db.DesignRequests.Add(req);
+        await db.SaveChangesAsync();
+
+        var (svc, _, _) = MakeService(db, hasCredits: true);
+        await svc.RegenerateAsync(req.Id, 1, new RegenerateAiRequestDto
+        {
+            PersonName = "Kari",
+            PersonAge = 30
+        }, CancellationToken.None);
+
+        var saved = db.DesignRequests.Find(req.Id)!;
+        saved.PersonName.Should().Be("Kari");
+        saved.PersonAge.Should().Be(30);
+    }
+
+    [Fact]
+    public async Task RegenerateAsync_clears_age_when_minus_one_is_passed()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var req = MakeAiRequest();
+        req.PersonAge = 50;
+        db.DesignRequests.Add(req);
+        await db.SaveChangesAsync();
+
+        var (svc, _, _) = MakeService(db, hasCredits: true);
+        await svc.RegenerateAsync(req.Id, 1, new RegenerateAiRequestDto
+        {
+            PersonAge = -1
+        }, CancellationToken.None);
+
+        var saved = db.DesignRequests.Find(req.Id)!;
+        saved.PersonAge.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RegenerateAsync_attaches_new_uploaded_photo()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var req = MakeAiRequest();
+        db.DesignRequests.Add(req);
+
+        // Seed a BannerDesign that belongs to user 1.
+        var design = new BannerDesign
+        {
+            Id = 100,
+            UserId = 1,
+            OriginalFileName = "p.jpg",
+            StoragePath = "designs/1/p.jpg",
+            ContentType = "image/jpeg",
+            WidthPx = 1000, HeightPx = 1000,
+            SelectedHeightCm = 150, ComputedWidthCm = 150,
+            CreatedAt = DateTime.UtcNow
+        };
+        db.BannerDesigns.Add(design);
+        await db.SaveChangesAsync();
+
+        var (svc, _, _) = MakeService(db, hasCredits: true);
+        var result = await svc.RegenerateAsync(req.Id, 1, new RegenerateAiRequestDto
+        {
+            UploadedPhotoBannerDesignId = 100
+        }, CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+        var saved = db.DesignRequests.Find(req.Id)!;
+        saved.UploadedPhotoPath.Should().Be("designs/1/p.jpg");
+    }
+
+    [Fact]
+    public async Task RegenerateAsync_clears_uploaded_photo_when_minus_one_is_passed()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var req = MakeAiRequest();
+        req.UploadedPhotoPath = "designs/1/existing.png";
+        db.DesignRequests.Add(req);
+        await db.SaveChangesAsync();
+
+        var (svc, _, _) = MakeService(db, hasCredits: true);
+        await svc.RegenerateAsync(req.Id, 1, new RegenerateAiRequestDto
+        {
+            UploadedPhotoBannerDesignId = -1
+        }, CancellationToken.None);
+
+        var saved = db.DesignRequests.Find(req.Id)!;
+        saved.UploadedPhotoPath.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RegenerateAsync_rejects_uploaded_photo_owned_by_other_user()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        db.Users.Add(DbHelper.MakeUser(2, "other@example.com"));
+
+        var req = MakeAiRequest(userId: 1);
+        db.DesignRequests.Add(req);
+
+        var otherUserDesign = new BannerDesign
+        {
+            Id = 200,
+            UserId = 2,
+            OriginalFileName = "p.jpg",
+            StoragePath = "designs/2/p.jpg",
+            ContentType = "image/jpeg",
+            WidthPx = 1000, HeightPx = 1000,
+            SelectedHeightCm = 150, ComputedWidthCm = 150,
+            CreatedAt = DateTime.UtcNow
+        };
+        db.BannerDesigns.Add(otherUserDesign);
+        await db.SaveChangesAsync();
+
+        var (svc, _, _) = MakeService(db, hasCredits: true);
+        var result = await svc.RegenerateAsync(req.Id, 1, new RegenerateAiRequestDto
+        {
+            UploadedPhotoBannerDesignId = 200
+        }, CancellationToken.None);
+
+        result.Success.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("not found");
+    }
+
     // ── 402 paywall ──────────────────────────────────────────────────────────
 
     [Fact]

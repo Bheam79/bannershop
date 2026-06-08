@@ -422,6 +422,26 @@ public sealed class DesignRequestService : IDesignRequestService
             r.TextContent = req.TextContent.Trim();
         if (!string.IsNullOrWhiteSpace(req.ThemeDescription))
             r.ThemeDescription = req.ThemeDescription.Trim();
+        // BANNERSH-84: allow editing person name + age + uploaded photo as part of regenerate.
+        if (!string.IsNullOrWhiteSpace(req.PersonName))
+            r.PersonName = req.PersonName.Trim();
+        if (req.PersonAge is int newAge)
+            r.PersonAge = newAge < 0 ? null : newAge;
+        if (req.UploadedPhotoBannerDesignId is int newPhotoId)
+        {
+            if (newPhotoId < 0)
+            {
+                r.UploadedPhotoPath = null;
+            }
+            else
+            {
+                var photo = await _db.BannerDesigns.AsNoTracking()
+                    .FirstOrDefaultAsync(d => d.Id == newPhotoId && d.UserId == callerUserId, ct);
+                if (photo is null)
+                    return RegenerateResult.Fail("Uploaded photo not found.", 400);
+                r.UploadedPhotoPath = photo.StoragePath;
+            }
+        }
 
         // Pre-create a BannerGeneration row so we can return the ID immediately.
         var generation = new BannerGeneration
@@ -446,6 +466,51 @@ public sealed class DesignRequestService : IDesignRequestService
             generation.Id, r.Id, creditsRemaining);
 
         return RegenerateResult.Ok(generation.Id, creditsRemaining);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// BANNERSH-84: lets the customer pick a previously-generated version (e.g. they
+    /// preferred the first attempt over the latest). Pivots the <see cref="DesignRequest"/>
+    /// pointers and the <see cref="BannerGeneration.IsActive"/> flag so the new preview
+    /// is what /approve and the past-banners gallery surface. Does not consume a credit.
+    /// </remarks>
+    public async Task<DesignRequestActionResult> ActivateGenerationAsync(
+        int id, int generationId, int callerUserId, CancellationToken ct = default)
+    {
+        var r = await _db.DesignRequests
+            .Include(x => x.Revisions)
+            .Include(x => x.Generations)
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (r is null) return DesignRequestActionResult.Fail("Design request not found.");
+        if (r.UserId != callerUserId) return DesignRequestActionResult.Fail("Forbidden.");
+        if (r.Mode != DesignRequestMode.Ai)
+            return DesignRequestActionResult.Fail("Activate is only available for AI design requests.");
+
+        // Only allow swapping while a preview is on the table — Approved/Final lock the choice.
+        if (r.Status is not (DesignRequestStatus.AwaitingApproval or DesignRequestStatus.Failed))
+            return DesignRequestActionResult.Fail($"Cannot switch active generation from status {r.Status}.");
+
+        var target = r.Generations.FirstOrDefault(g => g.Id == generationId);
+        if (target is null) return DesignRequestActionResult.Fail("Generation not found.");
+        if (target.Status != BannerGenerationStatus.Completed)
+            return DesignRequestActionResult.Fail("Only completed generations can be selected.");
+        if (string.IsNullOrEmpty(target.StoragePath))
+            return DesignRequestActionResult.Fail("Generation has no image attached.");
+
+        foreach (var g in r.Generations)
+            g.IsActive = g.Id == target.Id;
+
+        r.AiResultStoragePath = target.StoragePath;
+        r.FinalCroppedStoragePath = target.CroppedStoragePath ?? target.StoragePath;
+        r.CurrentGenerationId = target.Id;
+        // If the request was Failed, picking a healthy past generation puts it back into AwaitingApproval.
+        r.Status = DesignRequestStatus.AwaitingApproval;
+        r.LastError = null;
+        r.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return DesignRequestActionResult.Ok(ToDetail(r));
     }
 
     /// <inheritdoc />
@@ -625,7 +690,13 @@ public sealed class DesignRequestService : IDesignRequestService
                     Status = g.Status.ToString(),
                     IsActive = g.IsActive,
                     CreatedAt = g.CreatedAt,
-                    CompletedAt = g.CompletedAt
+                    CompletedAt = g.CompletedAt,
+                    PreviewUrl = string.IsNullOrEmpty(g.CroppedStoragePath ?? g.StoragePath)
+                        ? null
+                        : _storage.PublicUrlFor(g.CroppedStoragePath ?? g.StoragePath!),
+                    RawUrl = string.IsNullOrEmpty(g.StoragePath)
+                        ? null
+                        : _storage.PublicUrlFor(g.StoragePath!)
                 })
                 .ToList(),
             CreatedAt = r.CreatedAt,

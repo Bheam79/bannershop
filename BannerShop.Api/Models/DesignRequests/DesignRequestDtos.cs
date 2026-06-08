@@ -173,7 +173,10 @@ public class DesignRequestDetailDto
     public DateTime UpdatedAt { get; set; }
 }
 
-/// <summary>One entry in the generation history list (no image URLs — only active one is surfaced).</summary>
+/// <summary>
+/// One entry in the generation history list. Now (BANNERSH-84) also surfaces the image
+/// URLs so the account detail view can render a clickable gallery of previous versions.
+/// </summary>
 public class BannerGenerationHistoryItemDto
 {
     public int Id { get; set; }
@@ -181,6 +184,11 @@ public class BannerGenerationHistoryItemDto
     public bool IsActive { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+
+    /// <summary>Public URL of the cropped print-ready PNG for this attempt, or null if not yet finished.</summary>
+    public string? PreviewUrl { get; set; }
+    /// <summary>Public URL of the uncropped raw AI output, or null if not yet finished.</summary>
+    public string? RawUrl { get; set; }
 }
 
 /// <summary>POST /api/design-requests/{id}/regenerate body.</summary>
@@ -191,6 +199,19 @@ public class RegenerateAiRequestDto
 
     /// <summary>Optional updated theme/style description. If omitted, the existing value is kept.</summary>
     public string? ThemeDescription { get; set; }
+
+    /// <summary>Optional updated person name. If omitted, the existing value is kept. (BANNERSH-84)</summary>
+    public string? PersonName { get; set; }
+
+    /// <summary>Optional updated person age. -1 clears the value, null leaves it unchanged. (BANNERSH-84)</summary>
+    [Range(-1, 130)]
+    public int? PersonAge { get; set; }
+
+    /// <summary>
+    /// Optional new uploaded portrait BannerDesign id — set to swap the reference photo for
+    /// the next generation. Pass -1 to remove an existing photo, null to keep the current one. (BANNERSH-84)
+    /// </summary>
+    public int? UploadedPhotoBannerDesignId { get; set; }
 }
 
 /// <summary>202 response from POST /api/design-requests/{id}/regenerate.</summary>

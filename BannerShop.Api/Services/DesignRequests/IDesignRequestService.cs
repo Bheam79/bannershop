@@ -54,6 +54,12 @@ public interface IDesignRequestService
     /// Returns 402-style failure when the user has no credits.
     /// </summary>
     Task<RegenerateResult> RegenerateAsync(int id, int callerUserId, RegenerateAiRequestDto req, CancellationToken ct = default);
+
+    /// <summary>
+    /// Switches the currently active generation to a previously-generated one (BANNERSH-84).
+    /// Does NOT consume a credit — only re-points the request to an existing image.
+    /// </summary>
+    Task<DesignRequestActionResult> ActivateGenerationAsync(int id, int generationId, int callerUserId, CancellationToken ct = default);
 }
 
 /// <summary>Result of a regenerate operation — carries the new generation id and updated credit balance.</summary>
