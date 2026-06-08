@@ -19,6 +19,18 @@ public interface IStripePaymentService
         CancellationToken ct = default);
 
     /// <summary>
+    /// Create a PaymentIntent for an AI credit pack purchase.
+    /// Metadata includes <c>type=ai_credit_pack</c>, <c>userId</c>, <c>creditCount</c>,
+    /// and an <c>idempotencyKey</c> (caller-supplied GUID) for deduplication.
+    /// </summary>
+    Task<StripeIntentResult> CreateCreditPackPaymentIntentAsync(
+        int userId,
+        int creditCount,
+        decimal amountNok,
+        string idempotencyKey,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Update an existing PaymentIntent's amount (used when an order draft is recalculated).
     /// </summary>
     Task<StripeIntentResult> UpdatePaymentIntentAmountAsync(
@@ -43,4 +55,10 @@ public record StripeWebhookEvent(
     string EventType,
     string PaymentIntentId,
     int? OrderIdFromMetadata,
-    string? FailureMessage);
+    string? FailureMessage,
+    /// <summary>Value of metadata["type"] — e.g. "ai_credit_pack", "banner_order".</summary>
+    string? MetadataType = null,
+    /// <summary>Value of metadata["userId"] parsed as int (for credit pack events).</summary>
+    int? MetadataUserId = null,
+    /// <summary>Value of metadata["creditCount"] parsed as int (for credit pack events).</summary>
+    int? MetadataCreditCount = null);

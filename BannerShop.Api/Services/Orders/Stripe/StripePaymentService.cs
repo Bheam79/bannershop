@@ -29,8 +29,30 @@ public class StripePaymentService : IStripePaymentService
             Currency = _options.Currency,
             Metadata = new Dictionary<string, string>
             {
+                ["type"]    = "banner_order",
                 ["orderId"] = orderId.ToString(CultureInfo.InvariantCulture),
                 ["userId"]  = userId.ToString(CultureInfo.InvariantCulture)
+            },
+            AutomaticPaymentMethods = new PaymentIntentAutomaticPaymentMethodsOptions { Enabled = true }
+        }, cancellationToken: ct);
+
+        return new StripeIntentResult(intent.Id, intent.ClientSecret);
+    }
+
+    public async Task<StripeIntentResult> CreateCreditPackPaymentIntentAsync(
+        int userId, int creditCount, decimal amountNok, string idempotencyKey, CancellationToken ct = default)
+    {
+        var service = new PaymentIntentService();
+        var intent = await service.CreateAsync(new PaymentIntentCreateOptions
+        {
+            Amount = ToMinorUnits(amountNok),
+            Currency = _options.Currency,
+            Metadata = new Dictionary<string, string>
+            {
+                ["type"]            = "ai_credit_pack",
+                ["userId"]          = userId.ToString(CultureInfo.InvariantCulture),
+                ["creditCount"]     = creditCount.ToString(CultureInfo.InvariantCulture),
+                ["idempotencyKey"]  = idempotencyKey
             },
             AutomaticPaymentMethods = new PaymentIntentAutomaticPaymentMethodsOptions { Enabled = true }
         }, cancellationToken: ct);
@@ -78,16 +100,40 @@ public class StripePaymentService : IStripePaymentService
             if (intent is null)
                 return new StripeWebhookEvent(evt.Type, string.Empty, null, null);
 
+            var meta = intent.Metadata;
+
             int? orderId = null;
-            if (intent.Metadata is { } meta &&
-                meta.TryGetValue("orderId", out var raw) &&
-                int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            if (meta is not null &&
+                meta.TryGetValue("orderId", out var rawOrderId) &&
+                int.TryParse(rawOrderId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedOrderId))
             {
-                orderId = parsed;
+                orderId = parsedOrderId;
+            }
+
+            string? metaType = meta is not null && meta.TryGetValue("type", out var t) ? t : null;
+
+            int? metaUserId = null;
+            if (meta is not null &&
+                meta.TryGetValue("userId", out var rawUserId) &&
+                int.TryParse(rawUserId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedUserId))
+            {
+                metaUserId = parsedUserId;
+            }
+
+            int? metaCreditCount = null;
+            if (meta is not null &&
+                meta.TryGetValue("creditCount", out var rawCreditCount) &&
+                int.TryParse(rawCreditCount, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedCreditCount))
+            {
+                metaCreditCount = parsedCreditCount;
             }
 
             var failure = intent.LastPaymentError?.Message;
-            return new StripeWebhookEvent(evt.Type, intent.Id, orderId, failure);
+            return new StripeWebhookEvent(
+                evt.Type, intent.Id, orderId, failure,
+                MetadataType: metaType,
+                MetadataUserId: metaUserId,
+                MetadataCreditCount: metaCreditCount);
         }
         catch (StripeException ex)
         {

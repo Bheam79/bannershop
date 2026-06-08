@@ -1,7 +1,9 @@
 using System.IO;
+using BannerShop.Api.Services.AiCredits;
 using BannerShop.Api.Services.DesignRequests;
 using BannerShop.Api.Services.Orders;
 using BannerShop.Api.Services.Orders.Stripe;
+using BannerShop.Core.Enums;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BannerShop.Api.Controllers;
@@ -13,17 +15,20 @@ public class WebhooksController : ControllerBase
     private readonly IStripePaymentService _stripe;
     private readonly IOrderService _orders;
     private readonly IDesignRequestService _designRequests;
+    private readonly IAiCreditService _aiCredits;
     private readonly ILogger<WebhooksController> _logger;
 
     public WebhooksController(
         IStripePaymentService stripe,
         IOrderService orders,
         IDesignRequestService designRequests,
+        IAiCreditService aiCredits,
         ILogger<WebhooksController> logger)
     {
         _stripe = stripe;
         _orders = orders;
         _designRequests = designRequests;
+        _aiCredits = aiCredits;
         _logger = logger;
     }
 
@@ -50,9 +55,7 @@ public class WebhooksController : ControllerBase
             switch (evt.EventType)
             {
                 case "payment_intent.succeeded":
-                    // PaymentIntent can be for either an Order or a DesignRequest — try both.
-                    await _orders.MarkPaidAsync(evt.PaymentIntentId, evt.OrderIdFromMetadata, ct);
-                    await _designRequests.MarkPaidAndEnqueueAsync(evt.PaymentIntentId, ct);
+                    await HandlePaymentIntentSucceededAsync(evt, ct);
                     break;
 
                 case "payment_intent.payment_failed":
@@ -72,5 +75,50 @@ public class WebhooksController : ControllerBase
         }
 
         return Ok(new { received = true });
+    }
+
+    // ── payment_intent.succeeded routing ────────────────────────────────────
+
+    private async Task HandlePaymentIntentSucceededAsync(StripeWebhookEvent evt, CancellationToken ct)
+    {
+        switch (evt.MetadataType)
+        {
+            case "ai_credit_pack":
+                // Credit pack purchase — grant credits idempotently (BANNERSH-69).
+                if (evt.MetadataUserId is int uid && evt.MetadataCreditCount is int count)
+                {
+                    await _aiCredits.GrantAsync(
+                        userId: uid,
+                        count: count,
+                        reason: CreditReason.CreditPack,
+                        referenceId: evt.PaymentIntentId,
+                        ct: ct);
+                    _logger.LogInformation(
+                        "Granted {Count} AI credits to user {UserId} via credit pack (PI {Pi}).",
+                        count, uid, evt.PaymentIntentId);
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "ai_credit_pack PI {Pi} missing userId or creditCount in metadata — cannot grant credits.",
+                        evt.PaymentIntentId);
+                }
+                break;
+
+            case "ai_design_standalone":
+                // Dead-code guard: standalone AI design PIs were retired in BANNERSH-67.
+                // Log and ignore — do NOT attempt to re-process.
+                _logger.LogWarning(
+                    "Received legacy ai_design_standalone PI {Pi} — this flow was retired in BANNERSH-67, ignoring.",
+                    evt.PaymentIntentId);
+                break;
+
+            default:
+                // Covers "banner_order" and any PI without a type field (pre-BANNERSH-69 orders).
+                // Route to the existing Order and DesignRequest handlers.
+                await _orders.MarkPaidAsync(evt.PaymentIntentId, evt.OrderIdFromMetadata, ct);
+                await _designRequests.MarkPaidAndEnqueueAsync(evt.PaymentIntentId, ct);
+                break;
+        }
     }
 }
