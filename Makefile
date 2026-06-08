@@ -57,6 +57,21 @@ SMTP_PORT     ?= 587
 SMTP_USER     ?=
 SMTP_PASS     ?=
 
+# ── Optional AI image generation (OpenAI) ────────────────────────────────────
+# Override on the command line, e.g.
+#   make up OPENAI_API_KEY=sk-proj-...
+# Without a real key the AI generator falls back to MockAiImageService (solid-
+# colour PNG placeholder) — the rest of the pipeline still runs fine.
+OPENAI_API_KEY       ?=
+OPENAI_IMAGE_MODEL   ?= gpt-image-2
+OPENAI_IMAGE_QUALITY ?= high
+
+# ── Optional Replicate (Real-ESRGAN 4× upscaler, admin only) ─────────────────
+# Override on the command line, e.g.
+#   make up REPLICATE_API_TOKEN=r8_...
+# Without a token the upscaler is disabled and admin upscale requests return 501.
+REPLICATE_API_TOKEN  ?=
+
 ROOT_DIR      := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 PROD_BASE     := $(HOME)/.local/share/bannershop
 APP_DIR       := $(PROD_BASE)/app
@@ -259,6 +274,22 @@ config: secrets publish
 	'    "SmtpPort": $(SMTP_PORT),' \
 	'    "SmtpUser": "$(SMTP_USER)",' \
 	'    "SmtpPass": "$(SMTP_PASS)"' \
+	'  },' \
+	'  "OpenAi": {' \
+	'    "ApiKey": "$(OPENAI_API_KEY)",' \
+	'    "ImageModel": "$(OPENAI_IMAGE_MODEL)",' \
+	'    "ImageQuality": "$(OPENAI_IMAGE_QUALITY)",' \
+	'    "OrgId": "",' \
+	'    "BaseUrl": "https://api.openai.com",' \
+	'    "TimeoutSeconds": 180' \
+	'  },' \
+	'  "Replicate": {' \
+	'    "ApiToken": "$(REPLICATE_API_TOKEN)",' \
+	'    "RealEsrganModelVersion": "f121d640bd286e1fdc67f9799164c1d5be36ff74576ee11c803ae5b665dd46aa",' \
+	'    "BaseUrl": "https://api.replicate.com",' \
+	'    "TimeoutSeconds": 60,' \
+	'    "PollIntervalMs": 2000,' \
+	'    "MaxPollSeconds": 600' \
 	'  }' \
 	'}' > $(APP_DIR)/appsettings.Production.json
 
