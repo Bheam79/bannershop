@@ -57,10 +57,6 @@ function select(cat: Cat) {
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-function goOrder() {
-  router.push({ path: '/order', query: { occasion: selectedCat.value.id } })
-}
-
 function scrollTo(id: string) {
   const el = document.getElementById(id)
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
