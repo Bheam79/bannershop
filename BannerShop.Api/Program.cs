@@ -12,6 +12,7 @@ using BannerShop.Api.Services.Email;
 using BannerShop.Api.Services.Orders;
 using BannerShop.Api.Services.Orders.Stripe;
 using BannerShop.Api.Services.Shipping;
+using BannerShop.Api.Services.SystemSettings;
 using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
 using BannerShop.Infrastructure.Data;
@@ -122,29 +123,21 @@ builder.Services.AddScoped<IAiCreditService, AiCreditService>();
 // BotProtectionFilter is registered as a service so it can be injected into action filters.
 builder.Services.AddScoped<BotProtectionFilter>();
 
+// ─── System Settings (BANNERSH-98: admin-editable runtime config) ────────────
+builder.Services.AddScoped<ISystemSettingsService, SystemSettingsService>();
+
 // ─── AI Design Requests (95 kr) ──────────────────────────────────────────────
 builder.Services.Configure<OpenAiOptions>(builder.Configuration.GetSection(OpenAiOptions.SectionName));
 
-var openAiSection = builder.Configuration.GetSection(OpenAiOptions.SectionName);
-var openAiKey = openAiSection["ApiKey"];
-var openAiConfigured =
-    !string.IsNullOrWhiteSpace(openAiKey) &&
-    !openAiKey.StartsWith("sk-REPLACE", StringComparison.OrdinalIgnoreCase) &&
-    !openAiKey.StartsWith("REPLACE_", StringComparison.OrdinalIgnoreCase);
-
-if (openAiConfigured)
-{
-    builder.Services.AddHttpClient<IAiImageService, OpenAiImageService>();
-    // BANNERSH-61: real LLM-backed prompt refinement when an OpenAI key is set.
-    builder.Services.AddHttpClient<IPromptRefinementService, OpenAiPromptRefinementService>();
-}
-else
-{
-    builder.Services.AddSingleton<IAiImageService, MockAiImageService>();
-    // No OpenAI key — fall back to the pass-through refiner so the pipeline
-    // produces the deterministic BannerPromptService output unchanged.
-    builder.Services.AddSingleton<IPromptRefinementService, NoopPromptRefinementService>();
-}
+// BANNERSH-98: Always register OpenAiImageService — it resolves the API key at
+// call time (DB setting → appsettings fallback) so the admin can enter / update
+// the key via the settings panel without restarting the service.  When no key is
+// configured it returns a solid-colour placeholder (same as MockAiImageService).
+builder.Services.AddHttpClient<IAiImageService, OpenAiImageService>();
+// Prompt refinement: always register the OpenAI-backed refiner. It already falls
+// back to the base prompt on any HTTP error (including 401 from a missing key),
+// so it is safe to call even when the key is not configured.
+builder.Services.AddHttpClient<IPromptRefinementService, OpenAiPromptRefinementService>();
 
 // IUpscalingService stays Noop for the customer-facing AiGenerationPipeline —
 // per BANNERSH-57 the Real-ESRGAN 4x pass is an order-backend / admin step,

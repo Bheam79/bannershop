@@ -2,7 +2,10 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using BannerShop.Api.Services.SystemSettings;
 using Microsoft.Extensions.Options;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace BannerShop.Api.Services.DesignRequests.OpenAi;
 
@@ -13,6 +16,14 @@ namespace BannerShop.Api.Services.DesignRequests.OpenAi;
 /// caller decides where to copy/move it permanently.
 ///
 /// Per BANNERSH-18: model "gpt-image-2", quality "high".
+///
+/// BANNERSH-98: The API key is resolved at call time (not at startup):
+///   1. Database system settings ("openai_api_key") — set via the admin panel.
+///   2. Fallback to OpenAi:ApiKey in appsettings.
+/// If neither yields a non-placeholder key, a solid-colour placeholder PNG is
+/// returned instead of calling the OpenAI API, mirroring MockAiImageService.
+/// This means the service can always be registered regardless of whether the
+/// key was available at startup.
 /// </summary>
 public sealed class OpenAiImageService : IAiImageService
 {
@@ -20,17 +31,24 @@ public sealed class OpenAiImageService : IAiImageService
 
     private readonly HttpClient _http;
     private readonly OpenAiOptions _opts;
+    private readonly ISystemSettingsService _settings;
     private readonly ILogger<OpenAiImageService> _log;
 
-    public OpenAiImageService(HttpClient http, IOptions<OpenAiOptions> opts, ILogger<OpenAiImageService> log)
+    public OpenAiImageService(
+        HttpClient http,
+        IOptions<OpenAiOptions> opts,
+        ISystemSettingsService settings,
+        ILogger<OpenAiImageService> log)
     {
         _http = http;
         _opts = opts.Value;
+        _settings = settings;
         _log = log;
 
         if (_http.BaseAddress is null)
             _http.BaseAddress = new Uri(_opts.BaseUrl);
-        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _opts.ApiKey);
+        // Auth header is applied per-request so a key updated at runtime takes
+        // effect immediately (see GetEffectiveApiKeyAsync).
         if (!string.IsNullOrWhiteSpace(_opts.OrgId))
             _http.DefaultRequestHeaders.TryAddWithoutValidation("OpenAI-Organization", _opts.OrgId);
         _http.Timeout = TimeSpan.FromSeconds(_opts.TimeoutSeconds);
@@ -38,6 +56,19 @@ public sealed class OpenAiImageService : IAiImageService
 
     public async Task<AiImageResult> GenerateAsync(AiImageRequest request, CancellationToken ct)
     {
+        // ── Resolve API key at runtime ─────────────────────────────────────────
+        var apiKey = await GetEffectiveApiKeyAsync(ct);
+        if (apiKey is null)
+        {
+            _log.LogWarning(
+                "OpenAI API key is not configured (neither in admin settings nor in appsettings). " +
+                "Returning placeholder image. Configure the key at /admin/settings.");
+            return await GeneratePlaceholderAsync(request, ct);
+        }
+
+        // Set auth header with the current key.
+        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
         var size = NativeSizeFor(request.AspectRatio);
 
         // ── Either /v1/images/edits (with portrait) or /v1/images/generations ──
@@ -52,6 +83,54 @@ public sealed class OpenAiImageService : IAiImageService
         await File.WriteAllBytesAsync(tempPath, pngBytes, ct);
 
         return new AiImageResult(tempPath, size.Width, size.Height);
+    }
+
+    // ── Key resolution ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the effective OpenAI API key, preferring the DB-stored value
+    /// (set via admin panel) over the appsettings.json value. Returns null if
+    /// no usable key is found.
+    /// </summary>
+    private async Task<string?> GetEffectiveApiKeyAsync(CancellationToken ct)
+    {
+        // 1. Database setting (admin panel) — always checked first.
+        var dbKey = await _settings.GetValueAsync("openai_api_key", ct);
+        if (!string.IsNullOrWhiteSpace(dbKey) && !IsPlaceholderKey(dbKey))
+            return dbKey;
+
+        // 2. Config-file value (appsettings*.json / env vars / Makefile).
+        var cfgKey = _opts.ApiKey;
+        if (!string.IsNullOrWhiteSpace(cfgKey) && !IsPlaceholderKey(cfgKey))
+            return cfgKey;
+
+        return null;
+    }
+
+    private static bool IsPlaceholderKey(string key) =>
+        key.StartsWith("sk-REPLACE", StringComparison.OrdinalIgnoreCase) ||
+        key.StartsWith("REPLACE_", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Generates a solid-colour placeholder PNG (same as MockAiImageService)
+    /// when no API key is configured.
+    /// </summary>
+    private static async Task<AiImageResult> GeneratePlaceholderAsync(AiImageRequest request, CancellationToken ct)
+    {
+        const int Width = 1920;
+        const int Height = 1080;
+        var tempPath = Path.Combine(Path.GetTempPath(), $"placeholder_{Guid.NewGuid():N}.png");
+
+        var hash = unchecked((uint)request.Prompt.GetHashCode());
+        var tint = new Rgba32(
+            (byte)(40 + (hash & 0xFF) / 2),
+            (byte)(40 + ((hash >> 8) & 0xFF) / 2),
+            (byte)(60 + ((hash >> 16) & 0xFF) / 3),
+            255);
+
+        using var img = new Image<Rgba32>(Width, Height, tint);
+        await img.SaveAsPngAsync(tempPath, ct);
+        return new AiImageResult(tempPath, Width, Height);
     }
 
     // ── Internals ────────────────────────────────────────────────────────────

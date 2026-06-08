@@ -26,6 +26,7 @@ public class BannerShopDbContext : DbContext
     public DbSet<BannerGeneration> BannerGenerations => Set<BannerGeneration>();
     public DbSet<IpAiUsage> IpAiUsages => Set<IpAiUsage>();
     public DbSet<AiCreditTransaction> AiCreditTransactions => Set<AiCreditTransaction>();
+    public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -64,6 +65,20 @@ public class BannerShopDbContext : DbContext
             e.HasIndex(x => x.Key).IsUnique();
             e.Property(x => x.Name).HasMaxLength(200).IsRequired();
             e.Property(x => x.Value).HasColumnType("decimal(10,2)");
+        });
+
+        // SystemSetting (BANNERSH-98: admin-editable runtime settings)
+        modelBuilder.Entity<SystemSetting>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Key).HasMaxLength(100).IsRequired();
+            e.HasIndex(x => x.Key).IsUnique();
+            e.Property(x => x.Value).HasMaxLength(2000).IsRequired();
+            e.Property(x => x.Label).HasMaxLength(200);
+            e.HasData(
+                new SystemSetting { Id = 1, Key = "openai_api_key", Value = "", Label = "OpenAI API Key", IsSensitive = true },
+                new SystemSetting { Id = 2, Key = "openai_image_model", Value = "", Label = "OpenAI Image Model (blank = use config default)", IsSensitive = false }
+            );
         });
 
         // User

@@ -153,6 +153,12 @@ const router = createRouter({
       component: () => import('@/views/admin/UserDetailView.vue'),
       meta: { requiresAdmin: true },
     },
+    {
+      path: '/admin/settings',
+      name: 'admin-settings',
+      component: () => import('@/views/admin/AdminSettingsView.vue'),
+      meta: { requiresAdmin: true },
+    },
 
     // ── 404 ───────────────────────────────────────────────────────────────────
     {
