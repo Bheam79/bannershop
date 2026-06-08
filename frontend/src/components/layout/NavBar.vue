@@ -36,6 +36,7 @@ async function handleLogout() {
           <RouterLink to="/account/orders" style="color:var(--muted);font-weight:500;font-size:15px;text-decoration:none" class="nb-link">Mine ordrer</RouterLink>
           <RouterLink to="/account/design-requests" style="color:var(--muted);font-weight:500;font-size:15px;text-decoration:none" class="nb-link">Mine design-bestillinger</RouterLink>
           <AiCreditBadge />
+          <RouterLink v-if="auth.isAdmin" to="/admin" style="color:var(--accent);font-weight:600;font-size:15px;text-decoration:none" class="nb-link">⚙️ Admin</RouterLink>
           <button @click="handleLogout" style="background:none;border:none;cursor:pointer;color:var(--faint);font-size:14px;font-family:var(--font-ui);transition:color .15s" class="nb-link">Logg ut</button>
         </template>
         <template v-else>
