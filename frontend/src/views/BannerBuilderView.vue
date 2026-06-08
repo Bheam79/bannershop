@@ -14,6 +14,9 @@ const router = useRouter()
 const auth = useAuthStore()
 const cart = useCartStore()
 
+// ── Session persistence key ───────────────────────────────────────────────────
+const SESSION_KEY = 'banner_upload_state'
+
 // ── Upload state ─────────────────────────────────────────────────────────────
 const design = ref<UploadResponse | null>(null)
 
@@ -139,8 +142,47 @@ function addToCartAndCheckout() {
   router.push('/checkout')
 }
 
+// ── sessionStorage persistence (survives F5 refresh) ─────────────────────────
+watch([design, heightCm, computedWidthCm, rotationDegrees, qty, eyeletOption], () => {
+  if (design.value) {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+      design: design.value,
+      heightCm: heightCm.value,
+      computedWidthCm: computedWidthCm.value,
+      rotationDegrees: rotationDegrees.value,
+      qty: qty.value,
+      eyeletOption: eyeletOption.value,
+    }))
+  } else {
+    sessionStorage.removeItem(SESSION_KEY)
+  }
+}, { deep: true })
+
 // Pre-fetch sizes and eyelet price once so info is available immediately after upload.
 onMounted(async () => {
+  // Restore state from sessionStorage so F5 doesn't reset the form to the upload step
+  const saved = sessionStorage.getItem(SESSION_KEY)
+  if (saved) {
+    try {
+      const state = JSON.parse(saved) as {
+        design: UploadResponse
+        heightCm: number
+        computedWidthCm: number
+        rotationDegrees: number
+        qty: number
+        eyeletOption: EyeletOption
+      }
+      design.value = state.design
+      heightCm.value = state.heightCm
+      computedWidthCm.value = state.computedWidthCm
+      rotationDegrees.value = state.rotationDegrees
+      qty.value = state.qty
+      eyeletOption.value = state.eyeletOption
+    } catch {
+      sessionStorage.removeItem(SESSION_KEY)
+    }
+  }
+
   try {
     allSizes.value = await fetchSizes()
   } catch {
@@ -247,9 +289,9 @@ onMounted(async () => {
           </div>
           <BannerPreviewEditor
             :design-id="design.designId"
-            :initial-height-cm="design.selectedHeightCm"
-            :initial-computed-width-cm="design.computedWidthCm"
-            :initial-rotation-degrees="design.rotationDegrees"
+            :initial-height-cm="heightCm"
+            :initial-computed-width-cm="computedWidthCm"
+            :initial-rotation-degrees="rotationDegrees"
             @change="onEditorChange"
           />
         </div>
