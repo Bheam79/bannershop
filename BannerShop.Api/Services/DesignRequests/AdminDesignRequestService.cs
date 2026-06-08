@@ -1,5 +1,6 @@
 using BannerShop.Api.Models.DesignRequests;
 using BannerShop.Api.Services.BannerBuilder;
+using BannerShop.Api.Services.DesignRequests.Replicate;
 using BannerShop.Api.Services.Email;
 using BannerShop.Core.Enums;
 using BannerShop.Infrastructure.Data;
@@ -14,19 +15,23 @@ public sealed class AdminDesignRequestService : IAdminDesignRequestService
     private readonly IEmailService _email;
     private readonly DesignRequestService _base;
     private readonly ILogger<AdminDesignRequestService> _log;
+    // Optional: only resolved when Replicate is configured (see Program.cs).
+    private readonly RealEsrganUpscalingService? _upscaler;
 
     public AdminDesignRequestService(
         BannerShopDbContext db,
         BannerFileStorage storage,
         IEmailService email,
         DesignRequestService baseService,
-        ILogger<AdminDesignRequestService> log)
+        ILogger<AdminDesignRequestService> log,
+        RealEsrganUpscalingService? upscaler = null)
     {
         _db = db;
         _storage = storage;
         _email = email;
         _base = baseService;
         _log = log;
+        _upscaler = upscaler;
     }
 
     // ── List ──────────────────────────────────────────────────────────────────
@@ -231,6 +236,73 @@ public sealed class AdminDesignRequestService : IAdminDesignRequestService
             await _base.TryCreateFinalBannerDesignAsync(r, ct);
 
         await _db.SaveChangesAsync(ct);
+        return DesignRequestActionResult.Ok(_base.ToDetail(r));
+    }
+
+    // ── 4x Real-ESRGAN upscale (BANNERSH-57) ──────────────────────────────────
+
+    public async Task<DesignRequestActionResult> UpscaleFinalAsync(int id, int scale, CancellationToken ct = default)
+    {
+        if (_upscaler is null)
+            return DesignRequestActionResult.Fail(
+                "Real-ESRGAN upscaler is not configured. Set Replicate:ApiToken in appsettings.");
+
+        if (scale is not (2 or 4))
+            return DesignRequestActionResult.Fail("Scale must be 2 or 4.");
+
+        var r = await _db.DesignRequests
+            .Include(x => x.Revisions)
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (r is null) return DesignRequestActionResult.Fail("Design request not found.");
+
+        // Prefer the cropped print-ready file; fall back to the raw AI output.
+        var sourceRelative = !string.IsNullOrWhiteSpace(r.FinalCroppedStoragePath)
+            ? r.FinalCroppedStoragePath!
+            : r.AiResultStoragePath;
+        if (string.IsNullOrWhiteSpace(sourceRelative))
+            return DesignRequestActionResult.Fail("Design request has no image to upscale yet.");
+
+        var sourceAbs = _storage.AbsolutePathFor(sourceRelative);
+        if (!File.Exists(sourceAbs))
+            return DesignRequestActionResult.Fail($"Source image missing on disk: {sourceRelative}");
+
+        string upscaledTempPath;
+        try
+        {
+            upscaledTempPath = await _upscaler.UpscaleAsync(sourceAbs, scale, ct);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Real-ESRGAN upscale failed for DesignRequest {Id}", id);
+            return DesignRequestActionResult.Fail($"Upscale failed: {ex.Message}");
+        }
+
+        // Save into the customer's storage folder as a new file (don't clobber the
+        // original — production may want both for comparison).
+        var userDir = _storage.EnsureUserDirectory(r.UserId);
+        var ext = Path.GetExtension(upscaledTempPath);
+        if (string.IsNullOrEmpty(ext)) ext = ".png";
+        var fileName = $"design_{r.Id}_{DateTime.UtcNow:yyyyMMddHHmmss}_x{scale}{ext}";
+        var destAbs = Path.Combine(userDir, fileName);
+        try
+        {
+            File.Move(upscaledTempPath, destAbs, overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Failed to persist upscaled image for DesignRequest {Id}", id);
+            try { File.Delete(upscaledTempPath); } catch { /* best effort */ }
+            return DesignRequestActionResult.Fail($"Could not persist upscaled file: {ex.Message}");
+        }
+
+        var newRelative = BannerFileStorage.RelativePathFor(r.UserId, fileName);
+        r.FinalCroppedStoragePath = newRelative;
+        r.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        _log.LogInformation("DesignRequest {Id}: FinalCroppedStoragePath upscaled x{Scale} -> {Path}",
+            r.Id, scale, newRelative);
+
         return DesignRequestActionResult.Ok(_base.ToDetail(r));
     }
 }

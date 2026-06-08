@@ -6,6 +6,7 @@ using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Core;
 using BannerShop.Api.Services.DesignRequests;
 using BannerShop.Api.Services.DesignRequests.OpenAi;
+using BannerShop.Api.Services.DesignRequests.Replicate;
 using BannerShop.Api.Services.Email;
 using BannerShop.Api.Services.Orders;
 using BannerShop.Api.Services.Orders.Stripe;
@@ -109,7 +110,26 @@ if (openAiConfigured)
 else
     builder.Services.AddSingleton<IAiImageService, MockAiImageService>();
 
+// IUpscalingService stays Noop for the customer-facing AiGenerationPipeline —
+// per BANNERSH-57 the Real-ESRGAN 4x pass is an order-backend / admin step,
+// not part of the preview flow customers wait on.
 builder.Services.AddSingleton<IUpscalingService, NoopUpscalingService>();
+
+// ─── Replicate (Real-ESRGAN 4x upscaler for order/admin backend) ─────────────
+builder.Services.Configure<ReplicateOptions>(builder.Configuration.GetSection(ReplicateOptions.SectionName));
+
+var replicateSection = builder.Configuration.GetSection(ReplicateOptions.SectionName);
+var replicateToken = replicateSection["ApiToken"];
+var replicateConfigured =
+    !string.IsNullOrWhiteSpace(replicateToken) &&
+    !replicateToken.StartsWith("r8_REPLACE", StringComparison.OrdinalIgnoreCase) &&
+    !replicateToken.StartsWith("REPLACE_", StringComparison.OrdinalIgnoreCase);
+
+if (replicateConfigured)
+    builder.Services.AddHttpClient<RealEsrganUpscalingService>();
+// When the token isn't set, admin endpoints that depend on RealEsrganUpscalingService
+// will return 503 (see AdminDesignRequestsController.Upscale).
+
 builder.Services.AddSingleton<IPhotoCompositor, PhotoCompositorNotImplemented>();
 builder.Services.AddSingleton<IBannerPromptService, BannerPromptService>();
 builder.Services.AddSingleton<IDesignRequestJobQueue, DesignRequestJobQueue>();

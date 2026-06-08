@@ -18,4 +18,12 @@ public interface IAdminDesignRequestService
 
     /// <summary>Admin manually overrides the request status (InProgress, AwaitingApproval, Final, Cancelled).</summary>
     Task<DesignRequestActionResult> UpdateStatusAsync(int id, string status, string? notes, CancellationToken ct = default);
+
+    /// <summary>
+    /// Run the design request's final cropped image (or raw AI output when no cropped
+    /// version exists yet) through the configured 4x upscaler (Real-ESRGAN via Replicate
+    /// — see BANNERSH-57) and replace <see cref="DesignRequest.FinalCroppedStoragePath"/>
+    /// with the upscaled file. Used by the order backend to prep print-ready assets.
+    /// </summary>
+    Task<DesignRequestActionResult> UpscaleFinalAsync(int id, int scale, CancellationToken ct = default);
 }

@@ -119,4 +119,24 @@ public class AdminDesignRequestsController : ControllerBase
         if (!result.Success) return BadRequest(new { error = result.Error });
         return Ok(result.Detail);
     }
+
+    // ── POST /api/admin/design-requests/{id}/upscale (BANNERSH-57) ───────────
+    // Order-backend only: runs Real-ESRGAN (via Replicate) over the final cropped
+    // image and saves the upscaled version into the customer's design folder. The
+    // customer-facing AI preview pipeline is unchanged — this only affects what
+    // production prints from.
+    [HttpPost("{id:int}/upscale")]
+    public async Task<IActionResult> Upscale(int id, [FromQuery] int scale = 4, CancellationToken ct = default)
+    {
+        var result = await _service.UpscaleFinalAsync(id, scale, ct);
+        if (!result.Success)
+        {
+            // Surface "upscaler not configured" as 503 so the admin UI can show
+            // a useful message instead of a generic 400.
+            if (result.Error?.Contains("not configured", StringComparison.OrdinalIgnoreCase) == true)
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = result.Error });
+            return BadRequest(new { error = result.Error });
+        }
+        return Ok(result.Detail);
+    }
 }
