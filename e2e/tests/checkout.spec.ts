@@ -12,22 +12,44 @@ import { test, expect, type Page } from '@playwright/test'
 import { loginViaApi, getTestUserEmail, getTestUserPassword } from '../helpers/auth'
 import { apiCreateOrder, apiFetchSizes, apiLogin } from '../helpers/api'
 
-/** Navigate to home, pick first standard size, add to cart → lands on /checkout */
+/**
+ * Seed the cart with the first active standard size via Pinia store injection,
+ * then soft-navigate (Vue router) to /checkout so Pinia state is preserved.
+ * Avoids relying on the old home-page size-selector UI.
+ */
 async function addFirstSizeToCart(page: Page) {
+  // Fetch a valid size from the API (Node-side, before browser context)
+  const sizes = await apiFetchSizes()
+  const size = sizes.find((s) => s.isActive && !s.isCustomWidth)
+  if (!size) throw new Error('No active standard banner sizes found — cannot seed cart')
+
+  // Load the app so Vue + Pinia are initialised
   await page.goto('/')
-  await expect(page.locator('text=Laster bannerstørrelser')).toBeHidden({ timeout: 15_000 })
 
-  const sizeCards = page
-    .locator('section')
-    .filter({ hasText: 'Velg størrelse' })
-    .locator('button[type="button"]')
-    .filter({ hasNot: page.locator('text=Valgfri bredde') })
-  await sizeCards.first().click()
+  // Inject the cart item directly into the Pinia store, then use the Vue
+  // router for SPA navigation so the in-memory store state is preserved.
+  await page.evaluate(
+    (cartItem) => {
+      const appEl = document.getElementById('app') as any
+      const pinia = appEl.__vue_app__.config.globalProperties.$pinia
+      const router = appEl.__vue_app__.config.globalProperties.$router
+      const cartStore = pinia._s.get('cart')
+      if (cartStore) {
+        cartStore.items.push(cartItem)
+      }
+      router.push('/checkout')
+    },
+    {
+      bannerSizeId: size.id,
+      bannerSizeName: size.name,
+      customWidthCm: null,
+      heightCm: size.heightCm,
+      quantity: 1,
+      unitPriceNok: size.calculatedPrice ?? size.fixedPrice ?? 699,
+    },
+  )
 
-  const addBtn = page.getByRole('button', { name: /Legg i handlekurv/i })
-  await expect(addBtn).toBeEnabled()
-  await addBtn.click()
-  await expect(page).toHaveURL(/\/checkout$/, { timeout: 10_000 })
+  await page.waitForURL(/\/checkout$/, { timeout: 10_000 })
 }
 
 /** Fill out the delivery address form */
@@ -194,7 +216,6 @@ test.describe('Checkout flow', () => {
   test('failed stripe card shows error message on payment page', async ({ page }) => {
     // Navigate to payment page directly via cart manipulation
     await page.goto('/')
-    await expect(page.locator('text=Laster bannerstørrelser')).toBeHidden({ timeout: 15_000 })
 
     // Set up cart and checkout state in localStorage
     await page.evaluate(() => {
