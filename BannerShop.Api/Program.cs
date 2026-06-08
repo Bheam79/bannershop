@@ -141,7 +141,16 @@ builder.Services.AddHostedService<DesignRequestJobProcessor>();
 
 // ─── Email ────────────────────────────────────────────────────────────────────
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
-builder.Services.AddScoped<IEmailService, NullEmailService>();  // Swap for SmtpEmailService when configured
+
+// SmtpEmailService when Email:SmtpHost is set; NullEmailService otherwise.
+// Per BANNERSH-58 the NullEmailService logs at Warning outside Development so
+// a dropped production email is loud rather than silent.
+var emailOpts = builder.Configuration.GetSection(EmailOptions.SectionName).Get<EmailOptions>()
+    ?? new EmailOptions();
+if (!string.IsNullOrWhiteSpace(emailOpts.SmtpHost))
+    builder.Services.AddScoped<IEmailService, SmtpEmailService>();
+else
+    builder.Services.AddScoped<IEmailService, NullEmailService>();
 
 // Allow multipart uploads up to the configured cap (+25% headroom for form overhead).
 var fileStorageOpts = builder.Configuration.GetSection(FileStorageOptions.SectionName).Get<FileStorageOptions>()
