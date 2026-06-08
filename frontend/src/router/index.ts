@@ -39,6 +39,7 @@ const router = createRouter({
       path: '/checkout/payment',
       name: 'checkout-payment',
       component: () => import('@/views/checkout/PaymentView.vue'),
+      meta: { requiresAuth: true },
     },
     {
       path: '/checkout/confirmation/:orderId',

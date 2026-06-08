@@ -139,6 +139,13 @@ function addToCartAndCheckout() {
     notes: `Banner design #${design.value.designId} (lastet opp av kunde, rotasjon ${rotationDegrees.value}°)`,
   }
   cart.addItem(item)
+
+  // If not logged in, cart is safely persisted in localStorage; redirect to login
+  // with a redirect back to /checkout so the user can complete the purchase.
+  if (!auth.isLoggedIn) {
+    router.push('/login?redirect=/checkout')
+    return
+  }
   router.push('/checkout')
 }
 
@@ -224,22 +231,6 @@ onMounted(async () => {
         <i class="fa-solid fa-wand-magic-sparkles"></i> AI-generert feiringsbanner — 95 kr
       </RouterLink>
     </header>
-
-    <!-- Auth notice (page is public, but upload requires login) -->
-    <div
-      v-if="!auth.isLoggedIn && !design"
-      class="notice-gold"
-      style="margin-bottom:1.5rem"
-    >
-      <i class="fa-solid fa-circle-info"></i>
-      <span>
-        <strong>Tips:</strong> Du må være innlogget for å lagre designet ditt.
-        <RouterLink to="/login?redirect=/banner-builder" style="color:var(--accent);font-weight:600">Logg inn</RouterLink>
-        eller
-        <RouterLink to="/register" style="color:var(--accent);font-weight:600">registrer en konto</RouterLink>
-        før du laster opp.
-      </span>
-    </div>
 
     <!-- Step 1: Upload -->
     <section v-if="!design" style="margin-bottom:2.5rem">
@@ -412,10 +403,26 @@ onMounted(async () => {
             </div>
           </div>
 
+          <!-- Soft login nudge for anonymous users — shown just before checkout -->
+          <div
+            v-if="!auth.isLoggedIn"
+            class="notice-gold"
+            style="margin-top:16px"
+          >
+            <i class="fa-solid fa-circle-info"></i>
+            <span style="font-size:13px">
+              Du vil bli bedt om å
+              <RouterLink to="/login?redirect=/checkout" style="color:var(--accent);font-weight:600">logge inn</RouterLink>
+              eller
+              <RouterLink to="/register" style="color:var(--accent);font-weight:600">registrere deg</RouterLink>
+              for å fullføre bestillingen.
+            </span>
+          </div>
+
           <button
             type="button"
             class="btn btn-primary"
-            style="width:100%;justify-content:center;padding:14px;font-size:16px;border-radius:12px;margin-top:20px"
+            style="width:100%;justify-content:center;padding:14px;font-size:16px;border-radius:12px;margin-top:16px"
             :disabled="customPriceNok == null || qty < 1 || priceLoading || sizesLoading"
             @click="addToCartAndCheckout"
           >

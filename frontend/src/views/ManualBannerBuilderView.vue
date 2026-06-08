@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { loadStripe } from '@stripe/stripe-js'
 import type { Stripe, StripeCardElement } from '@stripe/stripe-js'
 import { useAuthStore } from '@/stores/auth'
@@ -12,7 +12,10 @@ import {
 } from '@/api/designRequests'
 
 // ── Router / auth ─────────────────────────────────────────────────────────────
+const router = useRouter()
 const auth = useAuthStore()
+
+const MANUAL_SESSION_KEY = 'manual_banner_builder_state'
 
 // ── Step state ────────────────────────────────────────────────────────────────
 const step = ref<1 | 2 | 3>(1)
@@ -166,12 +169,8 @@ async function handlePhotoFile(file: File) {
     uploadedPhotoBannerDesignId.value = resp.designId
   } catch (e: unknown) {
     const ex = e as { response?: { status?: number; data?: { error?: string } }; message?: string }
-    if (ex.response?.status === 401) {
-      photoUploadError.value = 'Du må være innlogget for å laste opp et bilde.'
-    } else {
-      photoUploadError.value =
-        ex.response?.data?.error || ex.message || 'Opplasting feilet. Prøv igjen.'
-    }
+    photoUploadError.value =
+      ex.response?.data?.error || ex.message || 'Opplasting feilet. Prøv igjen.'
     if (photoPreviewUrl.value) {
       URL.revokeObjectURL(photoPreviewUrl.value)
       photoPreviewUrl.value = null
@@ -190,9 +189,32 @@ function removePhoto() {
 }
 
 // ── Step navigation ───────────────────────────────────────────────────────────
+function saveFormState() {
+  try {
+    sessionStorage.setItem(MANUAL_SESSION_KEY, JSON.stringify({
+      selectedTemplateId: selectedTemplateId.value,
+      language: language.value,
+      uploadedPhotoBannerDesignId: uploadedPhotoBannerDesignId.value,
+      personName: personName.value,
+      personAge: personAge.value,
+      textContent: textContent.value,
+      themeDescription: themeDescription.value,
+      aspectRatio: aspectRatio.value,
+    }))
+  } catch { /* non-fatal */ }
+}
+
 function goToStep(s: 1 | 2 | 3) {
   if (s === 2 && !step1Valid.value) return
   if (s === 3 && (!step1Valid.value || !step2Valid.value)) return
+
+  // Gate auth at step 3: if not logged in, save form state and redirect to login
+  if (s === 3 && !auth.isLoggedIn) {
+    saveFormState()
+    void router.push('/login?redirect=/banner-builder/manual')
+    return
+  }
+
   step.value = s
   if (s === 3) void initStripe()
 }
@@ -304,7 +326,42 @@ function formatNok(n: number): string {
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
-onMounted(loadTemplates)
+onMounted(async () => {
+  await loadTemplates()
+
+  // Restore form state saved before a login redirect (BANNERSH-97)
+  const saved = sessionStorage.getItem(MANUAL_SESSION_KEY)
+  if (saved && auth.isLoggedIn) {
+    try {
+      const s = JSON.parse(saved) as {
+        selectedTemplateId: number | null
+        language: 'nb' | 'en'
+        uploadedPhotoBannerDesignId: number | null
+        personName: string
+        personAge: number | null
+        textContent: string
+        themeDescription: string
+        aspectRatio: '16:9' | '18:9'
+      }
+      if (s.selectedTemplateId !== null) selectedTemplateId.value = s.selectedTemplateId
+      language.value = s.language
+      uploadedPhotoBannerDesignId.value = s.uploadedPhotoBannerDesignId
+      personName.value = s.personName
+      personAge.value = s.personAge
+      textContent.value = s.textContent
+      themeDescription.value = s.themeDescription
+      aspectRatio.value = s.aspectRatio
+      sessionStorage.removeItem(MANUAL_SESSION_KEY)
+      // If form is complete, go straight to step 3 (payment)
+      if (step1Valid.value && step2Valid.value) {
+        step.value = 3
+        void initStripe()
+      }
+    } catch {
+      sessionStorage.removeItem(MANUAL_SESSION_KEY)
+    }
+  }
+})
 
 onBeforeUnmount(() => {
   cardElement.value?.unmount()
@@ -325,18 +382,6 @@ onBeforeUnmount(() => {
         <strong style="color:var(--text)">{{ formatNok(495) }}</strong>.
       </p>
     </header>
-
-    <!-- Auth guard -->
-    <div v-if="!auth.isLoggedIn" class="notice-gold" style="margin-bottom:2rem">
-      <i class="fa-solid fa-circle-info"></i>
-      <span>
-        <strong>Du må være innlogget</strong> for å bestille et manuelt banner.
-        <RouterLink to="/login?redirect=/banner-builder/manual" style="color:var(--accent);font-weight:600">Logg inn</RouterLink>
-        eller
-        <RouterLink to="/register" style="color:var(--accent);font-weight:600">registrer deg</RouterLink>
-        for å fortsette.
-      </span>
-    </div>
 
     <!-- ── Post-payment confirmation ───────────────────────────────────── -->
     <div v-if="phase === 'confirmed'" style="text-align:center;padding:5rem 0">

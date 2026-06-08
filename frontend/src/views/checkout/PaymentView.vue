@@ -5,16 +5,22 @@ import { loadStripe } from '@stripe/stripe-js'
 import type { Stripe, StripeCardElement } from '@stripe/stripe-js'
 import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore } from '@/stores/checkout'
+import { useAuthStore } from '@/stores/auth'
 import { createOrderDraft } from '@/api/orders'
 
 const router = useRouter()
 const cart = useCartStore()
 const checkout = useCheckoutStore()
+const auth = useAuthStore()
 
-// ── Guard: redirect if no address set or cart is empty ───────────────────────
+// ── Guard: redirect if no address set, cart is empty, or not logged in ────────
 onMounted(async () => {
   if (cart.items.length === 0 || !checkout.isReady()) {
     router.replace('/checkout')
+    return
+  }
+  if (!auth.isLoggedIn) {
+    router.replace('/login?redirect=/checkout/payment')
     return
   }
   await initStripe()

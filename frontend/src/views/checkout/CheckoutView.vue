@@ -3,12 +3,14 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore } from '@/stores/checkout'
+import { useAuthStore } from '@/stores/auth'
 import { calculateShipping } from '@/api/shop'
 import type { DeliveryType, ShippingEstimate } from '@/types'
 
 const router = useRouter()
 const cart = useCartStore()
 const checkout = useCheckoutStore()
+const auth = useAuthStore()
 
 // ── Redirect if cart is empty ────────────────────────────────────────────────
 onMounted(() => {
@@ -119,6 +121,7 @@ function proceed() {
     formErrors.value.postalCode = 'Beregn frakt før du fortsetter'
     return
   }
+  // Save checkout state before any redirect so it's available on return
   checkout.setCheckout({
     recipientName: recipientName.value.trim(),
     address: {
@@ -130,6 +133,14 @@ function proceed() {
     shippingCostNok: shippingCost.value,
     expressFeeNok: expressFee.value,
   })
+
+  // Auth gate: cart + address survive in localStorage/store — the user just needs
+  // to log in and they'll land back on /checkout/payment automatically.
+  if (!auth.isLoggedIn) {
+    router.push('/login?redirect=/checkout/payment')
+    return
+  }
+
   router.push('/checkout/payment')
 }
 
