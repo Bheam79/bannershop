@@ -347,6 +347,15 @@ public class OrderService : IOrderService
 
         order.Status = status;
         order.UpdatedAt = DateTime.UtcNow;
+
+        // Auto-stamp DeliveredAt when transitioning to Delivered
+        if (status == OrderStatus.Delivered)
+        {
+            var tracking = await _db.ShipmentTrackings.FirstOrDefaultAsync(t => t.OrderId == orderId, ct);
+            if (tracking is not null && tracking.DeliveredAt is null)
+                tracking.DeliveredAt = DateTime.UtcNow;
+        }
+
         await _db.SaveChangesAsync(ct);
         var full = await LoadFullOrderAsync(orderId, ct);
         return OrderActionResult.Ok(ToDetailDto(full!));

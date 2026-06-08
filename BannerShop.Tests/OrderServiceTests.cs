@@ -467,6 +467,75 @@ public class OrderServiceTests
         }
     }
 
+    [Fact]
+    public async Task UpdateStatus_ToDelivered_StampsDeliveredAt_OnShipmentTracking()
+    {
+        var (service, db, _, _, _) = CreateService();
+        var draft = await service.CreateDraftAsync(1, MakeRequest());
+        var id = draft.OrderId;
+
+        // Seed ShipmentTracking and set status to Shipped so Delivered is a valid transition
+        db.ShipmentTrackings.Add(new ShipmentTracking
+        {
+            OrderId = id,
+            Carrier = "Bring",
+            TrackingNumber = "DELIVER001",
+            ShippedAt = DateTime.UtcNow.AddDays(-1)
+        });
+        db.Orders.Find(id)!.Status = OrderStatus.Shipped;
+        db.SaveChanges();
+
+        var before = DateTime.UtcNow.AddSeconds(-1);
+
+        try { await service.UpdateStatusAsync(id, OrderStatus.Delivered); }
+        catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
+
+        var tracking = db.ShipmentTrackings.Single(t => t.OrderId == id);
+        tracking.DeliveredAt.Should().NotBeNull("DeliveredAt must be stamped on Delivered transition");
+        tracking.DeliveredAt!.Value.Should().BeOnOrAfter(before);
+    }
+
+    [Fact]
+    public async Task UpdateStatus_ToDelivered_NoShipmentTracking_StatusStillUpdated()
+    {
+        // An order could theoretically reach Delivered without a ShipmentTracking row
+        var (service, db, _, _, _) = CreateService();
+        var draft = await service.CreateDraftAsync(1, MakeRequest());
+        var id = draft.OrderId;
+        db.Orders.Find(id)!.Status = OrderStatus.Shipped;
+        db.SaveChanges();
+
+        try { await service.UpdateStatusAsync(id, OrderStatus.Delivered); }
+        catch (NullReferenceException) { /* InMemory AsSplitQuery limitation in ToDetailDto */ }
+
+        db.Orders.Find(id)!.Status.Should().Be(OrderStatus.Delivered);
+    }
+
+    [Fact]
+    public async Task UpdateStatus_ToDelivered_ExistingDeliveredAt_NotOverwritten()
+    {
+        // If DeliveredAt was already set (e.g. corrective admin action), it should not be clobbered
+        var (service, db, _, _, _) = CreateService();
+        var draft = await service.CreateDraftAsync(1, MakeRequest());
+        var id = draft.OrderId;
+        var originalDeliveredAt = DateTime.UtcNow.AddHours(-2);
+        db.ShipmentTrackings.Add(new ShipmentTracking
+        {
+            OrderId = id,
+            Carrier = "Bring",
+            TrackingNumber = "EXISTING001",
+            DeliveredAt = originalDeliveredAt
+        });
+        db.Orders.Find(id)!.Status = OrderStatus.Shipped;
+        db.SaveChanges();
+
+        try { await service.UpdateStatusAsync(id, OrderStatus.Delivered); }
+        catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
+
+        var tracking = db.ShipmentTrackings.Single(t => t.OrderId == id);
+        tracking.DeliveredAt.Should().Be(originalDeliveredAt, "existing DeliveredAt must not be overwritten");
+    }
+
     // ── UpdateProductionAsync (admin) ─────────────────────────────────────────
 
     [Fact]
