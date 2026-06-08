@@ -59,7 +59,7 @@ internal static class DbHelper
     }
 
     /// <summary>Creates a test material with sensible defaults.</summary>
-    public static Material MakeMaterial(int id = 1, int widthCm = 160, int weightGsm = 400, DateTime? availableFrom = null, int? maxBannerWidthCm = null)
+    public static Material MakeMaterial(int id = 1, int widthCm = 160, int weightGsm = 400, DateTime? availableFrom = null, int? maxBannerWidthCm = null, decimal pricePerSqm = 180m)
         => new Material
         {
             Id = id,
@@ -70,7 +70,7 @@ internal static class DbHelper
             // that need to exercise the multiplier should pass `maxBannerWidthCm` explicitly.
             MaxBannerWidthCm = maxBannerWidthCm ?? 10_000,
             WeightGsm = weightGsm,
-            PricePerSqm = 180m,
+            PricePerSqm = pricePerSqm,
             AvailableFrom = availableFrom
         };
 

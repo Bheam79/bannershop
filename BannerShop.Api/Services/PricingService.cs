@@ -22,7 +22,11 @@ public class PricingService : IPricingService
         var p = await _db.PricingParameters
             .ToDictionaryAsync(x => x.Key, x => x.Value);
 
-        var basePricePerSqm = p.GetValueOrDefault("base_price_per_sqm", 180m);
+        // Use the material-specific price per m² when the Material navigation is loaded;
+        // fall back to the global pricing parameter as a safety net for callers that
+        // forget to .Include(s => s.Material) — prevents accidental pricing crashes.
+        var basePricePerSqm = size.Material?.PricePerSqm
+            ?? p.GetValueOrDefault("base_price_per_sqm", 180m);
         var minimumPrice    = p.GetValueOrDefault("minimum_price",        399m);
         var customSurcharge = p.GetValueOrDefault("custom_width_surcharge", 150m);
         var hemFlatFee      = p.GetValueOrDefault("hem_and_eyelets_flat_fee", 0m);

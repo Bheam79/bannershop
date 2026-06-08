@@ -115,6 +115,44 @@ public class PricingServiceTests
         price.Should().Be(860m);
     }
 
+    [Fact]
+    public async Task CalculatePrice_UsesPerMaterialPricePerSqm_NotGlobalParameter()
+    {
+        // Global base_price_per_sqm = 180; material has PricePerSqm = 140 (e.g. 680g heavy-duty).
+        // 300cm × 150cm = 4.5 sqm; 4.5 × 140 = 630 > minimum 399 → result must be 630, not 810.
+        var (service, _) = CreateSeeded(); // global seeded with 180 NOK/m²
+        var material = DbHelper.MakeMaterial(pricePerSqm: 140m); // diverges from global
+        var size = DbHelper.MakeStandardSize(1, 300, 150, material);
+
+        var price = await service.CalculatePriceAsync(size);
+
+        price.Should().Be(630m); // 4.5 × 140 = 630
+    }
+
+    [Fact]
+    public async Task CalculatePrice_MissingMaterialNavigation_FallsBackToGlobalParameter()
+    {
+        // When Material is null (caller forgot .Include), the service falls back to the
+        // global base_price_per_sqm parameter (180 NOK/m²) so it never crashes.
+        var (service, _) = CreateSeeded();
+        var size = new BannerSize
+        {
+            Id = 1,
+            WidthCm = 300,
+            HeightCm = 150,
+            IsCustomWidth = false,
+            Name = "300 × 150 cm",
+            IsActive = true,
+            MaterialId = 1,
+            Material = null! // navigation not loaded
+        };
+
+        var price = await service.CalculatePriceAsync(size);
+
+        // Falls back to global 180 NOK/m²: 4.5 × 180 = 810
+        price.Should().Be(810m);
+    }
+
     // ── Custom-width sizes ───────────────────────────────────────────────────
 
     [Fact]
