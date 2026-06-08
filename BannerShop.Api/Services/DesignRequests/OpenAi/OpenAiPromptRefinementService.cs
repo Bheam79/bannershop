@@ -35,39 +35,48 @@ public sealed class OpenAiPromptRefinementService : IPromptRefinementService
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly HttpClient _http;
-    private readonly OpenAiOptions _opts;
+    private readonly IOptionsMonitor<OpenAiOptions> _optsMonitor;
     private readonly ILogger<OpenAiPromptRefinementService> _log;
 
     public OpenAiPromptRefinementService(
         HttpClient http,
-        IOptions<OpenAiOptions> opts,
+        IOptionsMonitor<OpenAiOptions> optsMonitor,
         ILogger<OpenAiPromptRefinementService> log)
     {
         _http = http;
-        _opts = opts.Value;
+        _optsMonitor = optsMonitor;
         _log = log;
 
+        var opts = optsMonitor.CurrentValue;
         if (_http.BaseAddress is null)
-            _http.BaseAddress = new Uri(_opts.BaseUrl);
-        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _opts.ApiKey);
-        if (!string.IsNullOrWhiteSpace(_opts.OrgId))
-            _http.DefaultRequestHeaders.TryAddWithoutValidation("OpenAI-Organization", _opts.OrgId);
+            _http.BaseAddress = new Uri(opts.BaseUrl);
+        // Authorization header is set per-request (see RefineAsync) so that a key
+        // added to appsettings.Local.json after startup is picked up immediately.
+        if (!string.IsNullOrWhiteSpace(opts.OrgId))
+            _http.DefaultRequestHeaders.TryAddWithoutValidation("OpenAI-Organization", opts.OrgId);
         // HttpClient.Timeout is global — keep it generous; per-call cancellation
         // is done via the linked CancellationTokenSource below.
-        _http.Timeout = TimeSpan.FromSeconds(Math.Max(_opts.ChatTimeoutSeconds * 2, 60));
+        _http.Timeout = TimeSpan.FromSeconds(Math.Max(opts.ChatTimeoutSeconds * 2, 60));
     }
 
     public async Task<string> RefineAsync(PromptRefinementInput input, CancellationToken ct)
     {
+        var opts = _optsMonitor.CurrentValue;
+
+        // Set Authorization per-call so a key updated in appsettings.Local.json
+        // takes effect without a service restart.
+        _http.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", opts.ApiKey);
+
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(5, _opts.ChatTimeoutSeconds)));
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(5, opts.ChatTimeoutSeconds)));
 
         try
         {
             var (systemMsg, userMsg) = BuildMessages(input);
             var payload = new
             {
-                model = _opts.ChatModel,
+                model = opts.ChatModel,
                 messages = new object[]
                 {
                     new { role = "system", content = systemMsg },
@@ -109,7 +118,7 @@ public sealed class OpenAiPromptRefinementService : IPromptRefinementService
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             _log.LogWarning("Prompt refinement timed out after {Seconds}s; using base prompt.",
-                _opts.ChatTimeoutSeconds);
+                opts.ChatTimeoutSeconds);
             return input.BasePrompt;
         }
         catch (Exception ex)

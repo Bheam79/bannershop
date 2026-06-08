@@ -165,14 +165,24 @@ public class PromptRefinementServiceTests
     private static OpenAiPromptRefinementService CreateOpenAiService(StubHandler handler)
     {
         var http = new HttpClient(handler) { BaseAddress = new Uri("https://api.openai.test") };
-        var opts = Options.Create(new OpenAiOptions
+        var monitor = new SimpleOptionsMonitor<OpenAiOptions>(new OpenAiOptions
         {
             ApiKey = "sk-test-key",
             ChatModel = "gpt-4o-mini",
             BaseUrl = "https://api.openai.test",
             ChatTimeoutSeconds = 5
         });
-        return new OpenAiPromptRefinementService(http, opts, NullLogger<OpenAiPromptRefinementService>.Instance);
+        return new OpenAiPromptRefinementService(http, monitor, NullLogger<OpenAiPromptRefinementService>.Instance);
+    }
+
+    /// <summary>
+    /// Minimal <see cref="IOptionsMonitor{T}"/> wrapper for unit tests.
+    /// </summary>
+    private sealed class SimpleOptionsMonitor<T>(T value) : IOptionsMonitor<T>
+    {
+        public T CurrentValue => value;
+        public T Get(string? name) => value;
+        public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
 
     /// <summary>

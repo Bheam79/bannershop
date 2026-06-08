@@ -30,33 +30,37 @@ public sealed class OpenAiImageService : IAiImageService
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly HttpClient _http;
-    private readonly OpenAiOptions _opts;
+    private readonly IOptionsMonitor<OpenAiOptions> _optsMonitor;
     private readonly ISystemSettingsService _settings;
     private readonly ILogger<OpenAiImageService> _log;
 
     public OpenAiImageService(
         HttpClient http,
-        IOptions<OpenAiOptions> opts,
+        IOptionsMonitor<OpenAiOptions> optsMonitor,
         ISystemSettingsService settings,
         ILogger<OpenAiImageService> log)
     {
         _http = http;
-        _opts = opts.Value;
+        _optsMonitor = optsMonitor;
         _settings = settings;
         _log = log;
 
+        var opts = optsMonitor.CurrentValue;
         if (_http.BaseAddress is null)
-            _http.BaseAddress = new Uri(_opts.BaseUrl);
+            _http.BaseAddress = new Uri(opts.BaseUrl);
         // Auth header is applied per-request so a key updated at runtime takes
         // effect immediately (see GetEffectiveApiKeyAsync).
-        if (!string.IsNullOrWhiteSpace(_opts.OrgId))
-            _http.DefaultRequestHeaders.TryAddWithoutValidation("OpenAI-Organization", _opts.OrgId);
-        _http.Timeout = TimeSpan.FromSeconds(_opts.TimeoutSeconds);
+        if (!string.IsNullOrWhiteSpace(opts.OrgId))
+            _http.DefaultRequestHeaders.TryAddWithoutValidation("OpenAI-Organization", opts.OrgId);
+        _http.Timeout = TimeSpan.FromSeconds(opts.TimeoutSeconds);
     }
 
     public async Task<AiImageResult> GenerateAsync(AiImageRequest request, CancellationToken ct)
     {
         // ── Resolve API key at runtime ─────────────────────────────────────────
+        // GetEffectiveApiKeyAsync reads IOptionsMonitor.CurrentValue so it always
+        // reflects the live configuration — including any appsettings.Local.json
+        // changes that took effect after startup (reloadOnChange: true).
         var apiKey = await GetEffectiveApiKeyAsync(ct);
         if (apiKey is null)
         {
@@ -91,6 +95,10 @@ public sealed class OpenAiImageService : IAiImageService
     /// Returns the effective OpenAI API key, preferring the DB-stored value
     /// (set via admin panel) over the appsettings.json value. Returns null if
     /// no usable key is found.
+    ///
+    /// Uses <see cref="IOptionsMonitor{T}.CurrentValue"/> so that changes to
+    /// appsettings.Local.json (reloadOnChange: true) take effect without a
+    /// service restart.
     /// </summary>
     private async Task<string?> GetEffectiveApiKeyAsync(CancellationToken ct)
     {
@@ -99,8 +107,9 @@ public sealed class OpenAiImageService : IAiImageService
         if (!string.IsNullOrWhiteSpace(dbKey) && !IsPlaceholderKey(dbKey))
             return dbKey;
 
-        // 2. Config-file value (appsettings*.json / env vars / Makefile).
-        var cfgKey = _opts.ApiKey;
+        // 2. Config-file value — read CurrentValue so changes to
+        // appsettings.Local.json are picked up without a restart.
+        var cfgKey = _optsMonitor.CurrentValue.ApiKey;
         if (!string.IsNullOrWhiteSpace(cfgKey) && !IsPlaceholderKey(cfgKey))
             return cfgKey;
 
@@ -137,11 +146,12 @@ public sealed class OpenAiImageService : IAiImageService
 
     private async Task<byte[]> GenerateAsync(string prompt, NativeSize size, CancellationToken ct)
     {
+        var opts = _optsMonitor.CurrentValue;
         var payload = new
         {
-            model = _opts.ImageModel,
+            model = opts.ImageModel,
             prompt,
-            quality = _opts.ImageQuality,
+            quality = opts.ImageQuality,
             size = size.AsApiString(),
             n = 1,
             response_format = "b64_json"
@@ -157,10 +167,11 @@ public sealed class OpenAiImageService : IAiImageService
 
     private async Task<byte[]> EditWithReferenceAsync(string prompt, string referenceAbsolutePath, NativeSize size, CancellationToken ct)
     {
+        var opts = _optsMonitor.CurrentValue;
         using var content = new MultipartFormDataContent();
-        content.Add(new StringContent(_opts.ImageModel), "model");
+        content.Add(new StringContent(opts.ImageModel), "model");
         content.Add(new StringContent(prompt), "prompt");
-        content.Add(new StringContent(_opts.ImageQuality), "quality");
+        content.Add(new StringContent(opts.ImageQuality), "quality");
         content.Add(new StringContent(size.AsApiString()), "size");
         content.Add(new StringContent("1"), "n");
         content.Add(new StringContent("b64_json"), "response_format");
