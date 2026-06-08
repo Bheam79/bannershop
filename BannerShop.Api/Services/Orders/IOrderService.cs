@@ -50,10 +50,17 @@ public record CreateOrderDraftResult(
     decimal TotalNok,
     OrderPriceBreakdownDto Breakdown);
 
+public enum OrderActionErrorType { NotFound, InvalidTransition }
+
 public record OrderActionResult(bool Success, string? Error, OrderDetailDto? Order = null)
 {
+    public OrderActionErrorType? ErrorType { get; init; }
+
     public static OrderActionResult Ok(OrderDetailDto order) => new(true, null, order);
-    public static OrderActionResult Fail(string error) => new(false, error);
+    /// <summary>Order (or order item) was not found.</summary>
+    public static OrderActionResult Fail(string error) => new(false, error) { ErrorType = OrderActionErrorType.NotFound };
+    /// <summary>The requested status transition is not permitted from the current state.</summary>
+    public static OrderActionResult FailTransition(string error) => new(false, error) { ErrorType = OrderActionErrorType.InvalidTransition };
 }
 
 public class PagedResult<T>

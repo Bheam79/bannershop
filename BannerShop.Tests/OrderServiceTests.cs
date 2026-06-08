@@ -365,17 +365,18 @@ public class OrderServiceTests
     // ── UpdateStatus (admin) ───────────────────────────────────────────────────
 
     [Fact]
-    public async Task UpdateStatus_ValidOrder_ChangesStatus()
+    public async Task UpdateStatus_ValidTransition_ChangesStatus()
     {
+        // PendingPayment → Paid is a valid transition
         var (service, db, _, _, _) = CreateService();
         var draft = await service.CreateDraftAsync(1, MakeRequest());
 
         // UpdateStatusAsync calls LoadFullOrderAsync (AsSplitQuery) after saving — verify DB directly
-        try { await service.UpdateStatusAsync(draft.OrderId, OrderStatus.InProduction); }
+        try { await service.UpdateStatusAsync(draft.OrderId, OrderStatus.Paid); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
 
         var order = db.Orders.Find(draft.OrderId)!;
-        order.Status.Should().Be(OrderStatus.InProduction);
+        order.Status.Should().Be(OrderStatus.Paid);
     }
 
     [Fact]
@@ -386,6 +387,84 @@ public class OrderServiceTests
         var result = await service.UpdateStatusAsync(99999, OrderStatus.Paid);
 
         result.Success.Should().BeFalse();
+        result.ErrorType.Should().Be(OrderActionErrorType.NotFound);
+    }
+
+    [Fact]
+    public async Task UpdateStatus_InvalidTransition_ReturnsFailTransition()
+    {
+        // PendingPayment → InProduction skips the Paid step and is not allowed
+        var (service, db, _, _, _) = CreateService();
+        var draft = await service.CreateDraftAsync(1, MakeRequest());
+
+        var result = await service.UpdateStatusAsync(draft.OrderId, OrderStatus.InProduction);
+
+        result.Success.Should().BeFalse();
+        result.ErrorType.Should().Be(OrderActionErrorType.InvalidTransition);
+        result.Error.Should().Contain("PendingPayment");
+        result.Error.Should().Contain("InProduction");
+        // Order status must be unchanged
+        db.Orders.Find(draft.OrderId)!.Status.Should().Be(OrderStatus.PendingPayment);
+    }
+
+    [Fact]
+    public async Task UpdateStatus_FinalStateToAnyState_ReturnsFail()
+    {
+        // Delivered is a final state — no further transitions allowed
+        var (service, db, _, _, _) = CreateService();
+        var draft = await service.CreateDraftAsync(1, MakeRequest());
+        db.Orders.Find(draft.OrderId)!.Status = OrderStatus.Delivered;
+        db.SaveChanges();
+
+        var result = await service.UpdateStatusAsync(draft.OrderId, OrderStatus.Paid);
+
+        result.Success.Should().BeFalse();
+        result.ErrorType.Should().Be(OrderActionErrorType.InvalidTransition);
+        result.Error.Should().Contain("final state");
+    }
+
+    [Fact]
+    public async Task UpdateStatus_CancelledIsFinalState_CannotTransitionAway()
+    {
+        var (service, db, _, _, _) = CreateService();
+        var draft = await service.CreateDraftAsync(1, MakeRequest());
+        db.Orders.Find(draft.OrderId)!.Status = OrderStatus.Cancelled;
+        db.SaveChanges();
+
+        var result = await service.UpdateStatusAsync(draft.OrderId, OrderStatus.Paid);
+
+        result.Success.Should().BeFalse();
+        result.ErrorType.Should().Be(OrderActionErrorType.InvalidTransition);
+    }
+
+    [Fact]
+    public async Task UpdateStatus_PaidToCancelled_IsAllowed()
+    {
+        var (service, db, _, _, _) = CreateService();
+        var draft = await service.CreateDraftAsync(1, MakeRequest());
+        db.Orders.Find(draft.OrderId)!.Status = OrderStatus.Paid;
+        db.SaveChanges();
+
+        try { await service.UpdateStatusAsync(draft.OrderId, OrderStatus.Cancelled); }
+        catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
+
+        db.Orders.Find(draft.OrderId)!.Status.Should().Be(OrderStatus.Cancelled);
+    }
+
+    [Fact]
+    public async Task UpdateStatus_FullForwardChain_EachStepSucceeds()
+    {
+        // Walk PendingPayment → Paid → InProduction → ReadyToShip one step at a time
+        var (service, db, _, _, _) = CreateService();
+        var draft = await service.CreateDraftAsync(1, MakeRequest());
+        var id = draft.OrderId;
+
+        foreach (var next in new[] { OrderStatus.Paid, OrderStatus.InProduction, OrderStatus.ReadyToShip })
+        {
+            try { await service.UpdateStatusAsync(id, next); }
+            catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
+            db.Orders.Find(id)!.Status.Should().Be(next);
+        }
     }
 
     // ── UpdateProductionAsync (admin) ─────────────────────────────────────────
@@ -500,6 +579,9 @@ public class OrderServiceTests
     {
         var (service, db, _, _, _) = CreateService();
         var draft = await service.CreateDraftAsync(1, MakeRequest());
+        // Order must be in a shippable state (ReadyToShip or InProduction) before shipping
+        db.Orders.Find(draft.OrderId)!.Status = OrderStatus.ReadyToShip;
+        db.SaveChanges();
         var req = new SetShippingRequest
         {
             Carrier = "Bring",
@@ -523,9 +605,15 @@ public class OrderServiceTests
     {
         var (service, db, _, _, _) = CreateService();
         var draft = await service.CreateDraftAsync(1, MakeRequest());
+        // Seed ReadyToShip so the first call is allowed
+        db.Orders.Find(draft.OrderId)!.Status = OrderStatus.ReadyToShip;
+        db.SaveChanges();
 
         try { await service.SetShippingAsync(draft.OrderId, new SetShippingRequest { Carrier = "Bring", TrackingNumber = "FIRST001" }); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
+        // After first call the order is Shipped — re-seeding to ReadyToShip simulates an admin correction
+        db.Orders.Find(draft.OrderId)!.Status = OrderStatus.ReadyToShip;
+        db.SaveChanges();
         try { await service.SetShippingAsync(draft.OrderId, new SetShippingRequest { Carrier = "PostNord", TrackingNumber = "SECOND002" }); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
 
@@ -544,7 +632,41 @@ public class OrderServiceTests
         var result = await service.SetShippingAsync(99999, new SetShippingRequest { Carrier = "Bring", TrackingNumber = "X" });
 
         result.Success.Should().BeFalse();
+        result.ErrorType.Should().Be(OrderActionErrorType.NotFound);
         result.Error.Should().Contain("not found");
+    }
+
+    [Fact]
+    public async Task SetShipping_OrderInNonShippableState_ReturnsFailTransition()
+    {
+        // PendingPayment is not a shippable state — the order hasn't been paid or produced yet
+        var (service, db, _, _, _) = CreateService();
+        var draft = await service.CreateDraftAsync(1, MakeRequest());
+        // Status is PendingPayment after CreateDraftAsync
+
+        var result = await service.SetShippingAsync(draft.OrderId,
+            new SetShippingRequest { Carrier = "Bring", TrackingNumber = "X" });
+
+        result.Success.Should().BeFalse();
+        result.ErrorType.Should().Be(OrderActionErrorType.InvalidTransition);
+        result.Error.Should().Contain("PendingPayment");
+        // Order status must be unchanged
+        db.Orders.Find(draft.OrderId)!.Status.Should().Be(OrderStatus.PendingPayment);
+    }
+
+    [Fact]
+    public async Task SetShipping_OrderInProduction_Succeeds()
+    {
+        // InProduction is an allowed pre-shipping state
+        var (service, db, _, _, _) = CreateService();
+        var draft = await service.CreateDraftAsync(1, MakeRequest());
+        db.Orders.Find(draft.OrderId)!.Status = OrderStatus.InProduction;
+        db.SaveChanges();
+
+        try { await service.SetShippingAsync(draft.OrderId, new SetShippingRequest { Carrier = "Bring", TrackingNumber = "T1" }); }
+        catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
+
+        db.Orders.Find(draft.OrderId)!.Status.Should().Be(OrderStatus.Shipped);
     }
 
     // ── ListAllAsync (admin) ──────────────────────────────────────────────────

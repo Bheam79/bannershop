@@ -136,6 +136,11 @@ public class AdminOrdersControllerTests : IClassFixture<TestWebApplicationFactor
         var orderId = await CreateDraftAndGetId(customerClient);
         var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
 
+        // Promote through the required states so the order is shippable
+        await adminClient.PutAsJsonAsync($"/api/admin/orders/{orderId}/status", new { status = "Paid" });
+        await adminClient.PutAsJsonAsync($"/api/admin/orders/{orderId}/status", new { status = "InProduction" });
+        await adminClient.PutAsJsonAsync($"/api/admin/orders/{orderId}/status", new { status = "ReadyToShip" });
+
         var response = await adminClient.PostAsJsonAsync(
             $"/api/admin/orders/{orderId}/shipping",
             new
@@ -151,6 +156,36 @@ public class AdminOrdersControllerTests : IClassFixture<TestWebApplicationFactor
         doc.GetProperty("shipmentTracking").GetProperty("carrier").GetString().Should().Be("Bring");
         doc.GetProperty("shipmentTracking").GetProperty("trackingNumber").GetString()
             .Should().Be("TEST12345678");
+    }
+
+    [Fact]
+    public async Task AdminSetShipping_OrderInNonShippableState_Returns422()
+    {
+        var customerClient = RegisterAndGetAuthenticatedClient();
+        var orderId = await CreateDraftAndGetId(customerClient);
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+        // Order is in PendingPayment state — not shippable
+
+        var response = await adminClient.PostAsJsonAsync(
+            $"/api/admin/orders/{orderId}/shipping",
+            new { carrier = "Bring", trackingNumber = "INVALID001" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+    }
+
+    [Fact]
+    public async Task AdminUpdateStatus_InvalidTransition_Returns422()
+    {
+        var customerClient = RegisterAndGetAuthenticatedClient();
+        var orderId = await CreateDraftAndGetId(customerClient);
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+        // PendingPayment → Delivered skips many intermediate states
+
+        var response = await adminClient.PutAsJsonAsync(
+            $"/api/admin/orders/{orderId}/status",
+            new { status = "Delivered" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 
     [Fact]

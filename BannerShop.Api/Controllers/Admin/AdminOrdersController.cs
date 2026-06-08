@@ -3,6 +3,7 @@ using BannerShop.Api.Services.Orders;
 using BannerShop.Core.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using static BannerShop.Api.Services.Orders.OrderActionErrorType;
 
 namespace BannerShop.Api.Controllers.Admin;
 
@@ -53,7 +54,10 @@ public class AdminOrdersController : ControllerBase
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
         var result = await _orders.UpdateStatusAsync(id, req.Status, ct);
-        if (!result.Success) return NotFound(new { error = result.Error });
+        if (!result.Success)
+            return result.ErrorType == InvalidTransition
+                ? UnprocessableEntity(new { error = result.Error })
+                : NotFound(new { error = result.Error });
         return Ok(result.Order);
     }
 
@@ -76,7 +80,10 @@ public class AdminOrdersController : ControllerBase
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
         var result = await _orders.SetShippingAsync(id, req, ct);
-        if (!result.Success) return NotFound(new { error = result.Error });
+        if (!result.Success)
+            return result.ErrorType == InvalidTransition
+                ? UnprocessableEntity(new { error = result.Error })
+                : NotFound(new { error = result.Error });
         return Ok(result.Order);
     }
 }

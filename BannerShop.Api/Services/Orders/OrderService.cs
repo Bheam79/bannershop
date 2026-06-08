@@ -14,6 +14,29 @@ public class OrderService : IOrderService
     private const string KeyStandardLeadTimeDays = "standard_lead_time_days";
     private const string KeyExpressLeadTimeDays  = "express_lead_time_days";
 
+    /// <summary>
+    /// Defines which status transitions an admin is permitted to make.
+    /// Delivered and Cancelled are final states — no further transitions are allowed.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<OrderStatus, IReadOnlySet<OrderStatus>> AllowedTransitions =
+        new Dictionary<OrderStatus, IReadOnlySet<OrderStatus>>
+        {
+            [OrderStatus.Draft]          = new HashSet<OrderStatus> { OrderStatus.PendingPayment, OrderStatus.Paid, OrderStatus.Cancelled },
+            [OrderStatus.PendingPayment] = new HashSet<OrderStatus> { OrderStatus.Paid, OrderStatus.Cancelled },
+            [OrderStatus.Paid]           = new HashSet<OrderStatus> { OrderStatus.InProduction, OrderStatus.Cancelled },
+            [OrderStatus.InProduction]   = new HashSet<OrderStatus> { OrderStatus.ReadyToShip, OrderStatus.Cancelled },
+            [OrderStatus.ReadyToShip]    = new HashSet<OrderStatus> { OrderStatus.Shipped, OrderStatus.InProduction, OrderStatus.Cancelled },
+            [OrderStatus.Shipped]        = new HashSet<OrderStatus> { OrderStatus.Delivered, OrderStatus.Cancelled },
+            [OrderStatus.Delivered]      = new HashSet<OrderStatus>(),
+            [OrderStatus.Cancelled]      = new HashSet<OrderStatus>(),
+        };
+
+    /// <summary>
+    /// Order must be in one of these states before shipping details can be recorded.
+    /// </summary>
+    private static readonly IReadOnlySet<OrderStatus> ShippableStatuses =
+        new HashSet<OrderStatus> { OrderStatus.InProduction, OrderStatus.ReadyToShip };
+
     private readonly BannerShopDbContext _db;
     private readonly IPricingService _pricing;
     private readonly IShippingService _shipping;
@@ -311,6 +334,17 @@ public class OrderService : IOrderService
     {
         var order = await _db.Orders.FindAsync(new object?[] { orderId }, ct);
         if (order is null) return OrderActionResult.Fail("Order not found.");
+
+        if (!AllowedTransitions.TryGetValue(order.Status, out var allowed) || !allowed.Contains(status))
+        {
+            return OrderActionResult.FailTransition(
+                $"Cannot transition order from '{order.Status}' to '{status}'. " +
+                $"Allowed targets from '{order.Status}': " +
+                (allowed is { Count: > 0 }
+                    ? string.Join(", ", allowed)
+                    : "none (final state)") + ".");
+        }
+
         order.Status = status;
         order.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -368,6 +402,13 @@ public class OrderService : IOrderService
             .Include(o => o.ShipmentTracking)
             .FirstOrDefaultAsync(o => o.Id == orderId, ct);
         if (order is null) return OrderActionResult.Fail("Order not found.");
+
+        if (!ShippableStatuses.Contains(order.Status))
+        {
+            return OrderActionResult.FailTransition(
+                $"Order is in status '{order.Status}' and cannot be shipped. " +
+                $"Order must be in one of: {string.Join(", ", ShippableStatuses)} before recording shipment details.");
+        }
 
         if (order.ShipmentTracking is null)
         {
