@@ -21,6 +21,48 @@ export interface CreateAiRequestPayload {
   uploadedPhotoBannerDesignId?: number | null
 }
 
+/**
+ * BANNERSH-67 free-first flow — response from POST /api/design-requests/ai.
+ * No Stripe client secret; payment is collected at print-order time.
+ */
+export interface CreateAiDesignRequestResult {
+  designRequestId: number
+  /** true for anonymous callers — frontend shows a soft "create account" prompt */
+  requiresAuth: boolean
+  /** credits remaining after this generation (auth path only; 0 for anonymous) */
+  creditsRemaining: number
+}
+
+/** Paywall options carried in a 402 response from POST /api/design-requests/ai. */
+export interface PaywallOptions {
+  creditPackPriceNok: number
+  creditPackCount: number
+  bannerOrderActivationFeeNok: number
+  manualDesignerUrl: string
+  uploadOwnUrl: string
+}
+
+/** Full 402 paywall body from POST /api/design-requests/ai. */
+export interface AiPaywallData {
+  reason: string // 'ip_limit_reached' | 'insufficient_credits'
+  creditsRemaining: number
+  paywallOptions: PaywallOptions
+}
+
+/** 202 response from POST /api/design-requests/{id}/regenerate. */
+export interface RegenerateAiResult {
+  generationId: number
+  creditsRemaining: number
+}
+
+/** 402 body from POST /api/design-requests/{id}/regenerate. */
+export interface RegeneratePaywall402 {
+  error: string
+  creditsRemaining: number
+  paywallMetadata: { reason: string }
+}
+
+/** Kept for /design-requests/manual (still Stripe-gated). */
 export interface CreateDesignRequestResponse {
   designRequestId: number
   clientSecret: string
@@ -40,7 +82,7 @@ export interface DesignRequestListItem {
 
 export interface DesignRequestDetail {
   id: number
-  userId: number
+  userId: number | null // nullable since BANNERSH-67 (anonymous requests have no user)
   bannerTemplateId: number
   mode: string
   status: string
@@ -70,18 +112,28 @@ export async function fetchTemplates(): Promise<BannerTemplateItem[]> {
   return data
 }
 
-/** Create an AI design request and return a Stripe PaymentIntent client secret. */
+/**
+ * Create an AI design request under the BANNERSH-67 free-first flow.
+ *
+ * The X-Request-Integrity header (bot-protection fingerprint) must be generated
+ * by useRequestIntegrity.ts and passed as `integrityToken`.
+ *
+ * Throws an axios error with `response.status === 402` when the caller has hit
+ * the paywall — the caller should extract `response.data` as `AiPaywallData`.
+ */
 export async function createAiRequest(
   req: CreateAiRequestPayload,
-): Promise<CreateDesignRequestResponse> {
-  const { data } = await apiClient.post<CreateDesignRequestResponse>(
+  integrityToken: string,
+): Promise<CreateAiDesignRequestResult> {
+  const { data } = await apiClient.post<CreateAiDesignRequestResult>(
     '/design-requests/ai',
     req,
+    { headers: { 'X-Request-Integrity': integrityToken } },
   )
   return data
 }
 
-/** Get full detail for a design request (used for polling). */
+/** Get full detail for a design request (used for polling). Requires auth. */
 export async function getDesignRequest(id: number): Promise<DesignRequestDetail> {
   const { data } = await apiClient.get<DesignRequestDetail>(`/design-requests/${id}`)
   return data
@@ -92,9 +144,24 @@ export async function approveDesignRequest(id: number): Promise<void> {
   await apiClient.post(`/design-requests/${id}/approve`)
 }
 
-/** Request a free re-generation (uses up one RegenerationsRemaining credit). */
-export async function regenerateDesignRequest(id: number): Promise<void> {
-  await apiClient.post(`/design-requests/${id}/regenerate`)
+/**
+ * Consume 1 AI credit and enqueue a new generation attempt with optionally updated inputs.
+ * Returns 202 on success with updated credit balance.
+ * Throws 402 with `RegeneratePaywall402` data when insufficient credits.
+ *
+ * The X-Request-Integrity header is attached for bot-protection.
+ */
+export async function regenerateDesignRequest(
+  id: number,
+  params: { textContent?: string; themeDescription?: string },
+  integrityToken: string,
+): Promise<RegenerateAiResult> {
+  const { data } = await apiClient.post<RegenerateAiResult>(
+    `/design-requests/${id}/regenerate`,
+    params,
+    { headers: { 'X-Request-Integrity': integrityToken } },
+  )
+  return data
 }
 
 /** List all design requests for the authenticated user. */
