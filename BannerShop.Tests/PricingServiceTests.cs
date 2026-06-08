@@ -250,15 +250,15 @@ public class PricingServiceTests
     public async Task CalculatePrice_BannerExactlyAt2xBoundary_DoublesThePrice()
     {
         // width = 2·M − overlap = 2·160 − 5 = 315 cm → exactly 2 panels.
-        // 315×150 = 4.725 sqm × 180 = 850.5 NOK base × 2 = 1701 NOK.
+        // 315×150 = 4.725 sqm × 180 = 850.5 NOK base price.
         var (service, _) = CreateSeeded();
         var material = DbHelper.MakeMaterial(maxBannerWidthCm: 160);
         var size = DbHelper.MakeCustomWidthSize(1, 150, material);
 
         var price = await service.CalculatePriceAsync(size, customWidthCm: 315);
 
-        // base = 4.725 × 180 = 850.5; + 150 surcharge = 1000.5; × 2 = 2001
-        price.Should().Be(2001m);
+        // base = 4.725 × 180 = 850.5; × 2 panels = 1701; + 150 surcharge (once, not per panel) = 1851
+        price.Should().Be(1851m);
     }
 
     [Fact]
@@ -271,8 +271,8 @@ public class PricingServiceTests
 
         var price = await service.CalculatePriceAsync(size, customWidthCm: 316);
 
-        // base = (316/100) × (150/100) × 180 = 853.2; + 150 = 1003.2; × 3 = 3009.6
-        price.Should().Be(3009.60m);
+        // base = (316/100) × (150/100) × 180 = 853.2; × 3 panels = 2559.6; + 150 surcharge (once) = 2709.6
+        price.Should().Be(2709.60m);
     }
 
     [Fact]

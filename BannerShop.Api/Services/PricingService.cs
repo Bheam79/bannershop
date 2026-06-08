@@ -62,9 +62,6 @@ public class PricingService : IPricingService
             basePrice = Math.Max(minimumPrice, areaSqm * basePricePerSqm);
         }
 
-        var surcharge = size.IsCustomWidth ? customSurcharge : 0m;
-        var pricePerPanel = basePrice + surcharge;
-
         // BANNERSH-88: panel-count multiplier. If the banner is wider than the material
         // can produce as a single piece (Material.MaxBannerWidthCm), the price scales by
         // the number of panels needed:
@@ -78,7 +75,12 @@ public class PricingService : IPricingService
         // the multiplier rather than crash (single-panel pricing, same as before).
         var maxWidthPerPanel = ResolveMaxBannerWidthCm(size.Material);
         var panels = PanelsNeeded(widthCm, maxWidthPerPanel, panelOverlapCm);
-        return pricePerPanel * panels;
+
+        // The custom-width surcharge is a one-time administrative fee for non-standard
+        // widths — it does NOT scale with the number of panels. Add it after multiplying
+        // the per-panel production cost (basePrice × panels).
+        var surcharge = size.IsCustomWidth ? customSurcharge : 0m;
+        return basePrice * panels + surcharge;
     }
 
     /// <summary>

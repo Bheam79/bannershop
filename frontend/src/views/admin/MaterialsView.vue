@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, watch, onMounted } from 'vue'
 import apiClient from '@/api/client'
 import type { Material } from '@/types'
 
@@ -20,6 +20,15 @@ const form = reactive({
   weightGsm: 400,
   pricePerSqm: 180,
   availableFrom: '' as string,
+})
+
+// When creating a new material, keep maxBannerWidthCm in sync with widthCm so
+// the panel multiplier (BANNERSH-88) is configured correctly by default.
+// Editing an existing material keeps the saved maxBannerWidthCm value.
+watch(() => form.widthCm, (newVal) => {
+  if (!isEditing.value) {
+    form.maxBannerWidthCm = newVal
+  }
 })
 
 async function load() {

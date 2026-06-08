@@ -111,6 +111,25 @@ function formatPrice(s: BannerSize): string {
   return p != null ? `${p.toFixed(0)} NOK` : '—'
 }
 
+/**
+ * Compute how many panels the given size needs based on the material's
+ * MaxBannerWidthCm. Mirrors PricingService.PanelsNeeded server-side.
+ * Returns null when width or material data are unavailable.
+ */
+function panelsNeeded(s: BannerSize): number | null {
+  if (s.fixedPrice != null) return null // fixed-price: panels irrelevant
+  const mat = s.material
+  if (!mat) return null
+  const maxWidth = mat.maxBannerWidthCm || mat.widthCm
+  if (!maxWidth) return null
+  const w = s.isCustomWidth ? null : s.widthCm
+  if (!w) return null // custom without width — panels unknown
+  if (w <= maxWidth) return 1
+  const overlap = 5 // matches banner_panel_overlap_cm default
+  const safeOverlap = Math.max(0, Math.min(overlap, maxWidth - 1))
+  return Math.ceil((w - safeOverlap) / (maxWidth - safeOverlap))
+}
+
 function formatDate(d: string | null | undefined) {
   if (!d) return ''
   const date = new Date(d)
@@ -154,6 +173,11 @@ onMounted(load)
             <td class="px-4 py-3 text-gray-300">
               {{ formatPrice(s) }}
               <span v-if="s.fixedPrice != null" class="ml-1 text-xs text-orange-400">(fast)</span>
+              <span v-else-if="(panelsNeeded(s) ?? 1) > 1"
+                class="ml-1 text-xs text-yellow-400"
+                :title="`${panelsNeeded(s)} paneler — banner bredere enn materialets maks-bredde`">
+                ×{{ panelsNeeded(s) }}
+              </span>
             </td>
             <td class="px-4 py-3">
               <span :class="s.isActive ? 'bg-green-900/50 text-green-400' : 'bg-gray-700 text-gray-400'"
