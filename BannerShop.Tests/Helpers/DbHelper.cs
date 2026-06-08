@@ -23,16 +23,20 @@ internal static class DbHelper
     public static void SeedPricingParameters(BannerShopDbContext db)
     {
         db.PricingParameters.AddRange(
-            new PricingParameter { Id = 1,  Name = "Base price per sqm",       Key = "base_price_per_sqm",         Value = 180m  },
-            new PricingParameter { Id = 2,  Name = "Minimum price",             Key = "minimum_price",              Value = 399m  },
-            new PricingParameter { Id = 3,  Name = "Custom width surcharge",    Key = "custom_width_surcharge",     Value = 150m  },
-            new PricingParameter { Id = 4,  Name = "Hem flat fee",              Key = "hem_and_eyelets_flat_fee",   Value = 0m    },
-            new PricingParameter { Id = 5,  Name = "Express fee",               Key = "express_fee",                Value = 500m  },
-            new PricingParameter { Id = 6,  Name = "Tube diameter",             Key = "shipping_tube_diameter_cm",  Value = 15m   },
-            new PricingParameter { Id = 7,  Name = "Packaging weight",          Key = "shipping_packaging_weight_g",Value = 500m  },
-            new PricingParameter { Id = 8,  Name = "Max length",                Key = "shipping_max_length_cm",     Value = 240m  },
-            new PricingParameter { Id = 9,  Name = "Standard lead time",        Key = "standard_lead_time_days",    Value = 14m   },
-            new PricingParameter { Id = 10, Name = "Express lead time",         Key = "express_lead_time_days",     Value = 3m    }
+            new PricingParameter { Id = 1,  Name = "Base price per sqm",           Key = "base_price_per_sqm",             Value = 180m  },
+            new PricingParameter { Id = 2,  Name = "Minimum price",                Key = "minimum_price",                  Value = 399m  },
+            new PricingParameter { Id = 3,  Name = "Custom width surcharge",       Key = "custom_width_surcharge",         Value = 150m  },
+            new PricingParameter { Id = 4,  Name = "Hem flat fee",                 Key = "hem_and_eyelets_flat_fee",       Value = 0m    },
+            new PricingParameter { Id = 5,  Name = "Express fee",                  Key = "express_fee",                    Value = 500m  },
+            new PricingParameter { Id = 6,  Name = "Tube diameter",                Key = "shipping_tube_diameter_cm",      Value = 15m   },
+            new PricingParameter { Id = 7,  Name = "Packaging weight",             Key = "shipping_packaging_weight_g",    Value = 500m  },
+            new PricingParameter { Id = 8,  Name = "Max length",                   Key = "shipping_max_length_cm",         Value = 240m  },
+            new PricingParameter { Id = 9,  Name = "Standard lead time",           Key = "standard_lead_time_days",        Value = 14m   },
+            new PricingParameter { Id = 10, Name = "Express lead time",            Key = "express_lead_time_days",         Value = 3m    },
+            new PricingParameter { Id = 11, Name = "AI credit pack price",         Key = "ai_credit_pack_price_nok",       Value = 29m   },
+            new PricingParameter { Id = 12, Name = "AI credit pack count",         Key = "ai_credit_pack_count",           Value = 10m   },
+            new PricingParameter { Id = 13, Name = "AI activation fee",            Key = "ai_banner_activation_fee_nok",   Value = 95m   },
+            new PricingParameter { Id = 14, Name = "AI activation credits",        Key = "ai_banner_activation_credits",   Value = 20m   }
         );
         db.SaveChanges();
     }

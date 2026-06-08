@@ -14,9 +14,17 @@ public class OrderItem
     public string? Notes { get; set; }
     public int? BannerDesignId { get; set; }
 
+    /// <summary>
+    /// FK to the <see cref="DesignRequest"/> when this item is an AI-designed banner.
+    /// Used to validate ownership during order creation and to trigger the AI activation
+    /// fee (BANNERSH-68). Null for self-uploaded designs.
+    /// </summary>
+    public int? DesignRequestId { get; set; }
+
     // Navigation
     public Order Order { get; set; } = null!;
     public BannerSize? BannerSize { get; set; }
     public BannerDesign? BannerDesign { get; set; }
+    public DesignRequest? DesignRequest { get; set; }
     public ICollection<ProductionStatus> ProductionStatuses { get; set; } = new List<ProductionStatus>();
 }

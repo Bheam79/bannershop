@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using BannerShop.Api.Models.Orders;
+using BannerShop.Api.Services.AiCredits;
 using BannerShop.Api.Services.Email;
 using BannerShop.Api.Services.Orders.Stripe;
 using BannerShop.Api.Services.Shipping;
@@ -14,9 +15,11 @@ namespace BannerShop.Api.Services.Orders;
 
 public class OrderService : IOrderService
 {
-    private const string KeyExpressFee     = "express_fee";
-    private const string KeyStandardLeadTimeDays = "standard_lead_time_days";
-    private const string KeyExpressLeadTimeDays  = "express_lead_time_days";
+    private const string KeyExpressFee            = "express_fee";
+    private const string KeyStandardLeadTimeDays  = "standard_lead_time_days";
+    private const string KeyExpressLeadTimeDays   = "express_lead_time_days";
+    private const string KeyAiActivationFeeNok    = "ai_banner_activation_fee_nok";
+    private const string KeyAiActivationCredits   = "ai_banner_activation_credits";
 
     /// <summary>
     /// Defines which status transitions an admin is permitted to make.
@@ -47,6 +50,7 @@ public class OrderService : IOrderService
     private readonly ParcelCalculator _parcels;
     private readonly IStripePaymentService _stripe;
     private readonly IEmailService _email;
+    private readonly IAiCreditService _aiCredits;
     private readonly ILogger<OrderService> _logger;
 
     public OrderService(
@@ -56,6 +60,7 @@ public class OrderService : IOrderService
         ParcelCalculator parcels,
         IStripePaymentService stripe,
         IEmailService email,
+        IAiCreditService aiCredits,
         ILogger<OrderService> logger)
     {
         _db = db;
@@ -64,6 +69,7 @@ public class OrderService : IOrderService
         _parcels = parcels;
         _stripe = stripe;
         _email = email;
+        _aiCredits = aiCredits;
         _logger = logger;
     }
 
@@ -94,6 +100,26 @@ public class OrderService : IOrderService
             {
                 if (!ownedDesigns.Contains(designId))
                     return Fail($"BannerDesign {designId} not found or does not belong to this user.");
+            }
+        }
+
+        // ── Validate DesignRequestIds (if any) in one round-trip ──
+        var requestedDesignRequestIds = req.Items
+            .Where(i => i.DesignRequestId.HasValue)
+            .Select(i => i.DesignRequestId!.Value)
+            .Distinct()
+            .ToList();
+        if (requestedDesignRequestIds.Count > 0)
+        {
+            var ownedRequests = await _db.DesignRequests
+                .AsNoTracking()
+                .Where(r => requestedDesignRequestIds.Contains(r.Id) && r.UserId == userId)
+                .Select(r => r.Id)
+                .ToListAsync(ct);
+            foreach (var drId in requestedDesignRequestIds)
+            {
+                if (!ownedRequests.Contains(drId))
+                    return Fail($"DesignRequest {drId} not found or does not belong to this user.");
             }
         }
 
@@ -129,15 +155,16 @@ public class OrderService : IOrderService
 
             items.Add(new OrderItem
             {
-                BannerSizeId   = size.Id,
-                CustomWidthCm  = input.CustomWidthCm,
-                HeightCm       = size.HeightCm,
-                Quantity       = input.Quantity,
-                AreaSqm        = areaSqm,
-                UnitPriceNok   = decimal.Round(unitPrice, 2),
-                LineTotalNok   = lineTotal,
-                Notes          = string.IsNullOrWhiteSpace(input.Notes) ? null : input.Notes.Trim(),
-                BannerDesignId = input.BannerDesignId
+                BannerSizeId     = size.Id,
+                CustomWidthCm    = input.CustomWidthCm,
+                HeightCm         = size.HeightCm,
+                Quantity         = input.Quantity,
+                AreaSqm          = areaSqm,
+                UnitPriceNok     = decimal.Round(unitPrice, 2),
+                LineTotalNok     = lineTotal,
+                Notes            = string.IsNullOrWhiteSpace(input.Notes) ? null : input.Notes.Trim(),
+                BannerDesignId   = input.BannerDesignId,
+                DesignRequestId  = input.DesignRequestId
             });
         }
 
@@ -161,7 +188,7 @@ public class OrderService : IOrderService
             return Fail($"Shipping cost unavailable: {ex.Message}");
         }
 
-        // ── Express fee + lead-time params ──
+        // ── Express fee + AI activation fee + lead-time params ──
         var pricingParams = await _db.PricingParameters
             .AsNoTracking()
             .ToDictionaryAsync(x => x.Key, x => x.Value, ct);
@@ -172,7 +199,13 @@ public class OrderService : IOrderService
             ? (int)pricingParams.GetValueOrDefault(KeyExpressLeadTimeDays, 3m)
             : (int)pricingParams.GetValueOrDefault(KeyStandardLeadTimeDays, 14m);
 
-        var total = decimal.Round(itemsSubtotal + shippingCost + expressFee, 2);
+        // AI activation fee: charged once per order when any item includes a DesignRequest.
+        var hasAiDesign = items.Any(i => i.DesignRequestId.HasValue);
+        var aiActivationFee = hasAiDesign
+            ? pricingParams.GetValueOrDefault(KeyAiActivationFeeNok, 95m)
+            : 0m;
+
+        var total = decimal.Round(itemsSubtotal + shippingCost + expressFee + aiActivationFee, 2);
         var estimatedDelivery = DateTime.UtcNow.Date.AddDays(productionLeadDays + Math.Max(0, maxCarrierDays));
 
         // ── Persist Address (always create a fresh snapshot row for this order) ──
@@ -195,6 +228,7 @@ public class OrderService : IOrderService
             ShippingAddress     = address,
             ShippingCostNok     = decimal.Round(shippingCost, 2),
             ExpressFeeNok       = expressFee,
+            AiActivationFeeNok  = aiActivationFee,
             TotalNok            = total,
             CreatedAt           = DateTime.UtcNow,
             UpdatedAt           = DateTime.UtcNow,
@@ -217,10 +251,11 @@ public class OrderService : IOrderService
             TotalNok: total,
             Breakdown: new OrderPriceBreakdownDto
             {
-                ItemsSubtotalNok = decimal.Round(itemsSubtotal, 2),
-                ShippingCostNok  = decimal.Round(shippingCost, 2),
-                ExpressFeeNok    = expressFee,
-                TotalNok         = total
+                ItemsSubtotalNok   = decimal.Round(itemsSubtotal, 2),
+                ShippingCostNok    = decimal.Round(shippingCost, 2),
+                ExpressFeeNok      = expressFee,
+                AiActivationFeeNok = aiActivationFee,
+                TotalNok           = total
             });
     }
 
@@ -500,6 +535,39 @@ public class OrderService : IOrderService
 
         await _db.SaveChangesAsync(ct);
 
+        // ── Grant AI credits when the order includes an AI activation fee ────────
+        // Idempotent: GrantAsync uses referenceId = "order:{orderId}" so a second
+        // webhook fire will be a no-op (BANNERSH-68).
+        if (order.AiActivationFeeNok > 0m && order.UserId > 0)
+        {
+            try
+            {
+                var pricingParams = await _db.PricingParameters
+                    .AsNoTracking()
+                    .Where(p => p.Key == KeyAiActivationCredits)
+                    .FirstOrDefaultAsync(ct);
+                var creditCount = pricingParams is not null ? (int)pricingParams.Value : 20;
+                var referenceId = $"order:{order.Id}";
+
+                await _aiCredits.GrantAsync(
+                    order.UserId,
+                    count: creditCount,
+                    reason: CreditReason.BannerOrderActivation,
+                    referenceId: referenceId,
+                    ct: ct);
+
+                _logger.LogInformation(
+                    "Granted {Count} AI credits to user {UserId} for order {OrderId} (ref={Ref}).",
+                    creditCount, order.UserId, order.Id, referenceId);
+            }
+            catch (Exception ex)
+            {
+                // Credit grant failures must never block the payment confirmation flow.
+                _logger.LogError(ex,
+                    "Failed to grant AI activation credits for order {OrderId}.", order.Id);
+            }
+        }
+
         // Fire-and-forget order-confirmation email — failures must never bubble
         // up to the Stripe webhook caller, which would otherwise retry the
         // whole MarkPaid flow on every send error.
@@ -553,6 +621,7 @@ public class OrderService : IOrderService
         DeliveryType = o.DeliveryType.ToString(),
         ShippingCostNok = o.ShippingCostNok,
         ExpressFeeNok = o.ExpressFeeNok,
+        AiActivationFeeNok = o.AiActivationFeeNok,
         TotalNok = o.TotalNok,
         StripePaymentIntentId = o.StripePaymentIntentId,
         CreatedAt = o.CreatedAt,
@@ -579,6 +648,7 @@ public class OrderService : IOrderService
             LineTotalNok = i.LineTotalNok,
             Notes = i.Notes,
             BannerDesignId = i.BannerDesignId,
+            DesignRequestId = i.DesignRequestId,
             CurrentProductionStage = (i.ProductionStatuses.OrderByDescending(p => p.UpdatedAt).FirstOrDefault()?.Stage
                                       ?? ProductionStage.Queued).ToString(),
             ProductionStatusHistory = i.ProductionStatuses
@@ -705,6 +775,8 @@ public class OrderService : IOrderService
         sb.Append($"<tr><td>Frakt</td><td style=\"text-align:right;\">{FormatNok(o.ShippingCostNok)}</td></tr>");
         if (o.ExpressFeeNok > 0m)
             sb.Append($"<tr><td>Ekspressgebyr</td><td style=\"text-align:right;\">{FormatNok(o.ExpressFeeNok)}</td></tr>");
+        if (o.AiActivationFeeNok > 0m)
+            sb.Append($"<tr><td>AI aktivering</td><td style=\"text-align:right;\">{FormatNok(o.AiActivationFeeNok)}</td></tr>");
         sb.Append($"<tr><td><strong>Totalsum</strong></td><td style=\"text-align:right;\"><strong>{FormatNok(o.TotalNok)}</strong></td></tr>");
         sb.Append("</table>");
 

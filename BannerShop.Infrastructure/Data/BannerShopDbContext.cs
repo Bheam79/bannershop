@@ -136,6 +136,7 @@ public class BannerShopDbContext : DbContext
             e.Property(x => x.DeliveryType).HasConversion<string>();
             e.Property(x => x.ShippingCostNok).HasColumnType("decimal(10,2)");
             e.Property(x => x.ExpressFeeNok).HasColumnType("decimal(10,2)");
+            e.Property(x => x.AiActivationFeeNok).HasColumnType("decimal(10,2)").HasDefaultValue(0m);
             e.Property(x => x.TotalNok).HasColumnType("decimal(10,2)");
             e.Property(x => x.StripePaymentIntentId).HasMaxLength(200);
             e.HasOne(x => x.User)
@@ -166,6 +167,11 @@ public class BannerShopDbContext : DbContext
             e.HasOne(x => x.BannerDesign)
                 .WithMany()
                 .HasForeignKey(x => x.BannerDesignId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.DesignRequest)
+                .WithMany()
+                .HasForeignKey(x => x.DesignRequestId)
+                .IsRequired(false)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 

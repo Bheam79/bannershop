@@ -1,5 +1,6 @@
 using BannerShop.Api.Models.Orders;
 using BannerShop.Api.Services;
+using BannerShop.Api.Services.AiCredits;
 using BannerShop.Api.Services.Email;
 using BannerShop.Api.Services.Orders;
 using BannerShop.Api.Services.Orders.Stripe;
@@ -26,7 +27,7 @@ public class OrderServiceTests
         Mock<IStripePaymentService> stripeMock)
     CreateService()
     {
-        var (service, db, pricingMock, shippingMock, stripeMock, _) = CreateServiceWithEmail();
+        var (service, db, pricingMock, shippingMock, stripeMock, _, _) = CreateServiceFull();
         return (service, db, pricingMock, shippingMock, stripeMock);
     }
 
@@ -43,14 +44,32 @@ public class OrderServiceTests
         Mock<IEmailService> emailMock)
     CreateServiceWithEmail()
     {
+        var (service, db, pricingMock, shippingMock, stripeMock, emailMock, _) = CreateServiceFull();
+        return (service, db, pricingMock, shippingMock, stripeMock, emailMock);
+    }
+
+    /// <summary>
+    /// Full factory that exposes all mocks including <see cref="IAiCreditService"/> (BANNERSH-68).
+    /// </summary>
+    private static (
+        OrderService service,
+        BannerShop.Infrastructure.Data.BannerShopDbContext db,
+        Mock<IPricingService> pricingMock,
+        Mock<IShippingService> shippingMock,
+        Mock<IStripePaymentService> stripeMock,
+        Mock<IEmailService> emailMock,
+        Mock<IAiCreditService> aiCreditsMock)
+    CreateServiceFull()
+    {
         var db = DbHelper.CreateInMemory();
         DbHelper.SeedPricingParameters(db);
         DbHelper.SeedCatalog(db);
 
-        var pricingMock  = new Mock<IPricingService>();
-        var shippingMock = new Mock<IShippingService>();
-        var stripeMock   = new Mock<IStripePaymentService>();
-        var emailMock    = new Mock<IEmailService>();
+        var pricingMock    = new Mock<IPricingService>();
+        var shippingMock   = new Mock<IShippingService>();
+        var stripeMock     = new Mock<IStripePaymentService>();
+        var emailMock      = new Mock<IEmailService>();
+        var aiCreditsMock  = new Mock<IAiCreditService>();
 
         // Default shipping quote: 200 NOK standard, 3 carrier days
         shippingMock.Setup(s => s.CalculateAsync(
@@ -74,13 +93,20 @@ public class OrderServiceTests
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
+        // Default AI credits mock: succeed silently
+        aiCreditsMock.Setup(a => a.GrantAsync(
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CreditReason>(),
+                It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
         var parcels = new ParcelCalculator(db);
         var service = new OrderService(db, pricingMock.Object, shippingMock.Object,
                                         parcels, stripeMock.Object,
                                         emailMock.Object,
+                                        aiCreditsMock.Object,
                                         NullLogger<OrderService>.Instance);
 
-        return (service, db, pricingMock, shippingMock, stripeMock, emailMock);
+        return (service, db, pricingMock, shippingMock, stripeMock, emailMock, aiCreditsMock);
     }
 
     private static CreateOrderDraftRequest MakeRequest(
@@ -290,6 +316,179 @@ public class OrderServiceTests
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("Shipping cost unavailable");
+    }
+
+    // ── AI activation fee (BANNERSH-68) ───────────────────────────────────────
+
+    /// <summary>
+    /// Builds a CreateOrderDraftRequest where one item references a DesignRequest owned
+    /// by the given user. The DesignRequest is pre-seeded in the in-memory DB.
+    /// </summary>
+    private static async Task<(CreateOrderDraftRequest req, int designRequestId)>
+        SeedAiDesignAndMakeRequest(
+            BannerShop.Infrastructure.Data.BannerShopDbContext db,
+            int userId = 1)
+    {
+        // Seed the minimum required navigation entities.
+        var template = new BannerTemplate
+        {
+            Id       = 100,
+            Category = BannerTemplateCategory.Birthday,
+            NameNb   = "Test",
+            NameEn   = "Test",
+            SortOrder = 100
+        };
+        db.BannerTemplates.Add(template);
+
+        var designRequest = new DesignRequest
+        {
+            UserId           = userId,
+            BannerTemplateId = template.Id,
+            Mode             = DesignRequestMode.Ai,
+            Language         = "nb",
+            PersonName       = "Test Person",
+            TextContent      = "Test text",
+            ThemeDescription = "Test theme",
+            AspectRatio      = "16:9",
+            Status           = DesignRequestStatus.Final,
+            PriceNok         = 0m,
+            CreatedAt        = DateTime.UtcNow,
+            UpdatedAt        = DateTime.UtcNow
+        };
+        db.DesignRequests.Add(designRequest);
+        await db.SaveChangesAsync();
+
+        var req = new CreateOrderDraftRequest
+        {
+            DeliveryType = DeliveryType.Standard,
+            ShippingAddress = new AddressInputDto
+            {
+                Line1 = "Test Street 1",
+                PostalCode = "0001",
+                City = "Oslo",
+                Country = "NO"
+            },
+            Items = new List<OrderItemInputDto>
+            {
+                new OrderItemInputDto
+                {
+                    BannerSizeId    = 1,
+                    Quantity        = 1,
+                    DesignRequestId = designRequest.Id
+                }
+            }
+        };
+        return (req, designRequest.Id);
+    }
+
+    [Fact]
+    public async Task CreateDraft_WithAiDesign_IncludesAiActivationFee()
+    {
+        // Price=810, shipping=200, AI activation=95 → total=1105
+        var (service, db, _, _, _) = CreateService();
+        var (req, _) = await SeedAiDesignAndMakeRequest(db, userId: 1);
+
+        var result = await service.CreateDraftAsync(userId: 1, req);
+
+        result.Success.Should().BeTrue();
+        result.TotalNok.Should().Be(1105m, "items(810) + shipping(200) + AI activation(95) = 1105");
+        result.Breakdown.AiActivationFeeNok.Should().Be(95m);
+    }
+
+    [Fact]
+    public async Task CreateDraft_WithoutAiDesign_NoAiActivationFee()
+    {
+        // Price=810, shipping=200, no AI → total=1010
+        var (service, _, _, _, _) = CreateService();
+
+        var result = await service.CreateDraftAsync(userId: 1, MakeRequest(bannerSizeId: 1));
+
+        result.Success.Should().BeTrue();
+        result.TotalNok.Should().Be(1010m, "items(810) + shipping(200) = 1010 — no AI activation fee");
+        result.Breakdown.AiActivationFeeNok.Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task CreateDraft_AiDesignOwnedByOtherUser_ReturnsFail()
+    {
+        var (service, db, _, _, _) = CreateService();
+        // Seed a DesignRequest owned by user 2
+        var (req, _) = await SeedAiDesignAndMakeRequest(db, userId: 2);
+
+        // Try to create an order as user 1 — must be rejected
+        var result = await service.CreateDraftAsync(userId: 1, req);
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("DesignRequest");
+    }
+
+    [Fact]
+    public async Task MarkPaid_WithAiActivation_GrantsCredits()
+    {
+        var (service, db, _, _, _, _, aiCreditsMock) = CreateServiceFull();
+        var (req, _) = await SeedAiDesignAndMakeRequest(db, userId: 1);
+        var draft = await service.CreateDraftAsync(userId: 1, req);
+        draft.Success.Should().BeTrue("setup failed");
+
+        var order = db.Orders.Find(draft.OrderId)!;
+        order.AiActivationFeeNok.Should().Be(95m, "AI activation fee must be persisted");
+        order.StripePaymentIntentId = "pi_ai_test";
+        db.SaveChanges();
+
+        await service.MarkPaidAsync("pi_ai_test", draft.OrderId);
+
+        // GrantAsync should have been called exactly once with the correct params.
+        aiCreditsMock.Verify(
+            a => a.GrantAsync(
+                1,                              // userId
+                20,                             // count from seeded pricing param
+                CreditReason.BannerOrderActivation,
+                $"order:{draft.OrderId}",
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task MarkPaid_WithAiActivation_CalledTwice_GrantsCreditsOnce()
+    {
+        // GrantAsync itself is idempotent via ReferenceId, but the OrderService
+        // should still call it both times — idempotency is enforced inside GrantAsync.
+        var (service, db, _, _, _, _, aiCreditsMock) = CreateServiceFull();
+        var (req, _) = await SeedAiDesignAndMakeRequest(db, userId: 1);
+        var draft = await service.CreateDraftAsync(userId: 1, req);
+        var order = db.Orders.Find(draft.OrderId)!;
+        order.StripePaymentIntentId = "pi_ai_idem";
+        db.SaveChanges();
+
+        await service.MarkPaidAsync("pi_ai_idem", draft.OrderId);
+
+        // Second call: OrderService short-circuits because order is already Paid.
+        await service.MarkPaidAsync("pi_ai_idem", draft.OrderId);
+
+        // GrantAsync is only called during the first MarkPaid (the second is a no-op at the Order status check).
+        aiCreditsMock.Verify(
+            a => a.GrantAsync(
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CreditReason>(),
+                It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task MarkPaid_WithoutAiActivation_DoesNotGrantCredits()
+    {
+        var (service, db, _, _, _, _, aiCreditsMock) = CreateServiceFull();
+        var draft = await service.CreateDraftAsync(userId: 1, MakeRequest());
+        var order = db.Orders.Find(draft.OrderId)!;
+        order.StripePaymentIntentId = "pi_no_ai";
+        db.SaveChanges();
+
+        await service.MarkPaidAsync("pi_no_ai", draft.OrderId);
+
+        aiCreditsMock.Verify(
+            a => a.GrantAsync(
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CreditReason>(),
+                It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     // ── Cancellation ──────────────────────────────────────────────────────────

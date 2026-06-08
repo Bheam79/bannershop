@@ -51,6 +51,14 @@ public class OrderItemInputDto
 
     [Range(1, int.MaxValue)]
     public int? BannerDesignId { get; set; }
+
+    /// <summary>
+    /// Optional FK to a DesignRequest for AI-generated banners. When set, the order creation
+    /// endpoint validates that the request belongs to the caller and adds the mandatory
+    /// AI activation fee (BANNERSH-68).
+    /// </summary>
+    [Range(1, int.MaxValue)]
+    public int? DesignRequestId { get; set; }
 }
 
 public class UpdateOrderStatusRequest
@@ -95,10 +103,11 @@ public class CreateOrderDraftResponseDto
 
 public class OrderPriceBreakdownDto
 {
-    public decimal ItemsSubtotalNok { get; set; }
-    public decimal ShippingCostNok  { get; set; }
-    public decimal ExpressFeeNok    { get; set; }
-    public decimal TotalNok         { get; set; }
+    public decimal ItemsSubtotalNok    { get; set; }
+    public decimal ShippingCostNok     { get; set; }
+    public decimal ExpressFeeNok       { get; set; }
+    public decimal AiActivationFeeNok  { get; set; }
+    public decimal TotalNok            { get; set; }
 }
 
 public class OrderListItemDto
@@ -124,6 +133,7 @@ public class OrderDetailDto
     public string DeliveryType { get; set; } = string.Empty;
     public decimal ShippingCostNok { get; set; }
     public decimal ExpressFeeNok { get; set; }
+    public decimal AiActivationFeeNok { get; set; }
     public decimal TotalNok { get; set; }
     public string? StripePaymentIntentId { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -156,6 +166,7 @@ public class OrderItemDto
     public decimal LineTotalNok { get; set; }
     public string? Notes { get; set; }
     public int? BannerDesignId { get; set; }
+    public int? DesignRequestId { get; set; }
     public string CurrentProductionStage { get; set; } = "Queued";
     public List<ProductionStatusDto> ProductionStatusHistory { get; set; } = new();
 }
