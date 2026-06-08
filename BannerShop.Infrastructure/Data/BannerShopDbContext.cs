@@ -240,10 +240,13 @@ public class BannerShopDbContext : DbContext
             e.Property(x => x.FinalCroppedStoragePath).HasMaxLength(500);
             e.Property(x => x.LastError).HasMaxLength(2000);
             e.Property(x => x.DesignerNotes).HasMaxLength(2000);
+            e.Property(x => x.IpAddress).HasMaxLength(45);
 
+            // UserId is nullable (BANNERSH-67: free-first anonymous flow).
             e.HasOne(x => x.User)
                 .WithMany()
                 .HasForeignKey(x => x.UserId)
+                .IsRequired(false)
                 .OnDelete(DeleteBehavior.Restrict);
 
             e.HasOne(x => x.BannerTemplate)
@@ -259,6 +262,7 @@ public class BannerShopDbContext : DbContext
             e.HasIndex(x => x.UserId);
             e.HasIndex(x => x.StripePaymentIntentId);
             e.HasIndex(x => x.Status);
+            e.HasIndex(x => x.IpAddress).HasDatabaseName("IX_DesignRequests_IpAddress");
         });
 
         // DesignRequestRevision (correction log per request)

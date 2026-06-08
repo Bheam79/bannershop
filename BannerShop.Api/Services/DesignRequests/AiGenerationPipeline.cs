@@ -152,7 +152,8 @@ public sealed class AiGenerationPipeline
             var upscaledAbs = await _upscaler.UpscaleAsync(generated.AbsolutePath, scale: 4, ct);
 
             // 5. Persist raw AI output to permanent storage.
-            var storageUserId = request.UserId > 0 ? request.UserId : 0;
+            // UserId is null for anonymous (BANNERSH-67) — use bucket "0" in that case.
+            var storageUserId = request.UserId ?? 0;
             var userDir = _storage.EnsureUserDirectory(storageUserId);
             var resultFileName = $"design_{request.Id}_{DateTime.UtcNow:yyyyMMddHHmmss}.png";
             var resultAbs = Path.Combine(userDir, resultFileName);

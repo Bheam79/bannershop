@@ -81,6 +81,46 @@ public class CreateDesignRequestResponseDto
     public decimal TotalNok { get; set; }
 }
 
+/// <summary>Response from POST /api/design-requests/ai (BANNERSH-67 free-first flow).</summary>
+public class CreateAiDesignRequestResponseDto
+{
+    public int DesignRequestId { get; set; }
+
+    /// <summary>
+    /// Anonymous callers receive this hint so the frontend can prompt the user to
+    /// sign up before they hit /approve (which requires auth).
+    /// </summary>
+    public bool RequiresAuth { get; set; }
+
+    /// <summary>Remaining credits after this generation (auth path only — 0 for anonymous).</summary>
+    public int CreditsRemaining { get; set; }
+}
+
+/// <summary>
+/// 402 paywall response body for POST /api/design-requests/ai (BANNERSH-67).
+/// Returned when the caller has exhausted their free generation and has no credits.
+/// </summary>
+public class AiPaywallResponseDto
+{
+    /// <summary>'ip_limit_reached' | 'insufficient_credits'.</summary>
+    public string Reason { get; set; } = string.Empty;
+
+    /// <summary>Credit balance for authenticated callers (always 0 for anonymous).</summary>
+    public int CreditsRemaining { get; set; }
+
+    public PaywallOptions PaywallOptions { get; set; } = new();
+}
+
+/// <summary>The set of next-step prompts the frontend can offer when the user hits the paywall.</summary>
+public class PaywallOptions
+{
+    public decimal CreditPackPriceNok { get; set; }
+    public int CreditPackCount { get; set; }
+    public decimal BannerOrderActivationFeeNok { get; set; }
+    public string ManualDesignerUrl { get; set; } = "/banner-builder/manual";
+    public string UploadOwnUrl { get; set; } = "/banner-builder";
+}
+
 /// <summary>List item for GET /api/design-requests.</summary>
 public class DesignRequestListItemDto
 {

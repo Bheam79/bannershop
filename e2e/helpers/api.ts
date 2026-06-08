@@ -296,19 +296,27 @@ export async function apiFetchTemplates(): Promise<TemplateInfo[]> {
 
 /**
  * Create an AI design request (POST /api/design-requests/ai).
- * Returns { designRequestId, clientSecret, totalNok }.
- * In development the clientSecret starts with 'pi_mock_' (MockStripePaymentService).
+ *
+ * BANNERSH-67 free-first flow: no Stripe PaymentIntent is created. The response
+ * shape is `{ designRequestId, requiresAuth, creditsRemaining }`. The endpoint is
+ * gated by the BotProtectionFilter, so a browser-like User-Agent and a non-empty
+ * `X-Request-Integrity` header are mandatory (anonymous or authenticated).
  */
 export async function apiCreateAiDesignRequest(
-  accessToken: string,
+  accessToken: string | null,
   opts: DesignRequestOpts,
-): Promise<{ designRequestId: number; clientSecret: string; totalNok: number }> {
+): Promise<{ designRequestId: number; requiresAuth: boolean; creditsRemaining: number }> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    // The default `node`/`undici` UA is bot-flagged by BotProtectionFilter.
+    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
+    'X-Request-Integrity': 'e2e-test-integrity-token',
+  }
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+
   const res = await fetch(`${API_URL}/api/design-requests/ai`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
+    headers,
     body: JSON.stringify({
       templateId: opts.templateId,
       personName: opts.personName,
@@ -323,7 +331,7 @@ export async function apiCreateAiDesignRequest(
     const text = await res.text()
     throw new Error(`Create AI design request failed (${res.status}): ${text}`)
   }
-  return res.json() as Promise<{ designRequestId: number; clientSecret: string; totalNok: number }>
+  return res.json() as Promise<{ designRequestId: number; requiresAuth: boolean; creditsRemaining: number }>
 }
 
 /**

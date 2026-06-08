@@ -24,8 +24,9 @@ public class DesignRequestServiceTests
             PublicBaseUrl = "/files"
         }));
 
-    private static (DesignRequestService service, Mock<IStripePaymentService> stripe, Mock<IDesignRequestJobQueue> queue) MakeService(
-        BannerShop.Infrastructure.Data.BannerShopDbContext db)
+    private static (DesignRequestService service, Mock<IStripePaymentService> stripe, Mock<IDesignRequestJobQueue> queue, Mock<IAiCreditService> credits) MakeService(
+        BannerShop.Infrastructure.Data.BannerShopDbContext db,
+        Action<Mock<IAiCreditService>>? configureCredits = null)
     {
         var stripe = new Mock<IStripePaymentService>();
         stripe.Setup(s => s.CreatePaymentIntentAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<decimal>(), It.IsAny<CancellationToken>()))
@@ -38,13 +39,16 @@ public class DesignRequestServiceTests
         var images = new Mock<IImageProcessingService>();
         var email = new Mock<IEmailService>();
         var credits = new Mock<IAiCreditService>();
+        credits.Setup(c => c.IsAnonymousEligibleAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+               .ReturnsAsync(true);
         credits.Setup(c => c.TryConsumeAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
                .ReturnsAsync(true);
         credits.Setup(c => c.GetBalanceAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
                .ReturnsAsync(5);
+        configureCredits?.Invoke(credits);
 
         var svc = new DesignRequestService(db, stripe.Object, queue.Object, MakeStorage(), images.Object, email.Object, credits.Object, NullLogger<DesignRequestService>.Instance);
-        return (svc, stripe, queue);
+        return (svc, stripe, queue, credits);
     }
 
     private static async Task SeedAsync(BannerShop.Infrastructure.Data.BannerShopDbContext db)
@@ -58,35 +62,93 @@ public class DesignRequestServiceTests
         await db.SaveChangesAsync();
     }
 
-    [Fact]
-    public async Task CreateAiRequestAsync_persists_and_returns_payment_intent()
-    {
-        using var db = DbHelper.CreateInMemory();
-        await SeedAsync(db);
-        var (svc, stripe, _) = MakeService(db);
-
-        var result = await svc.CreateAiRequestAsync(1, new CreateAiDesignRequestDto
+    private static CreateAiDesignRequestDto SampleAiDto(int templateId = 1) =>
+        new()
         {
-            TemplateId = 1,
+            TemplateId = templateId,
             Language = "nb",
             PersonName = "Ola",
             PersonAge = 40,
             TextContent = "Gratulerer",
             ThemeDescription = "tropisk",
             AspectRatio = "16:9"
-        });
+        };
+
+    // ── BANNERSH-67: Authenticated path ───────────────────────────────────────
+
+    [Fact]
+    public async Task CreateAiRequestAsync_auth_first_call_is_free_and_marks_user()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var (svc, stripe, queue, credits) = MakeService(db);
+
+        var result = await svc.CreateAiRequestAsync(userId: 1, ipAddress: null, SampleAiDto());
 
         result.Success.Should().BeTrue();
-        result.TotalNok.Should().Be(DesignRequestService.AiPriceNok);
-        result.ClientSecret.Should().Be("pi_test_123_secret");
+        result.StatusCode.Should().Be(201);
+        result.RequiresAuth.Should().BeFalse();
 
         var saved = db.DesignRequests.Single();
-        saved.Status.Should().Be(DesignRequestStatus.Pending);
-        saved.StripePaymentIntentId.Should().Be("pi_test_123");
-        saved.Mode.Should().Be(DesignRequestMode.Ai);
-        saved.PriceNok.Should().Be(95m);
+        saved.Status.Should().Be(DesignRequestStatus.InProgress);
+        saved.StripePaymentIntentId.Should().BeNull();
+        saved.UserId.Should().Be(1);
+        saved.PriceNok.Should().Be(0m);
 
-        stripe.Verify(s => s.CreatePaymentIntentAsync(It.IsAny<int>(), 1, 95m, It.IsAny<CancellationToken>()), Times.Once);
+        db.Users.Single().HasUsedFreeAiGeneration.Should().BeTrue();
+        stripe.Verify(s => s.CreatePaymentIntentAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<decimal>(), It.IsAny<CancellationToken>()), Times.Never);
+        queue.Verify(q => q.EnqueueAsync(saved.Id, It.IsAny<CancellationToken>()), Times.Once);
+        credits.Verify(c => c.TryConsumeAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateAiRequestAsync_auth_second_call_without_credits_returns_402()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        // Pre-mark user as having used their free generation, with 0 credits.
+        var user = db.Users.Single();
+        user.HasUsedFreeAiGeneration = true;
+        user.AiCreditsRemaining = 0;
+        await db.SaveChangesAsync();
+
+        var (svc, _, queue, _) = MakeService(db, credits =>
+        {
+            credits.Setup(c => c.TryConsumeAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                   .ReturnsAsync(false);
+            credits.Setup(c => c.GetBalanceAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                   .ReturnsAsync(0);
+        });
+
+        var result = await svc.CreateAiRequestAsync(userId: 1, ipAddress: null, SampleAiDto());
+
+        result.Success.Should().BeFalse();
+        result.StatusCode.Should().Be(402);
+        result.Paywall.Should().NotBeNull();
+        result.Paywall!.Reason.Should().Be("insufficient_credits");
+        result.Paywall.PaywallOptions.Should().NotBeNull();
+        db.DesignRequests.Should().BeEmpty();
+        queue.Verify(q => q.EnqueueAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateAiRequestAsync_auth_third_call_after_credit_grant_succeeds()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var user = db.Users.Single();
+        user.HasUsedFreeAiGeneration = true;
+        user.AiCreditsRemaining = 5;
+        await db.SaveChangesAsync();
+
+        var (svc, _, queue, credits) = MakeService(db);
+
+        var result = await svc.CreateAiRequestAsync(userId: 1, ipAddress: null, SampleAiDto());
+
+        result.Success.Should().BeTrue();
+        result.StatusCode.Should().Be(201);
+        credits.Verify(c => c.TryConsumeAsync(1, 1, It.IsAny<CancellationToken>()), Times.Once);
+        queue.Verify(q => q.EnqueueAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -94,59 +156,135 @@ public class DesignRequestServiceTests
     {
         using var db = DbHelper.CreateInMemory();
         await SeedAsync(db);
-        var (svc, _, _) = MakeService(db);
+        var (svc, _, _, _) = MakeService(db);
 
-        var result = await svc.CreateAiRequestAsync(1, new CreateAiDesignRequestDto
-        {
-            TemplateId = 9999,
-            Language = "nb",
-            PersonName = "Ola",
-            TextContent = "Hi",
-            ThemeDescription = "",
-            AspectRatio = "16:9"
-        });
+        var result = await svc.CreateAiRequestAsync(userId: 1, ipAddress: null, SampleAiDto(templateId: 9999));
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("template");
     }
 
+    // ── BANNERSH-67: Anonymous path ───────────────────────────────────────────
+
     [Fact]
-    public async Task MarkPaidAndEnqueueAsync_flips_to_InProgress_and_enqueues()
+    public async Task CreateAiRequestAsync_anonymous_eligible_creates_and_records_usage()
     {
         using var db = DbHelper.CreateInMemory();
         await SeedAsync(db);
-        var (svc, _, queue) = MakeService(db);
+        var (svc, stripe, queue, credits) = MakeService(db);
 
-        await svc.CreateAiRequestAsync(1, new CreateAiDesignRequestDto
+        var result = await svc.CreateAiRequestAsync(userId: null, ipAddress: "1.2.3.4", SampleAiDto());
+
+        result.Success.Should().BeTrue();
+        result.StatusCode.Should().Be(201);
+        result.RequiresAuth.Should().BeTrue();
+
+        var saved = db.DesignRequests.Single();
+        saved.UserId.Should().BeNull();
+        saved.IpAddress.Should().Be("1.2.3.4");
+        saved.RegenerationsRemaining.Should().Be(0);
+        saved.StripePaymentIntentId.Should().BeNull();
+        saved.Status.Should().Be(DesignRequestStatus.InProgress);
+
+        stripe.Verify(s => s.CreatePaymentIntentAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<decimal>(), It.IsAny<CancellationToken>()), Times.Never);
+        queue.Verify(q => q.EnqueueAsync(saved.Id, It.IsAny<CancellationToken>()), Times.Once);
+        credits.Verify(c => c.RecordAnonymousUsageAsync("1.2.3.4", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateAiRequestAsync_anonymous_ineligible_returns_402_ip_limit()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var (svc, _, queue, credits) = MakeService(db, c =>
+        {
+            c.Setup(x => x.IsAnonymousEligibleAsync("1.2.3.4", It.IsAny<CancellationToken>()))
+             .ReturnsAsync(false);
+        });
+
+        var result = await svc.CreateAiRequestAsync(userId: null, ipAddress: "1.2.3.4", SampleAiDto());
+
+        result.Success.Should().BeFalse();
+        result.StatusCode.Should().Be(402);
+        result.Paywall!.Reason.Should().Be("ip_limit_reached");
+        db.DesignRequests.Should().BeEmpty();
+        queue.Verify(q => q.EnqueueAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+        credits.Verify(c => c.RecordAnonymousUsageAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateAiRequestAsync_anonymous_without_ip_returns_400()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var (svc, _, _, _) = MakeService(db);
+
+        var result = await svc.CreateAiRequestAsync(userId: null, ipAddress: null, SampleAiDto());
+
+        result.Success.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("IP");
+    }
+
+    // ── MarkPaidAndEnqueueAsync: Manual mode (495 kr) still triggers, AI is dead-code ──
+
+    [Fact]
+    public async Task MarkPaidAndEnqueueAsync_manual_flips_to_InProgress()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var (svc, _, queue, _) = MakeService(db);
+
+        var manualResult = await svc.CreateManualRequestAsync(1, new CreateManualDesignRequestDto
         {
             TemplateId = 1, Language = "nb", PersonName = "Ola", TextContent = "Hi",
             ThemeDescription = "x", AspectRatio = "16:9"
         });
-
+        manualResult.Success.Should().BeTrue();
+        // Simulate the prior state — CreateManualRequest sets Pending and StripePaymentIntentId.
         await svc.MarkPaidAndEnqueueAsync("pi_test_123");
 
         var saved = db.DesignRequests.Single();
         saved.Status.Should().Be(DesignRequestStatus.InProgress);
-        queue.Verify(q => q.EnqueueAsync(saved.Id, It.IsAny<CancellationToken>()), Times.Once);
+        // Manual flow never enqueues for AI pipeline — designer handles it.
+        queue.Verify(q => q.EnqueueAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
-    public async Task MarkPaidAndEnqueueAsync_is_idempotent_for_already_inprogress_requests()
+    public async Task MarkPaidAndEnqueueAsync_ai_is_no_op_after_BANNERSH67()
     {
         using var db = DbHelper.CreateInMemory();
         await SeedAsync(db);
-        var (svc, _, queue) = MakeService(db);
+        var (svc, _, queue, _) = MakeService(db);
 
-        await svc.CreateAiRequestAsync(1, new CreateAiDesignRequestDto
+        // Simulate an in-flight legacy AI request that still has a StripePaymentIntentId
+        // (e.g. created before BANNERSH-67 deploy).
+        var legacy = new BannerShop.Core.Entities.DesignRequest
         {
-            TemplateId = 1, Language = "nb", PersonName = "Ola", TextContent = "Hi",
-            ThemeDescription = "x", AspectRatio = "16:9"
-        });
+            UserId = 1,
+            BannerTemplateId = 1,
+            Mode = DesignRequestMode.Ai,
+            Language = "nb",
+            PersonName = "Ola",
+            TextContent = "Hi",
+            ThemeDescription = "x",
+            AspectRatio = "16:9",
+            Status = DesignRequestStatus.Pending,
+            PriceNok = 95m,
+            StripePaymentIntentId = "pi_legacy_ai",
+            RegenerationsRemaining = 1,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        db.DesignRequests.Add(legacy);
+        await db.SaveChangesAsync();
 
-        await svc.MarkPaidAndEnqueueAsync("pi_test_123");
-        await svc.MarkPaidAndEnqueueAsync("pi_test_123");
+        await svc.MarkPaidAndEnqueueAsync("pi_legacy_ai");
 
-        queue.Verify(q => q.EnqueueAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
+        // Status should NOT advance — dead-code guard.
+        var saved = db.DesignRequests.Single(r => r.Id == legacy.Id);
+        saved.Status.Should().Be(DesignRequestStatus.Pending);
+        queue.Verify(q => q.EnqueueAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -154,13 +292,9 @@ public class DesignRequestServiceTests
     {
         using var db = DbHelper.CreateInMemory();
         await SeedAsync(db);
-        var (svc, _, _) = MakeService(db);
+        var (svc, _, _, _) = MakeService(db);
 
-        await svc.CreateAiRequestAsync(1, new CreateAiDesignRequestDto
-        {
-            TemplateId = 1, Language = "nb", PersonName = "Ola", TextContent = "Hi",
-            ThemeDescription = "x", AspectRatio = "16:9"
-        });
+        await svc.CreateAiRequestAsync(userId: 1, ipAddress: null, SampleAiDto());
         var id = db.DesignRequests.Single().Id;
 
         var cannotApprove = await svc.ApproveAsync(id, 1);
@@ -183,13 +317,9 @@ public class DesignRequestServiceTests
         await SeedAsync(db);
         db.Users.Add(DbHelper.MakeUser(2, "other@example.com"));
         await db.SaveChangesAsync();
-        var (svc, _, _) = MakeService(db);
+        var (svc, _, _, _) = MakeService(db);
 
-        await svc.CreateAiRequestAsync(1, new CreateAiDesignRequestDto
-        {
-            TemplateId = 1, Language = "nb", PersonName = "Ola", TextContent = "Hi",
-            ThemeDescription = "x", AspectRatio = "16:9"
-        });
+        await svc.CreateAiRequestAsync(userId: 1, ipAddress: null, SampleAiDto());
         var id = db.DesignRequests.Single().Id;
         var entity = db.DesignRequests.Single();
         entity.Status = DesignRequestStatus.AwaitingApproval;

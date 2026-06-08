@@ -13,7 +13,18 @@ public class DesignRequest
 {
     public int Id { get; set; }
 
-    public int UserId { get; set; }
+    /// <summary>
+    /// Owner of the request — nullable since BANNERSH-67 introduced the free-first
+    /// anonymous flow where a user can generate one banner without signing up.
+    /// When null, <see cref="IpAddress"/> is the only identifier for the request.
+    /// </summary>
+    public int? UserId { get; set; }
+
+    /// <summary>
+    /// Client IP recorded for anonymous AI requests so the rolling-30-day throttle
+    /// (BANNERSH-65) can be evaluated post-hoc. Always null for authenticated requests.
+    /// </summary>
+    public string? IpAddress { get; set; }
 
     public int BannerTemplateId { get; set; }
 
@@ -91,7 +102,7 @@ public class DesignRequest
     public int? CurrentGenerationId { get; set; }
 
     // Navigation
-    public User User { get; set; } = null!;
+    public User? User { get; set; }
     public BannerTemplate BannerTemplate { get; set; } = null!;
     public BannerDesign? FinalBannerDesign { get; set; }
     public BannerGeneration? CurrentGeneration { get; set; }

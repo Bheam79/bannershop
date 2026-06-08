@@ -4,8 +4,27 @@ namespace BannerShop.Api.Services.DesignRequests;
 
 public interface IDesignRequestService
 {
-    /// <summary>Creates an AI <c>DesignRequest</c> + Stripe PaymentIntent (95 NOK).</summary>
-    Task<DesignRequestActionResult> CreateAiRequestAsync(int userId, CreateAiDesignRequestDto req, CancellationToken ct = default);
+    /// <summary>
+    /// Creates an AI <c>DesignRequest</c> under the BANNERSH-67 free-first flow.
+    ///
+    /// <para>
+    /// Anonymous callers (<paramref name="userId"/> is null) are throttled by
+    /// <see cref="AiCredits.IAiCreditService.IsAnonymousEligibleAsync"/> — one free
+    /// generation per IP per rolling 30 days. Subsequent attempts return a 402.
+    /// </para>
+    /// <para>
+    /// Authenticated callers consume their free generation on the first call
+    /// (<see cref="Core.Entities.User.HasUsedFreeAiGeneration"/> = true) and a
+    /// credit on each subsequent call. Returns 402 if no credits remain.
+    /// </para>
+    /// <para>No Stripe PaymentIntent is created — payment is collected later via the
+    /// banner-print order's mandatory AI activation fee (BANNERSH-68).</para>
+    /// </summary>
+    Task<CreateAiResult> CreateAiRequestAsync(
+        int? userId,
+        string? ipAddress,
+        CreateAiDesignRequestDto req,
+        CancellationToken ct = default);
 
     /// <summary>Creates a Manual <c>DesignRequest</c> + Stripe PaymentIntent (495 NOK).</summary>
     Task<DesignRequestActionResult> CreateManualRequestAsync(int userId, CreateManualDesignRequestDto req, CancellationToken ct = default);
@@ -54,6 +73,32 @@ public record RegenerateResult(
 
     public static RegenerateResult Paywall(int creditsRemaining, object paywallMetadata)
         => new(false, "insufficient_credits", 402, 0, creditsRemaining, paywallMetadata);
+}
+
+/// <summary>
+/// Outcome of <see cref="IDesignRequestService.CreateAiRequestAsync"/>.
+///
+/// <para><c>StatusCode</c> is meant to be passed straight to the HTTP response:
+/// 201 on success, 402 when the caller has hit the paywall, 400 / 403 / 404 on
+/// validation failures (e.g. unknown template).</para>
+/// </summary>
+public record CreateAiResult(
+    bool Success,
+    int StatusCode,
+    string? Error = null,
+    int DesignRequestId = 0,
+    bool RequiresAuth = false,
+    int CreditsRemaining = 0,
+    AiPaywallResponseDto? Paywall = null)
+{
+    public static CreateAiResult Ok(int id, bool requiresAuth, int creditsRemaining)
+        => new(true, 201, null, id, requiresAuth, creditsRemaining);
+
+    public static CreateAiResult Fail(string error, int statusCode = 400)
+        => new(false, statusCode, error);
+
+    public static CreateAiResult PaywallResult(AiPaywallResponseDto paywall, int creditsRemaining = 0)
+        => new(false, 402, paywall.Reason, 0, false, creditsRemaining, paywall);
 }
 
 public record DesignRequestActionResult(

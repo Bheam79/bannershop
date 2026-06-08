@@ -13,7 +13,8 @@ namespace BannerShop.Api.Services.DesignRequests;
 
 public sealed class DesignRequestService : IDesignRequestService
 {
-    public const decimal AiPriceNok = 95m;
+    // The 95 kr standalone AI fee retired in BANNERSH-67 — the 95 kr is now collected
+    // as an AI activation line item on the print order (BANNERSH-68).
     public const decimal ManualPriceNok = 495m;
 
     private readonly BannerShopDbContext _db;
@@ -45,26 +46,124 @@ public sealed class DesignRequestService : IDesignRequestService
         _log = log;
     }
 
-    public async Task<DesignRequestActionResult> CreateAiRequestAsync(int userId, CreateAiDesignRequestDto req, CancellationToken ct = default)
+    /// <inheritdoc />
+    /// <remarks>
+    /// BANNERSH-67: the standalone 95 kr Stripe PaymentIntent is gone. AI generation
+    /// is free-first (one per IP for anonymous, one per user for authenticated) and
+    /// credit-gated afterwards. Payment is collected later via the print-order's
+    /// mandatory AI activation fee (BANNERSH-68).
+    /// </remarks>
+    public async Task<CreateAiResult> CreateAiRequestAsync(
+        int? userId,
+        string? ipAddress,
+        CreateAiDesignRequestDto req,
+        CancellationToken ct = default)
     {
         var template = await _db.BannerTemplates.AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == req.TemplateId, ct);
         if (template is null)
-            return DesignRequestActionResult.Fail("Banner template not found.");
+            return CreateAiResult.Fail("Banner template not found.", 400);
 
+        // Uploaded portraits live in the user's BannerDesigns table — only available
+        // for authenticated callers. Silently ignore for anonymous requests.
         string? uploadedPhotoPath = null;
-        if (req.UploadedPhotoBannerDesignId is int designId)
+        if (userId is int authUserId && req.UploadedPhotoBannerDesignId is int designId)
         {
             var design = await _db.BannerDesigns.AsNoTracking()
-                .FirstOrDefaultAsync(d => d.Id == designId && d.UserId == userId, ct);
+                .FirstOrDefaultAsync(d => d.Id == designId && d.UserId == authUserId, ct);
             if (design is null)
-                return DesignRequestActionResult.Fail("Uploaded photo not found.");
+                return CreateAiResult.Fail("Uploaded photo not found.", 400);
             uploadedPhotoPath = design.StoragePath;
         }
 
+        // ── Anonymous path ───────────────────────────────────────────────────────
+        if (userId is null)
+        {
+            if (string.IsNullOrWhiteSpace(ipAddress))
+                return CreateAiResult.Fail("Client IP address could not be determined.", 400);
+
+            var eligible = await _credits.IsAnonymousEligibleAsync(ipAddress, ct);
+            if (!eligible)
+            {
+                var paywall = await BuildPaywallAsync("ip_limit_reached", ct);
+                return CreateAiResult.PaywallResult(paywall, 0);
+            }
+
+            var anonRequest = await PersistAndEnqueueAsync(
+                userId: null,
+                ipAddress: ipAddress,
+                template: template,
+                uploadedPhotoPath: null,   // no portrait upload for anonymous
+                regenerationsRemaining: 0,
+                req: req,
+                ct);
+
+            await _credits.RecordAnonymousUsageAsync(ipAddress, ct);
+
+            // Anonymous callers can generate but cannot approve / continue without an account.
+            return CreateAiResult.Ok(anonRequest.Id, requiresAuth: true, creditsRemaining: 0);
+        }
+
+        // ── Authenticated path ───────────────────────────────────────────────────
+        var uid = userId.Value;
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == uid, ct);
+        if (user is null)
+            return CreateAiResult.Fail("User not found.", 404);
+
+        if (!user.HasUsedFreeAiGeneration)
+        {
+            // First-ever generation for this user — free, no credit consumed.
+            user.HasUsedFreeAiGeneration = true;
+            _db.AiCreditTransactions.Add(new AiCreditTransaction
+            {
+                UserId = uid,
+                Amount = 0,                 // no credit movement — audit row only
+                Reason = CreditReason.FreeAuthenticated,
+                CreatedAt = DateTime.UtcNow
+            });
+            await _db.SaveChangesAsync(ct);
+        }
+        else
+        {
+            var consumed = await _credits.TryConsumeAsync(uid, count: 1, ct);
+            if (!consumed)
+            {
+                var paywall = await BuildPaywallAsync("insufficient_credits", ct);
+                return CreateAiResult.PaywallResult(paywall, 0);
+            }
+        }
+
+        var authRequest = await PersistAndEnqueueAsync(
+            userId: uid,
+            ipAddress: null,
+            template: template,
+            uploadedPhotoPath: uploadedPhotoPath,
+            regenerationsRemaining: 1,
+            req: req,
+            ct);
+
+        var creditsRemaining = await _credits.GetBalanceAsync(uid, ct);
+        return CreateAiResult.Ok(authRequest.Id, requiresAuth: false, creditsRemaining: creditsRemaining);
+    }
+
+    /// <summary>
+    /// Persists the <see cref="DesignRequest"/> row, sets the status to
+    /// <c>InProgress</c>, and enqueues the AI pipeline job. Used by both the
+    /// anonymous and authenticated branches of <see cref="CreateAiRequestAsync"/>.
+    /// </summary>
+    private async Task<DesignRequest> PersistAndEnqueueAsync(
+        int? userId,
+        string? ipAddress,
+        BannerTemplate template,
+        string? uploadedPhotoPath,
+        int regenerationsRemaining,
+        CreateAiDesignRequestDto req,
+        CancellationToken ct)
+    {
         var request = new DesignRequest
         {
             UserId = userId,
+            IpAddress = ipAddress,
             BannerTemplateId = template.Id,
             Mode = DesignRequestMode.Ai,
             Language = req.Language,
@@ -74,28 +173,50 @@ public sealed class DesignRequestService : IDesignRequestService
             ThemeDescription = req.ThemeDescription.Trim(),
             UploadedPhotoPath = uploadedPhotoPath,
             AspectRatio = req.AspectRatio,
-            Status = DesignRequestStatus.Pending,
-            PriceNok = AiPriceNok,
-            RegenerationsRemaining = 1,
+            // Pipeline guard rejects terminal statuses; InProgress lets it run immediately.
+            Status = DesignRequestStatus.InProgress,
+            PriceNok = 0m,                          // free-first: no upfront price
+            RegenerationsRemaining = regenerationsRemaining,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
         _db.DesignRequests.Add(request);
         await _db.SaveChangesAsync(ct);
 
-        // Use the request id as the "order id" metadata field so Stripe webhook handlers
-        // can distinguish design-request payments by looking up PaymentIntentId in either
-        // the Orders table or the DesignRequests table — see WebhooksController.
-        var intent = await _stripe.CreatePaymentIntentAsync(
-            orderId: -request.Id,   // negative => not an Order; see WebhooksController.
-            userId: userId,
-            amountNok: AiPriceNok,
-            ct: ct);
+        await _queue.EnqueueAsync(request.Id, ct);
+        _log.LogInformation(
+            "CreateAiRequestAsync: enqueued DesignRequest {Id} (user={UserId}, ip={Ip}, template={TemplateId}).",
+            request.Id, userId, ipAddress, template.Id);
 
-        request.StripePaymentIntentId = intent.PaymentIntentId;
-        await _db.SaveChangesAsync(ct);
+        return request;
+    }
 
-        return DesignRequestActionResult.Ok(request.Id, intent.ClientSecret, AiPriceNok);
+    /// <summary>
+    /// Loads the four pricing parameters that populate the paywall payload and
+    /// wraps them in an <see cref="AiPaywallResponseDto"/>. Falls back to the
+    /// defaults seeded by BANNERSH-65 when any are missing.
+    /// </summary>
+    private async Task<AiPaywallResponseDto> BuildPaywallAsync(string reason, CancellationToken ct)
+    {
+        var pricing = await _db.PricingParameters.AsNoTracking()
+            .Where(p => p.Key == "ai_credit_pack_price_nok"
+                     || p.Key == "ai_credit_pack_count"
+                     || p.Key == "ai_banner_activation_fee_nok")
+            .ToDictionaryAsync(p => p.Key, p => p.Value, ct);
+
+        return new AiPaywallResponseDto
+        {
+            Reason = reason,
+            CreditsRemaining = 0,
+            PaywallOptions = new PaywallOptions
+            {
+                CreditPackPriceNok = pricing.GetValueOrDefault("ai_credit_pack_price_nok", 29m),
+                CreditPackCount = (int)pricing.GetValueOrDefault("ai_credit_pack_count", 10m),
+                BannerOrderActivationFeeNok = pricing.GetValueOrDefault("ai_banner_activation_fee_nok", 95m),
+                ManualDesignerUrl = "/banner-builder/manual",
+                UploadOwnUrl = "/banner-builder"
+            }
+        };
     }
 
     public async Task<DesignRequestActionResult> CreateManualRequestAsync(int userId, CreateManualDesignRequestDto req, CancellationToken ct = default)
@@ -298,6 +419,13 @@ public sealed class DesignRequestService : IDesignRequestService
         return RegenerateResult.Ok(generation.Id, creditsRemaining);
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// BANNERSH-67 retired the 95 kr standalone AI PaymentIntent — AI generation is
+    /// now free-first with payment collected at order time. This handler is kept as a
+    /// dead-code guard for any in-flight Manual requests (495 kr designer fee) and
+    /// any stale AI PIs from before the deploy.
+    /// </remarks>
     public async Task MarkPaidAndEnqueueAsync(string paymentIntentId, CancellationToken ct = default)
     {
         var request = await _db.DesignRequests
@@ -317,20 +445,26 @@ public sealed class DesignRequestService : IDesignRequestService
             return;
         }
 
+        // Dead-code guard for AI: BANNERSH-67 removed the standalone Stripe PI for AI
+        // design. Any payment_intent.succeeded with mode=Ai is an in-flight payment
+        // from before the deploy — log + no-op so we don't accidentally double-enqueue.
+        if (request.Mode == DesignRequestMode.Ai)
+        {
+            _log.LogWarning(
+                "DesignRequest {Id} (mode=Ai) received a payment_intent.succeeded ({Pi}) after BANNERSH-67 — ignoring (free-first flow no longer creates PIs).",
+                request.Id, paymentIntentId);
+            return;
+        }
+
+        // Manual flow (495 kr) still uses an upfront PaymentIntent — flip to InProgress
+        // so the designer dashboard can pick it up.
         request.Status = DesignRequestStatus.InProgress;
         request.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
 
-        if (request.Mode == DesignRequestMode.Ai)
-        {
-            await _queue.EnqueueAsync(request.Id, ct);
-            _log.LogInformation("Enqueued AI generation for DesignRequest {Id} (PI {Pi})", request.Id, paymentIntentId);
-        }
-        else
-        {
-            // Manual mode — designer will handle it; optionally notify admin.
-            _log.LogInformation("Manual DesignRequest {Id} paid (PI {Pi}) — InProgress, awaiting designer.", request.Id, paymentIntentId);
-        }
+        _log.LogInformation(
+            "Manual DesignRequest {Id} paid (PI {Pi}) — InProgress, awaiting designer.",
+            request.Id, paymentIntentId);
     }
 
     /// <summary>
@@ -387,9 +521,11 @@ public sealed class DesignRequestService : IDesignRequestService
             _               => "image/png"
         };
 
+        // BannerDesign.UserId is non-nullable — anonymous DesignRequests never reach
+        // Final without going through /approve (auth-required), so this is safe.
         var design = new BannerDesign
         {
-            UserId           = r.UserId,
+            UserId           = r.UserId ?? 0,
             OriginalFileName = originalFileName,
             StoragePath      = finalPath,
             ContentType      = contentType,
@@ -421,7 +557,7 @@ public sealed class DesignRequestService : IDesignRequestService
         return new DesignRequestDetailDto
         {
             Id = r.Id,
-            UserId = r.UserId,
+            UserId = r.UserId ?? 0,
             BannerTemplateId = r.BannerTemplateId,
             Mode = r.Mode.ToString(),
             Status = r.Status.ToString(),

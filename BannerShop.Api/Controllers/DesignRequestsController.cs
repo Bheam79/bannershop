@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using BannerShop.Api.Models.DesignRequests;
+using BannerShop.Api.Services.AiCredits;
 using BannerShop.Api.Services.DesignRequests;
 using BannerShop.Core.Enums;
 using Microsoft.AspNetCore.Authorization;
@@ -8,9 +9,9 @@ using Microsoft.AspNetCore.Mvc;
 namespace BannerShop.Api.Controllers;
 
 /// <summary>
-/// Endpoints for the AI banner builder (95 kr) and (later) the manual flow (495 kr).
-/// Implements the AI surface from BANNERSH-19; the manual endpoints will be added by
-/// BANNERSH-21 and can reuse this controller.
+/// Endpoints for the AI banner builder (free-first, credit-gated — BANNERSH-67) and the
+/// human-designer flow (495 kr). The POST /ai endpoint accepts both anonymous and
+/// authenticated callers; everything else requires auth.
 /// </summary>
 [ApiController]
 [Route("api/design-requests")]
@@ -57,22 +58,53 @@ public class DesignRequestsController : ControllerBase
     }
 
     // ── POST /api/design-requests/ai ─────────────────────────────────────────
+    /// <summary>
+    /// Creates an AI design request under the BANNERSH-67 free-first flow.
+    ///
+    /// Anonymous callers (no Bearer token) get one free generation per IP per rolling
+    /// 30 days. Authenticated callers get one free generation per account, then must
+    /// have purchased / been-granted credits to generate more. No upfront payment.
+    /// </summary>
     [HttpPost("ai")]
+    [AllowAnonymous]
+    [ServiceFilter(typeof(BotProtectionFilter))]
     public async Task<IActionResult> CreateAi([FromBody] CreateAiDesignRequestDto req, CancellationToken ct)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
-        var userId = GetUserId();
-        if (userId == 0) return Unauthorized();
 
-        var result = await _service.CreateAiRequestAsync(userId, req, ct);
-        if (!result.Success) return BadRequest(new { error = result.Error });
+        var rawUserId = GetUserId();
+        int? userId = rawUserId == 0 ? null : rawUserId;
 
-        return Ok(new CreateDesignRequestResponseDto
+        // Only resolve the IP for anonymous callers — auth callers are throttled by
+        // their per-user credit balance, not by IP.
+        var ipAddress = userId is null ? GetClientIpAddress() : null;
+
+        var result = await _service.CreateAiRequestAsync(userId, ipAddress, req, ct);
+
+        return result.StatusCode switch
         {
-            DesignRequestId = result.DesignRequestId,
-            ClientSecret = result.ClientSecret ?? string.Empty,
-            TotalNok = result.TotalNok
-        });
+            201 => StatusCode(201, new CreateAiDesignRequestResponseDto
+            {
+                DesignRequestId = result.DesignRequestId,
+                RequiresAuth = result.RequiresAuth,
+                CreditsRemaining = result.CreditsRemaining
+            }),
+            402 => StatusCode(402, result.Paywall),
+            404 => NotFound(new { error = result.Error }),
+            _ => BadRequest(new { error = result.Error })
+        };
+    }
+
+    private string? GetClientIpAddress()
+    {
+        // Prefer the standard X-Forwarded-For (first hop) when behind a proxy.
+        var forwarded = Request.Headers["X-Forwarded-For"].ToString();
+        if (!string.IsNullOrWhiteSpace(forwarded))
+        {
+            var first = forwarded.Split(',')[0].Trim();
+            if (!string.IsNullOrEmpty(first)) return first;
+        }
+        return HttpContext.Connection.RemoteIpAddress?.ToString();
     }
 
     // ── GET /api/design-requests ─────────────────────────────────────────────

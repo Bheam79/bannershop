@@ -90,9 +90,9 @@ public sealed class AdminDesignRequestService : IAdminDesignRequestService
                 BannerTemplateId = r.BannerTemplateId,
                 PersonName = r.PersonName,
                 PersonAge = r.PersonAge,
-                UserId = r.UserId,
-                CustomerName = r.User.Name,
-                CustomerEmail = r.User.Email,
+                UserId = r.UserId ?? 0,
+                CustomerName = r.User != null ? r.User.Name : (r.IpAddress != null ? $"anon ({r.IpAddress})" : "anon"),
+                CustomerEmail = r.User != null ? r.User.Email : string.Empty,
                 RevisionCount = r.RevisionCount,
                 CreatedAt = r.CreatedAt,
                 UpdatedAt = r.UpdatedAt
@@ -153,8 +153,8 @@ public sealed class AdminDesignRequestService : IAdminDesignRequestService
             CreatedAt = baseDetail.CreatedAt,
             UpdatedAt = baseDetail.UpdatedAt,
             // admin-only extras
-            CustomerName = r.User.Name,
-            CustomerEmail = r.User.Email,
+            CustomerName = r.User?.Name ?? (r.IpAddress is not null ? $"anon ({r.IpAddress})" : "anon"),
+            CustomerEmail = r.User?.Email ?? string.Empty,
             UploadedPhotoUrl = photoUrl,
             TemplateName = r.BannerTemplate.NameNb,
         };
@@ -281,7 +281,8 @@ public sealed class AdminDesignRequestService : IAdminDesignRequestService
 
         // Save into the customer's storage folder as a new file (don't clobber the
         // original — production may want both for comparison).
-        var userDir = _storage.EnsureUserDirectory(r.UserId);
+        var storageUserId = r.UserId ?? 0;
+        var userDir = _storage.EnsureUserDirectory(storageUserId);
         var ext = Path.GetExtension(upscaledTempPath);
         if (string.IsNullOrEmpty(ext)) ext = ".png";
         var fileName = $"design_{r.Id}_{DateTime.UtcNow:yyyyMMddHHmmss}_x{scale}{ext}";
@@ -297,7 +298,7 @@ public sealed class AdminDesignRequestService : IAdminDesignRequestService
             return DesignRequestActionResult.Fail($"Could not persist upscaled file: {ex.Message}");
         }
 
-        var newRelative = BannerFileStorage.RelativePathFor(r.UserId, fileName);
+        var newRelative = BannerFileStorage.RelativePathFor(storageUserId, fileName);
         r.FinalCroppedStoragePath = newRelative;
         r.UpdatedAt = DateTime.UtcNow;
 
