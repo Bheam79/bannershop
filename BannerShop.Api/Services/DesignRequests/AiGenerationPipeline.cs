@@ -21,6 +21,7 @@ public sealed class AiGenerationPipeline
 {
     private readonly BannerShopDbContext _db;
     private readonly IBannerPromptService _prompts;
+    private readonly IPromptRefinementService _refiner;
     private readonly IAiImageService _ai;
     private readonly IUpscalingService _upscaler;
     private readonly IImageProcessingService _images;
@@ -30,6 +31,7 @@ public sealed class AiGenerationPipeline
     public AiGenerationPipeline(
         BannerShopDbContext db,
         IBannerPromptService prompts,
+        IPromptRefinementService refiner,
         IAiImageService ai,
         IUpscalingService upscaler,
         IImageProcessingService images,
@@ -38,6 +40,7 @@ public sealed class AiGenerationPipeline
     {
         _db = db;
         _prompts = prompts;
+        _refiner = refiner;
         _ai = ai;
         _upscaler = upscaler;
         _images = images;
@@ -80,7 +83,7 @@ public sealed class AiGenerationPipeline
                 referenceAbs = null;
             }
 
-            var prompt = _prompts.BuildPrompt(new BannerPromptInput(
+            var basePrompt = _prompts.BuildPrompt(new BannerPromptInput(
                 Category: request.BannerTemplate.Category,
                 Language: request.Language,
                 PersonName: request.PersonName,
@@ -89,6 +92,21 @@ public sealed class AiGenerationPipeline
                 ThemeDescription: request.ThemeDescription,
                 AspectRatio: request.AspectRatio,
                 HasPortrait: referenceAbs is not null));
+
+            // 1b. Refine the prompt via LLM (BANNERSH-61). Failures fall back
+            // to the deterministic base prompt — see IPromptRefinementService.
+            var prompt = await _refiner.RefineAsync(new PromptRefinementInput(
+                Category: request.BannerTemplate.Category,
+                Language: request.Language,
+                PersonName: request.PersonName,
+                PersonAge: request.PersonAge,
+                TextContent: request.TextContent,
+                ThemeDescription: request.ThemeDescription,
+                AspectRatio: request.AspectRatio,
+                HasPortrait: referenceAbs is not null,
+                BasePrompt: basePrompt), ct);
+            if (string.IsNullOrWhiteSpace(prompt))
+                prompt = basePrompt;
 
             // 2. Generate
             _log.LogInformation("Pipeline: generating image for DesignRequest {Id}", designRequestId);

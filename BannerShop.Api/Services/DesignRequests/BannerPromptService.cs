@@ -59,6 +59,7 @@ public sealed class BannerPromptService : IBannerPromptService
     {
         BannerTemplateCategory.Birthday     => "A vibrant, cheerful birthday-party banner with festive decorations, balloons and confetti",
         BannerTemplateCategory.Confirmation => "An elegant Norwegian confirmation banner with classic, dignified decorations and a celebratory tone",
+        BannerTemplateCategory.Baptism      => "A gentle, joyful Norwegian baptism (dåp) banner with soft pastel decorations, doves and delicate florals",
         BannerTemplateCategory.Wedding      => "A romantic, refined wedding banner with floral decorations, soft colours and an elegant atmosphere",
         BannerTemplateCategory.Anniversary  => "A celebratory anniversary banner with warm, timeless decorations and elegant typography",
         BannerTemplateCategory.Christmas    => "A festive Christmas-party banner with snowflakes, fir branches, candles and warm holiday colours",

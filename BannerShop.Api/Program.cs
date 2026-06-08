@@ -106,9 +106,18 @@ var openAiConfigured =
     !openAiKey.StartsWith("REPLACE_", StringComparison.OrdinalIgnoreCase);
 
 if (openAiConfigured)
+{
     builder.Services.AddHttpClient<IAiImageService, OpenAiImageService>();
+    // BANNERSH-61: real LLM-backed prompt refinement when an OpenAI key is set.
+    builder.Services.AddHttpClient<IPromptRefinementService, OpenAiPromptRefinementService>();
+}
 else
+{
     builder.Services.AddSingleton<IAiImageService, MockAiImageService>();
+    // No OpenAI key — fall back to the pass-through refiner so the pipeline
+    // produces the deterministic BannerPromptService output unchanged.
+    builder.Services.AddSingleton<IPromptRefinementService, NoopPromptRefinementService>();
+}
 
 // IUpscalingService stays Noop for the customer-facing AiGenerationPipeline —
 // per BANNERSH-57 the Real-ESRGAN 4x pass is an order-backend / admin step,

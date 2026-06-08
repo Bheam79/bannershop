@@ -295,6 +295,7 @@ public class BannerShopDbContext : DbContext
         // Seed BannerTemplates (celebration categories shown in the banner builder)
         modelBuilder.Entity<BannerTemplate>().HasData(
             new BannerTemplate { Id = 1, Category = BannerTemplateCategory.Birthday,     NameNb = "Bursdag",        NameEn = "Birthday",         SortOrder = 10 },
+            new BannerTemplate { Id = 8, Category = BannerTemplateCategory.Baptism,      NameNb = "Dåp",            NameEn = "Baptism",          SortOrder = 15 },
             new BannerTemplate { Id = 2, Category = BannerTemplateCategory.Confirmation, NameNb = "Konfirmasjon",   NameEn = "Confirmation",     SortOrder = 20 },
             new BannerTemplate { Id = 3, Category = BannerTemplateCategory.Wedding,      NameNb = "Bryllup",        NameEn = "Wedding",          SortOrder = 30 },
             new BannerTemplate { Id = 4, Category = BannerTemplateCategory.Anniversary,  NameNb = "Jubileum",       NameEn = "Anniversary",      SortOrder = 40 },
