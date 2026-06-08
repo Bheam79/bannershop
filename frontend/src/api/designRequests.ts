@@ -78,6 +78,12 @@ export interface DesignRequestListItem {
   priceNok: number
   createdAt: string
   updatedAt: string
+
+  // BANNERSH-83: enriched fields for the AI wizard "past banners" gallery.
+  /** Currently active preview URL, or null if generation has not produced an image yet. */
+  previewUrl: string | null
+  personName: string
+  themeDescription: string
 }
 
 export interface DesignRequestDetail {

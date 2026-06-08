@@ -132,6 +132,13 @@ public class DesignRequestListItemDto
     public decimal PriceNok { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+
+    // ── BANNERSH-83: extra fields so the AI banner wizard can render past generations
+    //                as cards with a thumbnail + caption without an extra detail fetch.
+    /// <summary>Customer-visible preview URL of the currently active (or final) result, or null if not generated yet.</summary>
+    public string? PreviewUrl { get; set; }
+    public string PersonName { get; set; } = string.Empty;
+    public string ThemeDescription { get; set; } = string.Empty;
 }
 
 /// <summary>Detail for GET /api/design-requests/{id}.</summary>

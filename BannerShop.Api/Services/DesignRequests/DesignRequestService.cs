@@ -306,10 +306,33 @@ public sealed class DesignRequestService : IDesignRequestService
 
     public async Task<IReadOnlyList<DesignRequestListItemDto>> ListMineAsync(int userId, CancellationToken ct = default)
     {
+        // We need the raw paths to resolve the public URL via BannerFileStorage on the server
+        // side; project the storage paths down and translate them in-process.
         var rows = await _db.DesignRequests.AsNoTracking()
             .Where(r => r.UserId == userId)
             .OrderByDescending(r => r.CreatedAt)
-            .Select(r => new DesignRequestListItemDto
+            .Select(r => new
+            {
+                r.Id,
+                r.BannerTemplateId,
+                r.Mode,
+                r.Status,
+                r.AspectRatio,
+                r.PriceNok,
+                r.CreatedAt,
+                r.UpdatedAt,
+                r.PersonName,
+                r.ThemeDescription,
+                r.DesignerPreviewPath,
+                r.FinalCroppedStoragePath,
+                r.AiResultStoragePath
+            })
+            .ToListAsync(ct);
+
+        return rows.Select(r =>
+        {
+            var previewPath = r.DesignerPreviewPath ?? r.FinalCroppedStoragePath ?? r.AiResultStoragePath;
+            return new DesignRequestListItemDto
             {
                 Id = r.Id,
                 BannerTemplateId = r.BannerTemplateId,
@@ -318,10 +341,12 @@ public sealed class DesignRequestService : IDesignRequestService
                 AspectRatio = r.AspectRatio,
                 PriceNok = r.PriceNok,
                 CreatedAt = r.CreatedAt,
-                UpdatedAt = r.UpdatedAt
-            })
-            .ToListAsync(ct);
-        return rows;
+                UpdatedAt = r.UpdatedAt,
+                PersonName = r.PersonName,
+                ThemeDescription = r.ThemeDescription,
+                PreviewUrl = string.IsNullOrEmpty(previewPath) ? null : _storage.PublicUrlFor(previewPath)
+            };
+        }).ToList();
     }
 
     public async Task<DesignRequestDetailDto?> GetAsync(int id, int callerUserId, bool isAdmin, CancellationToken ct = default)

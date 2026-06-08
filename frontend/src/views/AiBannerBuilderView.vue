@@ -11,8 +11,10 @@ import {
   getDesignRequest,
   approveDesignRequest,
   regenerateDesignRequest,
+  listDesignRequests,
   type BannerTemplateItem,
   type DesignRequestDetail,
+  type DesignRequestListItem,
   type AiPaywallData,
   type PaywallOptions,
 } from '@/api/designRequests'
@@ -66,6 +68,17 @@ const editExpanded = ref(false)
 
 // ── Credits badge (auth users only) ──────────────────────────────────────────
 const creditsRemaining = ref<number | null>(null)
+// BANNERSH-83: track whether the user has spent their free generation. Together with
+// `creditsRemaining`, this lets us label the Generate button accurately ("gratis" vs.
+// "1 kreditt") and surface the paywall *before* hitting the API when we already know
+// the call would 402 — avoiding the confusing "I clicked free and got a popup" flow.
+const hasUsedFreeGeneration = ref<boolean | null>(null)
+
+// ── Past banners (BANNERSH-83) ────────────────────────────────────────────────
+// Auth users only: load their previously-generated AI designs so they can revisit
+// and pick one instead of regenerating.
+const pastDesigns = ref<DesignRequestListItem[]>([])
+const pastDesignsLoading = ref(false)
 
 // ── Paywall modal ─────────────────────────────────────────────────────────────
 const paywallOpen = ref(false)
@@ -119,6 +132,51 @@ const effectivePaywallOptions = computed<PaywallOptions>(() => ({
   uploadOwnUrl: paywallData.value?.paywallOptions?.uploadOwnUrl ?? '/banner-builder',
 }))
 
+// ── BANNERSH-83: free-generation eligibility ─────────────────────────────────
+// Logged-in users with no remaining free generation AND zero credits will be hit by
+// the backend's 402 paywall on the very next /design-requests/ai POST.  Detect that
+// up front so the wizard can label the Generate button accurately and surface the
+// paywall modal *before* posting (rather than after).
+//
+// Returns null for users whose status we don't yet know (anonymous callers, or
+// auth callers before /ai-credits/me has resolved).  In that case we keep the
+// original "free first" UX — letting the server be authoritative.
+const canGenerateForFree = computed<boolean | null>(() => {
+  if (!auth.isLoggedIn) return null            // anonymous: trust backend IP check
+  if (hasUsedFreeGeneration.value === null) return null
+  return !hasUsedFreeGeneration.value
+})
+
+const hasCreditsAvailable = computed<boolean>(() =>
+  (creditsRemaining.value ?? 0) > 0,
+)
+
+/** True when an auth user is known to have no free generation left AND no credits. */
+const isOutOfGenerations = computed<boolean>(() =>
+  auth.isLoggedIn &&
+  hasUsedFreeGeneration.value === true &&
+  !hasCreditsAvailable.value,
+)
+
+// Pretty label for the Generate button — reflects what the click will actually do.
+const generateButtonLabel = computed<string>(() => {
+  if (genPhase.value === 'submitting') return 'Sender…'
+  if (canGenerateForFree.value === true) return 'Generer banner gratis'
+  if (hasCreditsAvailable.value) return `Generer banner (1 kreditt)`
+  if (isOutOfGenerations.value) return 'Kjøp kreditter for å generere'
+  return 'Generer banner gratis'
+})
+
+const generateButtonSubtitle = computed<string>(() => {
+  if (canGenerateForFree.value === true)
+    return 'Ingen betalingsinformasjon nødvendig for første generering'
+  if (hasCreditsAvailable.value)
+    return `${creditsRemaining.value} forslag igjen — bruker 1 kreditt`
+  if (isOutOfGenerations.value)
+    return 'Du har brukt opp den gratis genereringen — kjøp en kredittpakke for å fortsette'
+  return 'Ingen betalingsinformasjon nødvendig for første generering'
+})
+
 // ── Category icons (FontAwesome) ──────────────────────────────────────────────
 const categoryIconClass: Record<string, string> = {
   Birthday: 'fa-cake-candles',
@@ -155,9 +213,79 @@ async function loadCreditsBalance() {
   try {
     const balance = await getAiCreditsBalance()
     creditsRemaining.value = balance.creditsRemaining
+    hasUsedFreeGeneration.value = balance.hasUsedFreeGeneration
   } catch {
     // Non-critical — badge stays hidden
   }
+}
+
+// ── Past designs (auth only, BANNERSH-83) ────────────────────────────────────
+async function loadPastDesigns() {
+  if (!auth.isLoggedIn) return
+  pastDesignsLoading.value = true
+  try {
+    const all = await listDesignRequests()
+    // Show only AI designs that produced a viewable image — Manual designs live in
+    // their own /account/design-requests area and shouldn't clutter the wizard.
+    pastDesigns.value = all.filter(
+      (d) => d.mode === 'Ai' && d.previewUrl !== null,
+    )
+  } catch {
+    // Non-critical — gallery just stays empty.
+    pastDesigns.value = []
+  } finally {
+    pastDesignsLoading.value = false
+  }
+}
+
+// ── Pick a past banner: load it into the wizard's "ready" view ───────────────
+async function selectPastDesign(item: DesignRequestListItem) {
+  // Load full detail so all the action-button logic in the ready phase has the
+  // data it expects (status, revisionsRemaining, etc.).
+  try {
+    const detail = await getDesignRequest(item.id)
+    designRequestId.value = item.id
+    currentDesignRequest.value = detail
+    // Pre-fill the editable fields so "Generer ny versjon" / "Gå tilbake og endre"
+    // start from the same inputs the user picked last time.
+    personName.value = detail.personName
+    personAge.value = detail.personAge ?? null
+    textContent.value = detail.textContent
+    themeDescription.value = detail.themeDescription
+    selectedTemplateId.value = detail.bannerTemplateId
+    language.value = detail.language === 'en' ? 'en' : 'nb'
+    aspectRatio.value = detail.aspectRatio === '18:9' ? '18:9' : '16:9'
+
+    step.value = 3
+    if (detail.status === 'AwaitingApproval' || detail.status === 'Approved' || detail.status === 'Final') {
+      genPhase.value = 'ready'
+    } else if (detail.status === 'InProgress' || detail.status === 'Pending') {
+      startPolling(item.id)
+    } else {
+      genPhase.value = 'error'
+    }
+    editExpanded.value = false
+    // Scroll to top so the loaded banner is immediately visible.
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  } catch {
+    // If detail load fails, fall back to the orders view where the user can drill in.
+    void router.push(`/account/design-requests/${item.id}`)
+  }
+}
+
+/** Back to the wizard idle state (keeps inputs so user can refine and generate again). */
+function returnToWizardIdle() {
+  genPhase.value = 'idle'
+  generateApiError.value = null
+  regenerateError.value = null
+  approveError.value = null
+  // The just-generated banner is now in the past-banners gallery; let the user
+  // start a fresh generation (which will hit the paywall if they're out of free /
+  // credits — see `isOutOfGenerations` guard in generateBanner()).
+  currentDesignRequest.value = null
+  designRequestId.value = null
+  localStorage.removeItem('ai_banner_draft_id')
+  step.value = 2
 }
 
 // ── Photo upload ──────────────────────────────────────────────────────────────
@@ -248,6 +376,23 @@ function goToStep(s: 1 | 2 | 3) {
 async function generateBanner() {
   if (genPhase.value === 'submitting' || genPhase.value === 'generating') return
   generateApiError.value = null
+
+  // BANNERSH-83: when we already know this auth user has spent their free generation
+  // and has 0 credits, surface the paywall *before* posting — otherwise the user sees
+  // a confusing "I clicked the FREE button and got a popup" flow. The same paywall
+  // is still wired to the 402 path below for cases we couldn't predict (e.g. the
+  // /ai-credits/me call failed, or the user just consumed their last credit).
+  if (isOutOfGenerations.value) {
+    paywallData.value = paywallData.value ?? {
+      reason: 'insufficient_credits',
+      creditsRemaining: 0,
+      paywallOptions: effectivePaywallOptions.value,
+    }
+    pendingAction.value = 'generate'
+    openPaywallModal()
+    return
+  }
+
   genPhase.value = 'submitting'
 
   try {
@@ -271,6 +416,9 @@ async function generateBanner() {
 
     if (resp.creditsRemaining !== undefined && auth.isLoggedIn) {
       creditsRemaining.value = resp.creditsRemaining
+      // The backend has now flipped `HasUsedFreeAiGeneration` on this user — record
+      // it locally so the button label updates immediately on the next render.
+      hasUsedFreeGeneration.value = true
     }
 
     if (resp.requiresAuth) {
@@ -342,6 +490,8 @@ async function pollOnce(id: number) {
       ) {
         genPhase.value = 'ready'
         editExpanded.value = false
+        // Past banners gallery shows this new finished design — refresh asynchronously.
+        void loadPastDesigns()
       } else {
         genPhase.value = 'error'
       }
@@ -552,6 +702,7 @@ async function confirmCreditPackPayment() {
     try {
       const balance = await getAiCreditsBalance()
       creditsRemaining.value = balance.creditsRemaining
+      hasUsedFreeGeneration.value = balance.hasUsedFreeGeneration
     } catch {
       // Non-critical
     }
@@ -580,6 +731,7 @@ function formatNok(n: number | null | undefined): string {
 onMounted(async () => {
   await loadTemplates()
   await loadCreditsBalance()
+  await loadPastDesigns()
 
   // Resume a pending AI design from a previous session.
   // Common case: anonymous user generated a banner, registered/logged in, and was
@@ -620,9 +772,57 @@ onBeforeUnmount(() => {
         style="display:inline-flex;align-items:center;gap:7px;margin-top:14px;background:rgba(255,106,61,.12);border:1px solid rgba(255,106,61,.3);border-radius:99px;padding:5px 14px;font-size:13px;font-weight:700;color:var(--accent)"
       >
         <i class="fa-solid fa-wand-magic-sparkles" style="font-size:11px"></i>
-        {{ creditsRemaining }} AI forslag igjen
+        <template v-if="canGenerateForFree === true">1 gratis generering tilgjengelig</template>
+        <template v-else>{{ creditsRemaining }} AI forslag igjen</template>
       </div>
     </header>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         PAST BANNERS GALLERY (BANNERSH-83)
+         Shown above the wizard for logged-in users with previous AI designs.
+         Lets them revisit / pick a past banner if they change their mind.
+    ════════════════════════════════════════════════════════════════════════ -->
+    <section
+      v-if="auth.isLoggedIn && pastDesigns.length > 0"
+      class="past-section"
+      aria-label="Tidligere genererte banner"
+    >
+      <div class="past-header">
+        <h2 class="display past-title">
+          <i class="fa-solid fa-clock-rotate-left"></i>
+          Tidligere genererte banner
+        </h2>
+        <span class="past-count">{{ pastDesigns.length }}</span>
+      </div>
+      <p class="past-sub">Klikk for å åpne et tidligere banner — du kan godkjenne det eller bruke det som utgangspunkt.</p>
+      <div class="past-strip">
+        <button
+          v-for="d in pastDesigns"
+          :key="d.id"
+          type="button"
+          class="past-card"
+          :class="{ 'past-card-active': designRequestId === d.id }"
+          @click="selectPastDesign(d)"
+        >
+          <div class="past-thumb">
+            <img v-if="d.previewUrl" :src="d.previewUrl" :alt="`Tidligere banner for ${d.personName}`" />
+          </div>
+          <div class="past-meta">
+            <div class="past-name">{{ d.personName || 'Uten navn' }}</div>
+            <div class="past-theme">{{ d.themeDescription || '—' }}</div>
+            <div class="past-status">
+              <i v-if="d.status === 'Final' || d.status === 'Approved'" class="fa-solid fa-circle-check" style="color:#4ade80"></i>
+              <i v-else-if="d.status === 'AwaitingApproval'" class="fa-solid fa-hourglass-half" style="color:var(--gold)"></i>
+              <i v-else class="fa-solid fa-circle-info" style="color:var(--faint)"></i>
+              {{ d.status === 'AwaitingApproval' ? 'Venter godkjenning'
+                : d.status === 'Final' ? 'Bestilt'
+                : d.status === 'Approved' ? 'Godkjent'
+                : d.status }}
+            </div>
+          </div>
+        </button>
+      </div>
+    </section>
 
     <!-- Soft auth hint (anonymous user after creation) -->
     <div v-if="requiresAuthHint" class="notice-gold" style="margin-bottom:2rem">
@@ -852,7 +1052,18 @@ onBeforeUnmount(() => {
               Klar til å generere
             </h2>
             <p style="font-size:14px;color:var(--muted)">
-              AI-en lager et unikt banner basert på informasjonen din. Første generering er <strong style="color:var(--text)">gratis</strong>.
+              <template v-if="canGenerateForFree === true">
+                AI-en lager et unikt banner basert på informasjonen din. Første generering er <strong style="color:var(--text)">gratis</strong>.
+              </template>
+              <template v-else-if="hasCreditsAvailable">
+                AI-en lager et unikt banner basert på informasjonen din. Bruker <strong style="color:var(--text)">1 av {{ creditsRemaining }} kreditter</strong>.
+              </template>
+              <template v-else-if="isOutOfGenerations">
+                Du har brukt opp den gratis genereringen. Kjøp en kredittpakke for å lage flere banner.
+              </template>
+              <template v-else>
+                AI-en lager et unikt banner basert på informasjonen din. Første generering er <strong style="color:var(--text)">gratis</strong>.
+              </template>
             </p>
             <button
               type="button"
@@ -860,12 +1071,13 @@ onBeforeUnmount(() => {
               style="width:100%;justify-content:center;padding:15px;font-size:16px;border-radius:13px"
               @click="generateBanner"
             >
-              <i class="fa-solid fa-wand-magic-sparkles"></i>
-              Generer banner gratis
+              <i v-if="isOutOfGenerations" class="fa-solid fa-bag-shopping"></i>
+              <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
+              {{ generateButtonLabel }}
             </button>
             <p style="font-size:12.5px;color:var(--faint);text-align:center;display:flex;align-items:center;justify-content:center;gap:6px">
               <i class="fa-solid fa-shield-halved"></i>
-              Ingen betalingsinformasjon nødvendig for første generering
+              {{ generateButtonSubtitle }}
             </p>
           </div>
         </div>
@@ -1003,28 +1215,47 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Action buttons (AwaitingApproval) -->
-        <div v-if="currentDesignRequest.status === 'AwaitingApproval'" style="display:flex;gap:14px;flex-wrap:wrap">
-          <button
-            type="button"
-            class="btn"
-            style="flex:1;justify-content:center;padding:14px;font-size:15px;border-radius:12px;background:#3a9d7e;color:#fff"
-            :disabled="approving"
-            @click="approve"
-          >
-            <i v-if="approving" class="fa-solid fa-circle-notch fa-spin"></i>
-            <i v-else class="fa-solid fa-circle-check"></i>
-            Godkjenn og bestill
-          </button>
+        <!-- BANNERSH-83: explicit "go back and refine" alongside approve and regenerate.
+             The old layout silently spent a credit on "Generer ny versjon"; users
+             reasonably expected the FREE flow to give them a chance to tweak inputs
+             without paying.  "Tilbake og endre detaljer" jumps back to step 2 with
+             current inputs preserved (no API call, no credit spend) so they can
+             refine before re-submitting. -->
+        <div v-if="currentDesignRequest.status === 'AwaitingApproval'" style="display:grid;gap:14px">
+          <div style="display:flex;gap:14px;flex-wrap:wrap">
+            <button
+              type="button"
+              class="btn"
+              style="flex:1;justify-content:center;padding:14px;font-size:15px;border-radius:12px;background:#3a9d7e;color:#fff;min-width:220px"
+              :disabled="approving"
+              @click="approve"
+            >
+              <i v-if="approving" class="fa-solid fa-circle-notch fa-spin"></i>
+              <i v-else class="fa-solid fa-circle-check"></i>
+              Godkjenn og bestill
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost"
+              style="flex:1;justify-content:center;padding:14px;font-size:15px;border-radius:12px;min-width:220px"
+              @click="returnToWizardIdle"
+            >
+              <i class="fa-solid fa-arrow-left"></i>
+              Tilbake og endre detaljer
+            </button>
+          </div>
           <button
             type="button"
             class="btn btn-ghost"
-            style="flex:1;justify-content:center;padding:14px;font-size:15px;border-radius:12px"
+            style="justify-content:center;padding:11px;font-size:14px;border-radius:12px;opacity:.85"
             :disabled="regenerating"
             @click="regenerate"
           >
             <i v-if="regenerating" class="fa-solid fa-circle-notch fa-spin"></i>
             <i v-else class="fa-solid fa-rotate"></i>
-            Generer ny versjon
+            <template v-if="canGenerateForFree === true">Generer ny versjon (gratis)</template>
+            <template v-else-if="hasCreditsAvailable">Generer ny versjon (1 kreditt)</template>
+            <template v-else>Generer ny versjon (krever kreditter)</template>
           </button>
         </div>
 
@@ -1034,7 +1265,8 @@ onBeforeUnmount(() => {
           style="font-size:13px;color:var(--faint);text-align:center"
         >
           <i class="fa-solid fa-wand-magic-sparkles" style="color:var(--accent);margin-right:5px"></i>
-          {{ creditsRemaining }} AI forslag igjen
+          <template v-if="canGenerateForFree === true">1 gratis generering tilgjengelig</template>
+          <template v-else>{{ creditsRemaining }} AI forslag igjen</template>
         </div>
 
         <!-- Errors -->
@@ -1291,6 +1523,28 @@ onBeforeUnmount(() => {
                 </div>
                 <i class="fa-solid fa-chevron-right" style="color:var(--faint);font-size:12px;flex-shrink:0"></i>
               </button>
+            </div>
+
+            <!-- BANNERSH-83: surface past banners inside the paywall so the user can pick
+                 a previous design instead of paying. -->
+            <div v-if="pastDesigns.length > 0" style="margin-top:22px;border-top:1px solid var(--line-soft);padding-top:18px">
+              <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+                <i class="fa-solid fa-clock-rotate-left" style="color:var(--accent)"></i>
+                Eller bruk et tidligere banner
+              </div>
+              <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:6px">
+                <button
+                  v-for="d in pastDesigns.slice(0, 6)"
+                  :key="d.id"
+                  type="button"
+                  class="past-mini"
+                  @click="() => { paywallOpen = false; selectPastDesign(d) }"
+                  :title="`${d.personName} — ${d.themeDescription}`"
+                >
+                  <img v-if="d.previewUrl" :src="d.previewUrl" :alt="`Banner for ${d.personName}`" />
+                  <span class="past-mini-name">{{ d.personName || 'Uten navn' }}</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1703,5 +1957,154 @@ onBeforeUnmount(() => {
   place-items: center;
   font-size: 17px;
   flex-shrink: 0;
+}
+
+/* ── Past-banners gallery (BANNERSH-83) ──────────────────────── */
+.past-section {
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 18px 20px 20px;
+  margin-bottom: 1.5rem;
+}
+.past-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.past-title {
+  font-size: 17px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.past-title i { color: var(--accent); }
+.past-count {
+  background: rgba(255,106,61,.12);
+  border: 1px solid rgba(255,106,61,.3);
+  color: var(--accent);
+  border-radius: 99px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.past-sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 14px;
+}
+.past-strip {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  scroll-snap-type: x mandatory;
+}
+.past-card {
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-2);
+  border: 2px solid var(--line-soft);
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s, background 0.15s;
+  scroll-snap-align: start;
+  text-align: left;
+  font-family: var(--font-ui);
+  padding: 0;
+}
+.past-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  background: rgba(255,106,61,.06);
+}
+.past-card-active {
+  border-color: var(--accent);
+  background: rgba(255,106,61,.08);
+  box-shadow: 0 0 0 2px rgba(255,106,61,.25);
+}
+.past-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.past-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.past-meta {
+  padding: 9px 12px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.past-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.past-theme {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.past-status {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--faint);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Compact past-banner thumbnails for inside the paywall modal */
+.past-mini {
+  flex: 0 0 110px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: var(--surface-2);
+  border: 1.5px solid var(--line-soft);
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  padding: 0;
+  font-family: var(--font-ui);
+  transition: border-color 0.15s, transform 0.1s;
+}
+.past-mini:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.past-mini img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+}
+.past-mini-name {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text);
+  padding: 0 8px 7px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
 }
 </style>
