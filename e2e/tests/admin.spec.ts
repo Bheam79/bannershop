@@ -11,6 +11,7 @@ import {
   apiRegister,
   apiCreateOrder,
   apiFetchSizes,
+  apiAdvanceOrderToInProduction,
 } from '../helpers/api'
 
 /** Navigate to admin panel with admin auth injected */
@@ -379,6 +380,10 @@ test.describe('Admin panel', () => {
     }
 
     const order = await apiCreateOrder(userAuth.accessToken, { bannerSizeId: size.id })
+
+    // Fresh orders are PendingPayment; shipping requires InProduction/ReadyToShip.
+    // Advance via the admin status API before exercising the shipping form.
+    await apiAdvanceOrderToInProduction(adminAuth.accessToken, order.orderId)
 
     // Navigate to admin order detail
     await asAdmin(page)

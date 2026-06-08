@@ -13,6 +13,7 @@ import {
   apiFetchSizes,
   apiUpdateProductionStage,
   apiSetShipping,
+  apiAdvanceOrderToInProduction,
 } from '../helpers/api'
 
 /** Generate a unique email for registration tests */
@@ -153,7 +154,7 @@ test.describe('Customer account', () => {
 
     // Production stages section should be present IF order has been paid
     // (for PendingPayment status it's hidden)
-    const statusEl = page.locator('.rounded-full').filter({ hasText: /[a-zA-Zæøå]/ }).first()
+    const statusEl = page.locator('.badge').first()
     await expect(statusEl).toBeVisible()
 
     // Price breakdown should be visible
@@ -196,6 +197,10 @@ test.describe('Customer account', () => {
     }
 
     const order = await apiCreateOrder(auth.accessToken, { bannerSizeId: size.id })
+
+    // The fresh order is PendingPayment; shipping requires InProduction or
+    // ReadyToShip — advance via the admin status API first.
+    await apiAdvanceOrderToInProduction(adminAuth.accessToken, order.orderId)
 
     // Add shipping tracking via admin API (this also sets status to Shipped)
     await apiSetShipping(adminAuth.accessToken, order.orderId, {

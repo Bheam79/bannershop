@@ -17,6 +17,7 @@
  */
 import { test, expect } from '@playwright/test'
 import {
+  injectAuth,
   loginViaApi,
   getTestUserEmail,
   getTestUserPassword,
@@ -57,43 +58,34 @@ async function ensureAdminUser(): Promise<LoginResponse> {
 }
 
 /**
- * Create an AI design request with fixed test data and advance it to the
- * given status via the admin API.
- * Returns the designRequestId.
+ * Register a fresh single-use user for a single test invocation.
+ *
+ * BANNERSH-67 introduced per-user free-AI-generation tracking: a user's first
+ * AI request is free, subsequent ones require credits. The shared
+ * `testuser@example.com` account flips `HasUsedFreeAiGeneration=true` after the
+ * first run, so reusing it across tests yields 402 `insufficient_credits`.
+ * Seeding via a throwaway user per invocation gives every test its own fresh
+ * free-generation budget without depending on DB cleanup between runs.
  */
-async function seedAiRequestInStatus(
-  userToken: string,
-  adminToken: string,
-  status: string,
-  templateId = 1,
-): Promise<number> {
-  const { designRequestId } = await apiCreateAiDesignRequest(userToken, {
-    templateId,
-    personName: 'E2E Test Person',
-    textContent: 'Gratulerer!',
-    themeDescription: 'Festlig',
-  })
-  if (status !== 'Pending') {
-    await apiAdminUpdateDesignRequestStatus(adminToken, designRequestId, status)
-  }
-  return designRequestId
+async function registerThrowawayUser(): Promise<LoginResponse> {
+  const stamp = `${Date.now()}_${Math.floor(Math.random() * 1_000_000)}`
+  const email = `e2e_seed_${stamp}@example.com`
+  return await apiRegister(email, 'E2eSeedPass123!', 'E2E Seed User')
 }
 
 /**
- * Create a Manual design request with fixed test data and advance it to the
- * given status via the admin API.
- * Returns the designRequestId.
- *
- * NOTE: canRequestRevision requires mode=Manual, status=AwaitingApproval,
- * revisionCount<1. Seeding with this helper leaves revisionCount at 0.
+ * Create an AI design request as a fresh throwaway user, then optionally
+ * advance it to the given status via the admin API.
+ * Returns the designRequestId and the throwaway user's LoginResponse so the
+ * caller can `injectAuth(page, userAuth)` to act as the owner.
  */
-async function seedManualRequestInStatus(
-  userToken: string,
+async function seedAiRequestInStatus(
   adminToken: string,
   status: string,
   templateId = 1,
-): Promise<number> {
-  const { designRequestId } = await apiCreateManualDesignRequest(userToken, {
+): Promise<{ designRequestId: number; userAuth: LoginResponse }> {
+  const userAuth = await registerThrowawayUser()
+  const { designRequestId } = await apiCreateAiDesignRequest(userAuth.accessToken, {
     templateId,
     personName: 'E2E Test Person',
     textContent: 'Gratulerer!',
@@ -102,7 +94,36 @@ async function seedManualRequestInStatus(
   if (status !== 'Pending') {
     await apiAdminUpdateDesignRequestStatus(adminToken, designRequestId, status)
   }
-  return designRequestId
+  return { designRequestId, userAuth }
+}
+
+/**
+ * Create a Manual design request as a fresh throwaway user, then optionally
+ * advance it to the given status via the admin API.
+ * Returns the designRequestId and the throwaway user's LoginResponse.
+ *
+ * NOTE: canRequestRevision requires mode=Manual, status=AwaitingApproval,
+ * revisionCount<1. Seeding with this helper leaves revisionCount at 0.
+ *
+ * Manual requests aren't gated by AI credits but we still use a throwaway user
+ * for symmetry and per-test isolation.
+ */
+async function seedManualRequestInStatus(
+  adminToken: string,
+  status: string,
+  templateId = 1,
+): Promise<{ designRequestId: number; userAuth: LoginResponse }> {
+  const userAuth = await registerThrowawayUser()
+  const { designRequestId } = await apiCreateManualDesignRequest(userAuth.accessToken, {
+    templateId,
+    personName: 'E2E Test Person',
+    textContent: 'Gratulerer!',
+    themeDescription: 'Festlig',
+  })
+  if (status !== 'Pending') {
+    await apiAdminUpdateDesignRequestStatus(adminToken, designRequestId, status)
+  }
+  return { designRequestId, userAuth }
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────────
@@ -153,42 +174,45 @@ test.describe('Design requests', () => {
     await page.locator('#textContent').fill('Gratulerer med dagen!')
     await page.locator('#themeDescription').fill('Festlig og fargerik')
 
-    // Step 3 button should be enabled after filling required fields
-    const nextStep3Btn = page.getByRole('button', { name: /Neste: Se over og betal/i })
+    // Step 3 button should be enabled after filling required fields.
+    // BANNERSH-70: button text changed from 'Neste: Se over og betal' to 'Neste: Generer'
+    // (the free-first flow generates without an upfront Stripe step).
+    const nextStep3Btn = page.getByRole('button', { name: /Neste: Generer/i })
     await expect(nextStep3Btn).toBeEnabled()
 
     // Navigate to step 3
     await nextStep3Btn.click()
 
-    // Step 3: either the Stripe card section or a "not configured" message must appear
-    const hasStripeNotice = await page
-      .locator('text=Stripe er ikke konfigurert')
-      .isVisible({ timeout: 10_000 })
-    const hasCardDetails = await page.locator('text=Kortdetaljer').isVisible({ timeout: 5_000 })
-    expect(hasStripeNotice || hasCardDetails).toBe(true)
+    // Step 3: the free-first "Generer banner gratis" CTA must appear (no Stripe upfront).
+    await expect(page.getByRole('button', { name: /Generer banner gratis/i })).toBeVisible({
+      timeout: 10_000,
+    })
   })
 
   // ── Test 3 ──────────────────────────────────────────────────────────────────
 
   test('3: API-seeded AI request appears in the customer design-request list', async ({ page }) => {
-    let auth: LoginResponse
+    // Use a throwaway user so the free AI generation is always available
+    // (the shared testuser would 402 after its first successful run).
+    let userAuth: LoginResponse
     try {
-      auth = await ensureTestUser()
+      userAuth = await registerThrowawayUser()
     } catch {
-      test.skip(true, 'Test user unavailable — skipping')
+      test.skip(true, 'Could not register throwaway user — skipping')
       return
     }
 
     // Seed a design request via the API (stays in Pending status)
-    const { designRequestId } = await apiCreateAiDesignRequest(auth.accessToken, {
+    const { designRequestId } = await apiCreateAiDesignRequest(userAuth.accessToken, {
       templateId: 1,
       personName: 'E2E Test Person',
       textContent: 'Gratulerer!',
       themeDescription: 'Festlig',
     })
 
-    // Authenticate and navigate to the customer list
-    await loginViaApi(page, getTestUserEmail(), getTestUserPassword())
+    // Authenticate as the seed user and navigate to the customer list
+    await page.goto('/')
+    await injectAuth(page, userAuth)
     await page.goto('/account/design-requests')
 
     // Wait for the newly created entry to appear (with enough timeout for API latency)
@@ -204,15 +228,8 @@ test.describe('Design requests', () => {
   // ── Test 4 ──────────────────────────────────────────────────────────────────
 
   test('4: design request detail page shows InProgress status text', async ({ page }) => {
-    let userAuth: LoginResponse
     let adminAuth: LoginResponse
 
-    try {
-      userAuth = await ensureTestUser()
-    } catch {
-      test.skip(true, 'Test user unavailable — skipping')
-      return
-    }
     try {
       adminAuth = await ensureAdminUser()
     } catch {
@@ -220,13 +237,13 @@ test.describe('Design requests', () => {
       return
     }
 
-    const drId = await seedAiRequestInStatus(
-      userAuth.accessToken,
+    const { designRequestId: drId, userAuth } = await seedAiRequestInStatus(
       adminAuth.accessToken,
       'InProgress',
     )
 
-    await loginViaApi(page, getTestUserEmail(), getTestUserPassword())
+    await page.goto('/')
+    await injectAuth(page, userAuth)
     await page.goto(`/account/design-requests/${drId}`)
 
     // Page heading includes the request ID
@@ -241,15 +258,8 @@ test.describe('Design requests', () => {
   // ── Test 5 ──────────────────────────────────────────────────────────────────
 
   test('5: customer can approve an AI request in AwaitingApproval status', async ({ page }) => {
-    let userAuth: LoginResponse
     let adminAuth: LoginResponse
 
-    try {
-      userAuth = await ensureTestUser()
-    } catch {
-      test.skip(true, 'Test user unavailable — skipping')
-      return
-    }
     try {
       adminAuth = await ensureAdminUser()
     } catch {
@@ -257,13 +267,13 @@ test.describe('Design requests', () => {
       return
     }
 
-    const drId = await seedAiRequestInStatus(
-      userAuth.accessToken,
+    const { designRequestId: drId, userAuth } = await seedAiRequestInStatus(
       adminAuth.accessToken,
       'AwaitingApproval',
     )
 
-    await loginViaApi(page, getTestUserEmail(), getTestUserPassword())
+    await page.goto('/')
+    await injectAuth(page, userAuth)
     await page.goto(`/account/design-requests/${drId}`)
 
     // 'Godkjenn design' button is shown when status === AwaitingApproval
@@ -281,15 +291,8 @@ test.describe('Design requests', () => {
   // ── Test 6 ──────────────────────────────────────────────────────────────────
 
   test('6: customer can request a revision on a Manual AwaitingApproval request', async ({ page }) => {
-    let userAuth: LoginResponse
     let adminAuth: LoginResponse
 
-    try {
-      userAuth = await ensureTestUser()
-    } catch {
-      test.skip(true, 'Test user unavailable — skipping')
-      return
-    }
     try {
       adminAuth = await ensureAdminUser()
     } catch {
@@ -298,13 +301,13 @@ test.describe('Design requests', () => {
     }
 
     // canRequestRevision = mode=Manual && status=AwaitingApproval && revisionCount<1
-    const drId = await seedManualRequestInStatus(
-      userAuth.accessToken,
+    const { designRequestId: drId, userAuth } = await seedManualRequestInStatus(
       adminAuth.accessToken,
       'AwaitingApproval',
     )
 
-    await loginViaApi(page, getTestUserEmail(), getTestUserPassword())
+    await page.goto('/')
+    await injectAuth(page, userAuth)
     await page.goto(`/account/design-requests/${drId}`)
 
     // 'Be om korrigering' button appears for Manual+AwaitingApproval+0 revisions
@@ -324,9 +327,11 @@ test.describe('Design requests', () => {
     await expect(submitBtn).toBeEnabled()
     await submitBtn.click()
 
-    // revisionSuccess or RevisionRequested status block title should be visible
+    // revisionSuccess or RevisionRequested status block title should be visible.
+    // Use .first() because both the inline success notice and the status block
+    // title may render simultaneously (strict-mode would otherwise fail).
     await expect(
-      page.locator('text=/Korrigeringsønske er sendt|Korrigering er under behandling/i'),
+      page.locator('text=/Korrigeringsønske er sendt|Korrigering er under behandling/i').first(),
     ).toBeVisible({ timeout: 15_000 })
   })
 
@@ -334,7 +339,6 @@ test.describe('Design requests', () => {
 
   test('7: admin sees design request in list and can update its status', async ({ page }) => {
     let adminAuth: LoginResponse
-    let userAuth: LoginResponse
 
     try {
       adminAuth = await ensureAdminUser()
@@ -342,16 +346,10 @@ test.describe('Design requests', () => {
       test.skip(true, 'Admin user unavailable — skipping')
       return
     }
-    try {
-      userAuth = await ensureTestUser()
-    } catch {
-      test.skip(true, 'Test user unavailable — skipping')
-      return
-    }
 
-    // Seed a Pending AI request owned by the regular user
-    const drId = await seedAiRequestInStatus(
-      userAuth.accessToken,
+    // Seed a Pending AI request owned by a fresh throwaway user (so the free
+    // generation is always available even after previous test runs).
+    const { designRequestId: drId } = await seedAiRequestInStatus(
       adminAuth.accessToken,
       'Pending',
     )

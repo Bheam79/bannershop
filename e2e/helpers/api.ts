@@ -166,6 +166,44 @@ export async function apiUpdateProductionStage(
 }
 
 /**
+ * Update order status as admin (PUT /api/admin/orders/{id}/status).
+ * Allowed transitions are gated server-side; see OrderService.AllowedTransitions.
+ * Typical e2e flow to reach InProduction:
+ *   apiUpdateOrderStatus(token, id, 'Paid')
+ *   apiUpdateOrderStatus(token, id, 'InProduction')
+ */
+export async function apiUpdateOrderStatus(
+  adminToken: string,
+  orderId: number,
+  status: string,
+): Promise<void> {
+  const res = await fetch(`${API_URL}/api/admin/orders/${orderId}/status`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({ status }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Update order status to ${status} failed (${res.status}): ${text}`)
+  }
+}
+
+/**
+ * Convenience: advance a freshly-created PendingPayment order through
+ * Paid → InProduction so it is eligible for admin shipping operations.
+ */
+export async function apiAdvanceOrderToInProduction(
+  adminToken: string,
+  orderId: number,
+): Promise<void> {
+  await apiUpdateOrderStatus(adminToken, orderId, 'Paid')
+  await apiUpdateOrderStatus(adminToken, orderId, 'InProduction')
+}
+
+/**
  * Set shipping info on an order (admin). This also flips status to "Shipped".
  */
 export async function apiSetShipping(

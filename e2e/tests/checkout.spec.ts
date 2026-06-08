@@ -101,7 +101,7 @@ test.describe('Checkout flow', () => {
     await waitForShippingEstimate(page)
 
     // Get the grand total text under "Standard" mode (default)
-    const totalEl = page.locator('dd.text-blue-700').filter({ hasText: 'kr' })
+    const totalEl = page.locator('dd.summary-total-price').filter({ hasText: 'kr' })
     const standardTotal = await totalEl.innerText()
 
     // Switch to Express
