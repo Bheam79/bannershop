@@ -13,7 +13,18 @@ namespace BannerShop.Core.Entities;
 public class BannerDesign
 {
     public int Id { get; set; }
-    public int UserId { get; set; }
+
+    /// <summary>
+    /// The authenticated user who uploaded this design. Nullable since BANNERSH-96:
+    /// anonymous users may upload; UserId is null until (or unless) the user logs in.
+    /// </summary>
+    public int? UserId { get; set; }
+
+    /// <summary>
+    /// Client IP address for anonymous uploads (stored for loose ownership tracking).
+    /// Null for authenticated uploads.
+    /// </summary>
+    public string? IpAddress { get; set; }
 
     /// <summary>Original filename as uploaded by the user (display only).</summary>
     public string OriginalFileName { get; set; } = string.Empty;
@@ -44,6 +55,6 @@ public class BannerDesign
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    // Navigation
-    public User User { get; set; } = null!;
+    // Navigation (nullable since UserId became optional in BANNERSH-96)
+    public User? User { get; set; }
 }

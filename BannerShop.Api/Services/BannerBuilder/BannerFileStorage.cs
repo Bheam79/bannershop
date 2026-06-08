@@ -26,10 +26,13 @@ public sealed class BannerFileStorage
 
     public long MaxFileSizeBytes => _options.MaxUploadBytes;
 
-    /// <summary>Returns the absolute folder path for one user's banner-builder files (creating it if needed).</summary>
-    public string EnsureUserDirectory(int userId)
+    /// <summary>
+    /// Returns the absolute folder path for a user's banner-builder files (creating it if needed).
+    /// Anonymous uploads (userId == null) are stored under the "0" directory.
+    /// </summary>
+    public string EnsureUserDirectory(int? userId)
     {
-        var dir = Path.Combine(_options.LocalRoot, SubFolder, userId.ToString());
+        var dir = Path.Combine(_options.LocalRoot, SubFolder, (userId ?? 0).ToString());
         Directory.CreateDirectory(dir);
         return dir;
     }
@@ -41,9 +44,12 @@ public sealed class BannerFileStorage
         return $"{Guid.NewGuid():N}.{ext}";
     }
 
-    /// <summary>Returns the relative storage path (under BasePath) given the user and leaf filename.</summary>
-    public static string RelativePathFor(int userId, string fileName)
-        => $"{SubFolder}/{userId}/{fileName}";
+    /// <summary>
+    /// Returns the relative storage path (under BasePath) given the user and leaf filename.
+    /// Anonymous uploads (userId == null) use the "0" directory.
+    /// </summary>
+    public static string RelativePathFor(int? userId, string fileName)
+        => $"{SubFolder}/{(userId ?? 0)}/{fileName}";
 
     /// <summary>Returns the absolute filesystem path for a given storage path.</summary>
     public string AbsolutePathFor(string relativeStoragePath)

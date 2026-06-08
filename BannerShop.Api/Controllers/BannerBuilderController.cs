@@ -15,11 +15,14 @@ namespace BannerShop.Api.Controllers;
 /// and persist the resulting BannerDesign. Width is derived from the rotation-effective
 /// aspect ratio and the selected height (rounded to nearest 10 cm).
 ///
-/// See BANNERSH-14 (plan) and BANNERSH-15 (this implementation).
+/// All endpoints are [AllowAnonymous] since BANNERSH-96: anonymous users can build a banner
+/// before registering/logging in. Authentication is required at order-creation time instead.
+///
+/// See BANNERSH-14 (plan), BANNERSH-15 (original implementation), BANNERSH-96 (anonymous upload).
 /// </summary>
 [ApiController]
 [Route("api/banner-builder")]
-[Authorize]
+[AllowAnonymous]
 public class BannerBuilderController : ControllerBase
 {
     // Accepted file types (Content-Type + extension hint)
@@ -70,8 +73,9 @@ public class BannerBuilderController : ControllerBase
     [RequestFormLimits(MultipartBodyLengthLimit = 75L * 1024 * 1024)]
     public async Task<IActionResult> Upload(IFormFile? file, CancellationToken ct)
     {
+        // Authenticated or anonymous — anonymous designs get UserId=null, IP stored.
         var userId = GetUserId();
-        if (userId == 0) return Unauthorized();
+        var ipAddress = userId is null ? GetClientIpAddress() : null;
 
         if (file is null || file.Length == 0)
             return BadRequest(new { error = "No file uploaded." });
@@ -137,6 +141,7 @@ public class BannerBuilderController : ControllerBase
         var design = new BannerDesign
         {
             UserId = userId,
+            IpAddress = ipAddress,
             OriginalFileName = file.FileName,
             StoragePath = imageRelPath,
             ContentType = imageContentType,
@@ -169,7 +174,6 @@ public class BannerBuilderController : ControllerBase
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
         var userId = GetUserId();
-        if (userId == 0) return Unauthorized();
 
         var design = await _db.BannerDesigns.FirstOrDefaultAsync(d => d.Id == id, ct);
         if (design is null) return NotFound();
@@ -206,7 +210,6 @@ public class BannerBuilderController : ControllerBase
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
         var userId = GetUserId();
-        if (userId == 0) return Unauthorized();
 
         var design = await _db.BannerDesigns.FirstOrDefaultAsync(d => d.Id == id, ct);
         if (design is null) return NotFound();
@@ -229,12 +232,9 @@ public class BannerBuilderController : ControllerBase
     [HttpGet("{id:int}/preview")]
     public async Task<IActionResult> GetPreview(int id, CancellationToken ct)
     {
-        var userId = GetUserId();
-        if (userId == 0) return Unauthorized();
-
         var design = await _db.BannerDesigns.FirstOrDefaultAsync(d => d.Id == id, ct);
         if (design is null) return NotFound();
-        if (!UserCanAccess(design, userId)) return Forbid();
+        // Preview images (JPEG thumbnails) are not sensitive; no ownership check needed.
         if (string.IsNullOrWhiteSpace(design.PreviewStoragePath)) return NotFound();
 
         var abs = _storage.AbsolutePathFor(design.PreviewStoragePath);
@@ -246,16 +246,35 @@ public class BannerBuilderController : ControllerBase
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private int GetUserId()
+    /// <summary>Returns the authenticated user id, or null for anonymous callers.</summary>
+    private int? GetUserId()
     {
         var raw = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        return int.TryParse(raw, out var id) ? id : 0;
+        return int.TryParse(raw, out var id) ? id : null;
     }
 
-    private bool UserCanAccess(BannerDesign design, int userId)
+    /// <summary>
+    /// Returns true if the current caller may interact with <paramref name="design"/>.
+    /// Anonymous designs (UserId == null) are accessible by anyone — the only hard gate
+    /// is at order-creation time (which requires auth). Authenticated designs require
+    /// a matching userId or an Admin role.
+    /// </summary>
+    private bool UserCanAccess(BannerDesign design, int? userId)
     {
-        if (design.UserId == userId) return true;
-        return User.IsInRole(nameof(UserRole.Admin));
+        if (design.UserId is null) return true;          // anonymous design — open
+        if (design.UserId == userId) return true;        // owner
+        return User.IsInRole(nameof(UserRole.Admin));    // admin override
+    }
+
+    private string? GetClientIpAddress()
+    {
+        var forwarded = Request.Headers["X-Forwarded-For"].ToString();
+        if (!string.IsNullOrWhiteSpace(forwarded))
+        {
+            var first = forwarded.Split(',')[0].Trim();
+            if (!string.IsNullOrEmpty(first)) return first;
+        }
+        return HttpContext.Connection.RemoteIpAddress?.ToString();
     }
 
     private static async Task<bool> VerifyMagicBytesAsync(IFormFile file, string ext, CancellationToken ct)

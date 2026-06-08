@@ -91,9 +91,13 @@ public class OrderService : IOrderService
             .ToList();
         if (requestedDesignIds.Count > 0)
         {
+            // Accept designs owned by this user OR anonymous designs (UserId == null).
+            // Anonymous designs were uploaded before the user registered/logged in;
+            // the important security gate is that the user is now authenticated here.
             var ownedDesigns = await _db.BannerDesigns
                 .AsNoTracking()
-                .Where(d => requestedDesignIds.Contains(d.Id) && d.UserId == userId)
+                .Where(d => requestedDesignIds.Contains(d.Id)
+                         && (d.UserId == null || d.UserId == userId))
                 .Select(d => d.Id)
                 .ToListAsync(ct);
             foreach (var designId in requestedDesignIds)
