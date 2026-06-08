@@ -1,4 +1,5 @@
 using BannerShop.Api.Models.DesignRequests;
+using BannerShop.Api.Services.AiCredits;
 using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Api.Services.Email;
 using BannerShop.Api.Services.Orders.Stripe;
@@ -21,6 +22,7 @@ public sealed class DesignRequestService : IDesignRequestService
     private readonly BannerFileStorage _storage;
     private readonly IImageProcessingService _images;
     private readonly IEmailService _email;
+    private readonly IAiCreditService _credits;
     private readonly ILogger<DesignRequestService> _log;
 
     public DesignRequestService(
@@ -30,6 +32,7 @@ public sealed class DesignRequestService : IDesignRequestService
         BannerFileStorage storage,
         IImageProcessingService images,
         IEmailService email,
+        IAiCreditService credits,
         ILogger<DesignRequestService> log)
     {
         _db = db;
@@ -38,6 +41,7 @@ public sealed class DesignRequestService : IDesignRequestService
         _storage = storage;
         _images = images;
         _email = email;
+        _credits = credits;
         _log = log;
     }
 
@@ -204,6 +208,7 @@ public sealed class DesignRequestService : IDesignRequestService
         var r = await _db.DesignRequests
             .AsNoTracking()
             .Include(x => x.Revisions.OrderBy(rv => rv.RevisionNumber))
+            .Include(x => x.Generations.OrderBy(g => g.CreatedAt))
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (r is null) return null;
         if (r.UserId != callerUserId && !isAdmin) return null;
@@ -231,6 +236,66 @@ public sealed class DesignRequestService : IDesignRequestService
 
         await _db.SaveChangesAsync(ct);
         return DesignRequestActionResult.Ok(ToDetail(r));
+    }
+
+    public async Task<RegenerateResult> RegenerateAsync(int id, int callerUserId, RegenerateAiRequestDto req, CancellationToken ct = default)
+    {
+        var r = await _db.DesignRequests
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
+
+        if (r is null) return RegenerateResult.Fail("Design request not found.", 404);
+        if (r.UserId != callerUserId) return RegenerateResult.Fail("Forbidden.", 403);
+        if (r.Mode != DesignRequestMode.Ai)
+            return RegenerateResult.Fail("Regenerate is only available for AI design requests.");
+
+        // Allow regenerate from AwaitingApproval (most common), InProgress (retry after failure), or Failed.
+        if (r.Status is not (DesignRequestStatus.AwaitingApproval
+                          or DesignRequestStatus.InProgress
+                          or DesignRequestStatus.Failed))
+        {
+            return RegenerateResult.Fail($"Cannot regenerate from status {r.Status}.");
+        }
+
+        // Consume 1 credit — returns false if insufficient.
+        var consumed = await _credits.TryConsumeAsync(callerUserId, count: 1, ct);
+        if (!consumed)
+        {
+            var balance = await _credits.GetBalanceAsync(callerUserId, ct);
+            return RegenerateResult.Paywall(balance, new
+            {
+                reason = "insufficient_credits"
+            });
+        }
+
+        // Apply mutable input overrides.
+        if (!string.IsNullOrWhiteSpace(req.TextContent))
+            r.TextContent = req.TextContent.Trim();
+        if (!string.IsNullOrWhiteSpace(req.ThemeDescription))
+            r.ThemeDescription = req.ThemeDescription.Trim();
+
+        // Pre-create a BannerGeneration row so we can return the ID immediately.
+        var generation = new BannerGeneration
+        {
+            DesignRequestId = r.Id,
+            Status = BannerGenerationStatus.Pending,
+            IsActive = false,   // pipeline sets it active when it starts
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.BannerGenerations.Add(generation);
+
+        // Reset status so the pipeline's guard doesn't skip.
+        r.Status = DesignRequestStatus.InProgress;
+        r.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        // Enqueue for the background processor.
+        await _queue.EnqueueAsync(r.Id, ct);
+
+        var creditsRemaining = await _credits.GetBalanceAsync(callerUserId, ct);
+        _log.LogInformation("RegenerateAsync: enqueued generation {GenId} for DesignRequest {Id} (credits left: {Credits})",
+            generation.Id, r.Id, creditsRemaining);
+
+        return RegenerateResult.Ok(generation.Id, creditsRemaining);
     }
 
     public async Task MarkPaidAndEnqueueAsync(string paymentIntentId, CancellationToken ct = default)
@@ -373,6 +438,7 @@ public sealed class DesignRequestService : IDesignRequestService
             PreviewUrl = string.IsNullOrEmpty(previewPath) ? null : _storage.PublicUrlFor(previewPath),
             FinalCroppedUrl = string.IsNullOrEmpty(r.FinalCroppedStoragePath) ? null : _storage.PublicUrlFor(r.FinalCroppedStoragePath),
             FinalBannerDesignId = r.FinalBannerDesignId,
+            CurrentGenerationId = r.CurrentGenerationId,
             LastError = r.LastError,
             CustomerApprovedAt = r.CustomerApprovedAt,
             DesignerNotes = r.DesignerNotes,
@@ -384,6 +450,17 @@ public sealed class DesignRequestService : IDesignRequestService
                     RevisionNumber = rv.RevisionNumber,
                     CustomerComment = rv.CustomerComment,
                     CreatedAt = rv.CreatedAt
+                })
+                .ToList(),
+            GenerationHistory = r.Generations
+                .OrderBy(g => g.CreatedAt)
+                .Select(g => new BannerGenerationHistoryItemDto
+                {
+                    Id = g.Id,
+                    Status = g.Status.ToString(),
+                    IsActive = g.IsActive,
+                    CreatedAt = g.CreatedAt,
+                    CompletedAt = g.CompletedAt
                 })
                 .ToList(),
             CreatedAt = r.CreatedAt,

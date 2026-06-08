@@ -83,9 +83,18 @@ public class DesignRequest
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    // ── BannerGeneration tracking (BANNERSH-66) ───────────────────────────────
+    /// <summary>
+    /// FK to the most-recently completed <see cref="BannerGeneration"/> row for this session.
+    /// Null until the first generation finishes. Updated on each successful pipeline run.
+    /// </summary>
+    public int? CurrentGenerationId { get; set; }
+
     // Navigation
     public User User { get; set; } = null!;
     public BannerTemplate BannerTemplate { get; set; } = null!;
     public BannerDesign? FinalBannerDesign { get; set; }
+    public BannerGeneration? CurrentGeneration { get; set; }
     public ICollection<DesignRequestRevision> Revisions { get; set; } = new List<DesignRequestRevision>();
+    public ICollection<BannerGeneration> Generations { get; set; } = new List<BannerGeneration>();
 }

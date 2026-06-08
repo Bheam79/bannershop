@@ -115,12 +115,42 @@ public class DesignRequestDetailDto
     public string? PreviewUrl { get; set; }
     public string? FinalCroppedUrl { get; set; }
     public int? FinalBannerDesignId { get; set; }
+    public int? CurrentGenerationId { get; set; }
     public string? LastError { get; set; }
     public DateTime? CustomerApprovedAt { get; set; }
     public string? DesignerNotes { get; set; }
     public IReadOnlyList<DesignRequestRevisionDto> Revisions { get; set; } = Array.Empty<DesignRequestRevisionDto>();
+    /// <summary>All generation attempts, oldest first. Image URLs are not included — only the active one is shown via PreviewUrl.</summary>
+    public IReadOnlyList<BannerGenerationHistoryItemDto> GenerationHistory { get; set; } = Array.Empty<BannerGenerationHistoryItemDto>();
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>One entry in the generation history list (no image URLs — only active one is surfaced).</summary>
+public class BannerGenerationHistoryItemDto
+{
+    public int Id { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
+
+/// <summary>POST /api/design-requests/{id}/regenerate body.</summary>
+public class RegenerateAiRequestDto
+{
+    /// <summary>Optional updated banner text. If omitted, the existing value is kept.</summary>
+    public string? TextContent { get; set; }
+
+    /// <summary>Optional updated theme/style description. If omitted, the existing value is kept.</summary>
+    public string? ThemeDescription { get; set; }
+}
+
+/// <summary>202 response from POST /api/design-requests/{id}/regenerate.</summary>
+public class RegenerateAiResponseDto
+{
+    public int GenerationId { get; set; }
+    public int CreditsRemaining { get; set; }
 }
 
 /// <summary>Snapshot of a single revision comment.</summary>

@@ -5,6 +5,7 @@ using BannerShop.Api.Services.Email;
 using BannerShop.Core.Enums;
 using BannerShop.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using BannerShop.Core.Entities;
 
 namespace BannerShop.Api.Services.DesignRequests;
 
@@ -252,6 +253,7 @@ public sealed class AdminDesignRequestService : IAdminDesignRequestService
 
         var r = await _db.DesignRequests
             .Include(x => x.Revisions)
+            .Include(x => x.Generations)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (r is null) return DesignRequestActionResult.Fail("Design request not found.");
 
@@ -298,6 +300,16 @@ public sealed class AdminDesignRequestService : IAdminDesignRequestService
         var newRelative = BannerFileStorage.RelativePathFor(r.UserId, fileName);
         r.FinalCroppedStoragePath = newRelative;
         r.UpdatedAt = DateTime.UtcNow;
+
+        // Also update the active BannerGeneration row's CroppedStoragePath (BANNERSH-66).
+        var activeGeneration = r.Generations.FirstOrDefault(g => g.IsActive);
+        if (activeGeneration is not null)
+        {
+            activeGeneration.CroppedStoragePath = newRelative;
+            _log.LogInformation("DesignRequest {Id}: updated active BannerGeneration {GenId} CroppedStoragePath -> {Path}",
+                r.Id, activeGeneration.Id, newRelative);
+        }
+
         await _db.SaveChangesAsync(ct);
 
         _log.LogInformation("DesignRequest {Id}: FinalCroppedStoragePath upscaled x{Scale} -> {Path}",

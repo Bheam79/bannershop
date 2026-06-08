@@ -252,11 +252,13 @@ public class AiGenerationPipelineTests : IDisposable
         saved.FinalCroppedStoragePath.Should().BeNull();
     }
 
-    // 4. Already-terminal-ish status (AwaitingApproval) is idempotent
+    // 4. Truly terminal statuses (Approved, Final, Cancelled) short-circuit without regenerating.
+    //    AwaitingApproval is NOT terminal — the /regenerate endpoint resets to InProgress first,
+    //    but the pipeline itself now accepts AwaitingApproval requests (to be safe for retries).
     [Theory]
-    [InlineData(DesignRequestStatus.AwaitingApproval)]
     [InlineData(DesignRequestStatus.Approved)]
     [InlineData(DesignRequestStatus.Final)]
+    [InlineData(DesignRequestStatus.Cancelled)]
     public async Task Terminal_status_short_circuits_without_regenerating(DesignRequestStatus status)
     {
         using var db = DbHelper.CreateInMemory();
@@ -378,5 +380,142 @@ public class AiGenerationPipelineTests : IDisposable
         saved!.Status.Should().Be(DesignRequestStatus.AwaitingApproval);
         saved.LastError.Should().BeNull();
         saved.AiResultStoragePath.Should().NotBeNullOrEmpty();
+    }
+
+    // ── BANNERSH-66: BannerGeneration tracking ───────────────────────────────
+
+    // 8. Pipeline creates a BannerGeneration row and sets it IsActive on success
+    [Fact]
+    public async Task Pipeline_creates_BannerGeneration_row_and_sets_active()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+
+        var req = MakeRequest();
+        db.DesignRequests.Add(req);
+        await db.SaveChangesAsync();
+
+        var ai = MakeAiMock();
+        var images = MakeImagesMock();
+        var pipeline = MakePipeline(db, ai.Object, images.Object);
+
+        await pipeline.RunAsync(req.Id, CancellationToken.None);
+
+        // Exactly one BannerGeneration row should exist.
+        var generations = db.BannerGenerations.Where(g => g.DesignRequestId == req.Id).ToList();
+        generations.Should().ContainSingle();
+
+        var gen = generations.Single();
+        gen.Status.Should().Be(BannerGenerationStatus.Completed);
+        gen.IsActive.Should().BeTrue();
+        gen.StoragePath.Should().NotBeNullOrEmpty();
+        gen.CroppedStoragePath.Should().NotBeNullOrEmpty();
+        gen.CompletedAt.Should().NotBeNull();
+
+        // DesignRequest.CurrentGenerationId should point to the new generation.
+        var savedReq = db.DesignRequests.Find(req.Id)!;
+        savedReq.CurrentGenerationId.Should().Be(gen.Id);
+    }
+
+    // 9. Second pipeline run (regenerate) deactivates the old generation and creates a new active one
+    [Fact]
+    public async Task Second_pipeline_run_deactivates_old_generation_and_activates_new()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+
+        var req = MakeRequest();
+        db.DesignRequests.Add(req);
+        await db.SaveChangesAsync();
+
+        var ai = MakeAiMock();
+        var images = MakeImagesMock();
+        var pipeline = MakePipeline(db, ai.Object, images.Object);
+
+        // First run
+        await pipeline.RunAsync(req.Id, CancellationToken.None);
+        var firstGen = db.BannerGenerations.Single(g => g.DesignRequestId == req.Id);
+        firstGen.IsActive.Should().BeTrue();
+
+        // Reset status to InProgress (as the /regenerate endpoint would do).
+        var savedReq = db.DesignRequests.Find(req.Id)!;
+        savedReq.Status = DesignRequestStatus.InProgress;
+        await db.SaveChangesAsync();
+
+        // Second run
+        await pipeline.RunAsync(req.Id, CancellationToken.None);
+
+        db.ChangeTracker.Clear(); // refresh from DB
+        var allGenerations = db.BannerGenerations.Where(g => g.DesignRequestId == req.Id).ToList();
+        allGenerations.Should().HaveCount(2);
+
+        // Only the newest generation should be active.
+        allGenerations.Count(g => g.IsActive).Should().Be(1);
+        var activeGen = allGenerations.Single(g => g.IsActive);
+        activeGen.Id.Should().BeGreaterThan(firstGen.Id); // newer row
+    }
+
+    // 10. Pipeline uses a pre-existing Pending generation row (created by the /regenerate endpoint)
+    [Fact]
+    public async Task Pipeline_uses_existing_pending_generation_row()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+
+        var req = MakeRequest();
+        db.DesignRequests.Add(req);
+        await db.SaveChangesAsync();
+
+        // Simulate /regenerate endpoint pre-creating the row.
+        var preCreated = new BannerGeneration
+        {
+            DesignRequestId = req.Id,
+            Status = BannerGenerationStatus.Pending,
+            IsActive = false,
+            CreatedAt = DateTime.UtcNow
+        };
+        db.BannerGenerations.Add(preCreated);
+        await db.SaveChangesAsync();
+
+        var ai = MakeAiMock();
+        var images = MakeImagesMock();
+        var pipeline = MakePipeline(db, ai.Object, images.Object);
+
+        await pipeline.RunAsync(req.Id, CancellationToken.None);
+
+        // Should have used the pre-created row (no extra row created).
+        var allGenerations = db.BannerGenerations.Where(g => g.DesignRequestId == req.Id).ToList();
+        allGenerations.Should().ContainSingle();
+
+        var gen = allGenerations.Single();
+        gen.Id.Should().Be(preCreated.Id); // same row used
+        gen.Status.Should().Be(BannerGenerationStatus.Completed);
+        gen.IsActive.Should().BeTrue();
+    }
+
+    // 11. Failed generation creates a BannerGeneration row with Failed status
+    [Fact]
+    public async Task Failed_generation_creates_failed_BannerGeneration_row()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var req = MakeRequest();
+        db.DesignRequests.Add(req);
+        await db.SaveChangesAsync();
+
+        var ai = new Mock<IAiImageService>();
+        ai.Setup(s => s.GenerateAsync(It.IsAny<AiImageRequest>(), It.IsAny<CancellationToken>()))
+          .ThrowsAsync(new InvalidOperationException("ai exploded"));
+
+        var images = MakeImagesMock();
+        var pipeline = MakePipeline(db, ai.Object, images.Object);
+
+        await pipeline.RunAsync(req.Id, CancellationToken.None);
+
+        var gen = db.BannerGenerations.Single(g => g.DesignRequestId == req.Id);
+        gen.Status.Should().Be(BannerGenerationStatus.Failed);
+        gen.ErrorMessage.Should().Be("ai exploded");
+        gen.IsActive.Should().BeTrue(); // still active (the only attempt)
+        gen.StoragePath.Should().BeNull();
     }
 }

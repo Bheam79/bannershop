@@ -28,6 +28,32 @@ public interface IDesignRequestService
     /// Idempotent for repeated webhook deliveries.
     /// </summary>
     Task MarkPaidAndEnqueueAsync(string paymentIntentId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Regenerates an AI design by consuming 1 credit, optionally updating mutable inputs,
+    /// resetting status to InProgress, and enqueuing a new generation job.
+    /// Returns 402-style failure when the user has no credits.
+    /// </summary>
+    Task<RegenerateResult> RegenerateAsync(int id, int callerUserId, RegenerateAiRequestDto req, CancellationToken ct = default);
+}
+
+/// <summary>Result of a regenerate operation — carries the new generation id and updated credit balance.</summary>
+public record RegenerateResult(
+    bool Success,
+    string? Error,
+    int StatusCode = 200,
+    int GenerationId = 0,
+    int CreditsRemaining = 0,
+    object? PaywallMetadata = null)
+{
+    public static RegenerateResult Ok(int generationId, int creditsRemaining)
+        => new(true, null, 202, generationId, creditsRemaining);
+
+    public static RegenerateResult Fail(string error, int statusCode = 400)
+        => new(false, error, statusCode);
+
+    public static RegenerateResult Paywall(int creditsRemaining, object paywallMetadata)
+        => new(false, "insufficient_credits", 402, 0, creditsRemaining, paywallMetadata);
 }
 
 public record DesignRequestActionResult(

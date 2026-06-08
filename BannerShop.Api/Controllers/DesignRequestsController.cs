@@ -108,6 +108,38 @@ public class DesignRequestsController : ControllerBase
         return Ok(result.Detail);
     }
 
+    // ── POST /api/design-requests/{id}/regenerate ────────────────────────────
+    /// <summary>
+    /// Consumes 1 AI credit and enqueues a new generation attempt with optionally updated inputs.
+    /// Returns 202 on success, 402 when the user has no credits (with paywall metadata).
+    /// </summary>
+    [HttpPost("{id:int}/regenerate")]
+    public async Task<IActionResult> Regenerate(int id, [FromBody] RegenerateAiRequestDto? req, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        if (userId == 0) return Unauthorized();
+
+        var result = await _service.RegenerateAsync(id, userId, req ?? new RegenerateAiRequestDto(), ct);
+
+        return result.StatusCode switch
+        {
+            202 => Accepted(new RegenerateAiResponseDto
+            {
+                GenerationId = result.GenerationId,
+                CreditsRemaining = result.CreditsRemaining
+            }),
+            402 => StatusCode(402, new
+            {
+                error = result.Error,
+                creditsRemaining = result.CreditsRemaining,
+                paywallMetadata = result.PaywallMetadata
+            }),
+            403 => Forbid(),
+            404 => NotFound(new { error = result.Error }),
+            _ => BadRequest(new { error = result.Error })
+        };
+    }
+
     private int GetUserId()
     {
         var raw = User.FindFirstValue(ClaimTypes.NameIdentifier);

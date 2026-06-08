@@ -23,6 +23,7 @@ public class BannerShopDbContext : DbContext
     public DbSet<BannerTemplate> BannerTemplates => Set<BannerTemplate>();
     public DbSet<DesignRequest> DesignRequests => Set<DesignRequest>();
     public DbSet<DesignRequestRevision> DesignRequestRevisions => Set<DesignRequestRevision>();
+    public DbSet<BannerGeneration> BannerGenerations => Set<BannerGeneration>();
     public DbSet<IpAiUsage> IpAiUsages => Set<IpAiUsage>();
     public DbSet<AiCreditTransaction> AiCreditTransactions => Set<AiCreditTransaction>();
 
@@ -270,6 +271,31 @@ public class BannerShopDbContext : DbContext
                 .HasForeignKey(x => x.DesignRequestId)
                 .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.DesignRequestId);
+        });
+
+        // BannerGeneration (BANNERSH-66: one row per AI pipeline attempt)
+        modelBuilder.Entity<BannerGeneration>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.StoragePath).HasMaxLength(500);
+            e.Property(x => x.CroppedStoragePath).HasMaxLength(500);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(30).IsRequired();
+            e.Property(x => x.ErrorMessage).HasMaxLength(2000);
+            e.HasOne(x => x.DesignRequest)
+                .WithMany(x => x.Generations)
+                .HasForeignKey(x => x.DesignRequestId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.DesignRequestId).HasDatabaseName("IX_BannerGenerations_DesignRequestId");
+        });
+
+        // DesignRequest.CurrentGenerationId: explicit FK to BannerGenerations (no cascade to avoid cycles)
+        modelBuilder.Entity<DesignRequest>(e =>
+        {
+            e.HasOne(x => x.CurrentGeneration)
+                .WithMany()
+                .HasForeignKey(x => x.CurrentGenerationId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.Property(x => x.CurrentGenerationId);
         });
 
         // Seed data

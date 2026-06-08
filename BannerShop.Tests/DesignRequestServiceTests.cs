@@ -1,4 +1,5 @@
 using BannerShop.Api.Models.DesignRequests;
+using BannerShop.Api.Services.AiCredits;
 using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Api.Services.DesignRequests;
 using BannerShop.Api.Services.Email;
@@ -36,7 +37,13 @@ public class DesignRequestServiceTests
 
         var images = new Mock<IImageProcessingService>();
         var email = new Mock<IEmailService>();
-        var svc = new DesignRequestService(db, stripe.Object, queue.Object, MakeStorage(), images.Object, email.Object, NullLogger<DesignRequestService>.Instance);
+        var credits = new Mock<IAiCreditService>();
+        credits.Setup(c => c.TryConsumeAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+               .ReturnsAsync(true);
+        credits.Setup(c => c.GetBalanceAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+               .ReturnsAsync(5);
+
+        var svc = new DesignRequestService(db, stripe.Object, queue.Object, MakeStorage(), images.Object, email.Object, credits.Object, NullLogger<DesignRequestService>.Instance);
         return (svc, stripe, queue);
     }
 
