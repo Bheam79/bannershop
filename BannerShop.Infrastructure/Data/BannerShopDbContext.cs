@@ -1,6 +1,7 @@
 using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace BannerShop.Infrastructure.Data;
 
@@ -22,6 +23,8 @@ public class BannerShopDbContext : DbContext
     public DbSet<BannerTemplate> BannerTemplates => Set<BannerTemplate>();
     public DbSet<DesignRequest> DesignRequests => Set<DesignRequest>();
     public DbSet<DesignRequestRevision> DesignRequestRevisions => Set<DesignRequestRevision>();
+    public DbSet<IpAiUsage> IpAiUsages => Set<IpAiUsage>();
+    public DbSet<AiCreditTransaction> AiCreditTransactions => Set<AiCreditTransaction>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -66,6 +69,36 @@ public class BannerShopDbContext : DbContext
             e.Property(x => x.Name).HasMaxLength(200).IsRequired();
             e.Property(x => x.Phone).HasMaxLength(50);
             e.Property(x => x.Role).HasConversion<string>();
+            e.Property(x => x.AiCreditsRemaining).HasDefaultValue(0);
+            e.Property(x => x.HasUsedFreeAiGeneration).HasDefaultValue(false);
+        });
+
+        // IpAiUsage (BANNERSH-65: anonymous generation throttling by IP)
+        modelBuilder.Entity<IpAiUsage>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.IpAddress).HasMaxLength(45).IsRequired();
+            e.HasIndex(x => x.IpAddress).HasDatabaseName("IX_IpAiUsages_IpAddress");
+        });
+
+        // AiCreditTransaction (BANNERSH-65: credit ledger with idempotency)
+        modelBuilder.Entity<AiCreditTransaction>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.IpAddress).HasMaxLength(45);
+            e.Property(x => x.Reason).HasConversion<string>().HasMaxLength(50).IsRequired();
+            e.Property(x => x.ReferenceId).HasMaxLength(255);
+            // Index on ReferenceId for fast idempotency look-ups.
+            // Application-layer dedup (checking for existing ReferenceId) is the primary guard.
+            // MySQL/MariaDB allows multiple NULLs even on UNIQUE indexes, but we keep this
+            // non-unique to stay compatible with the application-level idempotency check.
+            e.HasIndex(x => x.ReferenceId)
+             .HasDatabaseName("IX_AiCreditTransactions_ReferenceId");
+            e.HasOne(x => x.User)
+                .WithMany(x => x.AiCreditTransactions)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.UserId).HasDatabaseName("IX_AiCreditTransactions_UserId");
         });
 
         // RefreshToken
@@ -289,7 +322,12 @@ public class BannerShopDbContext : DbContext
             new PricingParameter { Id = 7, Name = "Forsendelse: emballasjevekt (g)", Key = "shipping_packaging_weight_g", Value = 500m, Description = "Vekt av emballasje (tube, lokk, etiketter) i gram" },
             new PricingParameter { Id = 8, Name = "Forsendelse: maks lengde (cm)", Key = "shipping_max_length_cm", Value = 240m, Description = "Maks tube-lengde transportør aksepterer (cm) — Bring Servicepakke" },
             new PricingParameter { Id = 9, Name = "Standard leveringstid (dager)", Key = "standard_lead_time_days", Value = 14m, Description = "Produksjons- og leveringstid for standard ordre (dager fra bestilling)" },
-            new PricingParameter { Id = 10, Name = "Express leveringstid (dager)", Key = "express_lead_time_days", Value = 3m, Description = "Produksjonstid for express-ordre (dager fra bestilling, før forsendelse)" }
+            new PricingParameter { Id = 10, Name = "Express leveringstid (dager)", Key = "express_lead_time_days", Value = 3m, Description = "Produksjonstid for express-ordre (dager fra bestilling, før forsendelse)" },
+            // BANNERSH-65: AI credit pool pricing parameters
+            new PricingParameter { Id = 11, Name = "AI kreditpakke pris (NOK)", Key = "ai_credit_pack_price_nok", Value = 29m, Description = "Pris for en kreditpakke med AI forslag (NOK)" },
+            new PricingParameter { Id = 12, Name = "AI kreditpakke antall", Key = "ai_credit_pack_count", Value = 10m, Description = "Antall AI genererings-kreditter per kreditpakke" },
+            new PricingParameter { Id = 13, Name = "AI aktiveringsgebyr (NOK)", Key = "ai_banner_activation_fee_nok", Value = 95m, Description = "Obligatorisk AI aktiveringsgebyr ved bestilling av banner med AI design (NOK)" },
+            new PricingParameter { Id = 14, Name = "AI kreditter ved bestilling", Key = "ai_banner_activation_credits", Value = 20m, Description = "Antall AI kreditter som gis når AI aktiveringsgebyret er betalt" }
         );
 
         // Seed BannerTemplates (celebration categories shown in the banner builder)

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
 using BannerShop.Api.Services;
+using BannerShop.Api.Services.AiCredits;
 using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Core;
 using BannerShop.Api.Services.DesignRequests;
@@ -94,6 +95,11 @@ builder.Services.AddSingleton<UploadValidator>();
 builder.Services.AddSingleton<BannerFileStorage>();
 #pragma warning restore CS0618
 builder.Services.AddSingleton<IImageProcessingService, ImageProcessingService>();
+
+// ─── AI Credit Pool (BANNERSH-65) ────────────────────────────────────────────
+builder.Services.AddScoped<IAiCreditService, AiCreditService>();
+// BotProtectionFilter is registered as a service so it can be injected into action filters.
+builder.Services.AddScoped<BotProtectionFilter>();
 
 // ─── AI Design Requests (95 kr) ──────────────────────────────────────────────
 builder.Services.Configure<OpenAiOptions>(builder.Configuration.GetSection(OpenAiOptions.SectionName));
