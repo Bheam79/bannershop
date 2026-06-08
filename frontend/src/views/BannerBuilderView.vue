@@ -3,8 +3,9 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
-import { fetchSizes } from '@/api/shop'
-import type { BannerSize, CartItem } from '@/types'
+import { fetchSizes, fetchEyeletPriceNok } from '@/api/shop'
+import type { BannerSize, CartItem, EyeletOption } from '@/types'
+import { countEyelets } from '@/types'
 import UploadZone from '@/components/banner-builder/UploadZone.vue'
 import BannerPreviewEditor from '@/components/banner-builder/BannerPreviewEditor.vue'
 import type { UploadResponse } from '@/api/bannerBuilder'
@@ -23,6 +24,15 @@ const rotationDegrees = ref<number>(0)
 
 // Quantity
 const qty = ref<number>(1)
+
+// Eyelet (malje) option
+const eyeletOption = ref<EyeletOption>('None')
+const eyeletPriceNok = ref<number>(0)
+
+const eyeletCount = computed(() =>
+  countEyelets(computedWidthCm.value, heightCm.value, eyeletOption.value)
+)
+const eyeletFeePerUnit = computed(() => eyeletCount.value * eyeletPriceNok.value)
 
 // Pricing
 const customPriceNok = ref<number | null>(null)
@@ -101,7 +111,9 @@ watch([computedWidthCm, heightCm], () => {
   }, 250)
 })
 
-const lineTotal = computed(() => (customPriceNok.value ?? 0) * qty.value)
+const lineTotal = computed(() =>
+  ((customPriceNok.value ?? 0) + eyeletFeePerUnit.value) * qty.value
+)
 
 function formatNok(n: number): string {
   return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
@@ -118,6 +130,8 @@ function addToCartAndCheckout() {
     heightCm: heightCm.value,
     quantity: qty.value,
     unitPriceNok: customPriceNok.value,
+    eyeletOption: eyeletOption.value,
+    eyeletFeeNok: eyeletFeePerUnit.value,
     designId: design.value.designId,
     notes: `Banner design #${design.value.designId} (lastet opp av kunde, rotasjon ${rotationDegrees.value}°)`,
   }
@@ -125,12 +139,17 @@ function addToCartAndCheckout() {
   router.push('/checkout')
 }
 
-// Pre-fetch sizes once so material info is available immediately after upload.
+// Pre-fetch sizes and eyelet price once so info is available immediately after upload.
 onMounted(async () => {
   try {
     allSizes.value = await fetchSizes()
   } catch {
     // Non-fatal: pricing fetch is triggered post-upload anyway.
+  }
+  try {
+    eyeletPriceNok.value = await fetchEyeletPriceNok()
+  } catch {
+    // Non-fatal: eyelet price falls back to 0 (hidden from UI).
   }
 })
 </script>
@@ -274,22 +293,65 @@ onMounted(async () => {
               />
             </div>
 
+            <!-- Eyelet (malje) option — BANNERSH-93 -->
+            <div>
+              <div class="field-label" style="margin-bottom:8px">
+                Maljer (øyebolter)
+                <span style="font-size:11px;font-weight:400;color:var(--faint);margin-left:4px">tilvalg</span>
+              </div>
+              <div style="display:grid;gap:8px">
+                <label
+                  v-for="opt in ([
+                    { value: 'None',        label: 'Ingen maljer',             sub: 'Uten hull' },
+                    { value: 'FourCorners', label: '4 maljer (hjørner)',        sub: 'En i hvert hjørne' },
+                    { value: 'PerMeter',    label: 'Maljer per meter',          sub: `Ca. 1 per 100 cm – ${eyeletCount} stk totalt` },
+                  ] as const)"
+                  :key="opt.value"
+                  class="eyelet-option"
+                  :class="{ 'eyelet-option--active': eyeletOption === opt.value }"
+                >
+                  <input
+                    type="radio"
+                    :value="opt.value"
+                    v-model="eyeletOption"
+                    style="display:none"
+                  />
+                  <div style="flex:1">
+                    <div style="font-weight:600;font-size:14px;color:var(--text)">{{ opt.label }}</div>
+                    <div style="font-size:12px;color:var(--faint)">{{ opt.sub }}</div>
+                  </div>
+                  <div v-if="opt.value !== 'None' && eyeletPriceNok > 0" style="font-size:13px;color:var(--accent);font-weight:600;white-space:nowrap">
+                    +{{ formatNok(countEyelets(computedWidthCm, heightCm, opt.value) * eyeletPriceNok) }}
+                  </div>
+                  <div class="eyelet-radio">
+                    <div class="radio-outer" :class="{ 'radio-outer--active': eyeletOption === opt.value }">
+                      <div v-if="eyeletOption === opt.value" class="radio-inner"></div>
+                    </div>
+                  </div>
+                </label>
+              </div>
+              <p style="font-size:11.5px;color:var(--faint);margin-top:6px">
+                Hem (søm) er ikke mulig på PVC-bannere av denne typen.
+              </p>
+            </div>
+
             <!-- Price box -->
             <div style="border-top:1px solid var(--line-soft);padding-top:16px;display:grid;gap:8px">
               <div style="display:flex;justify-content:space-between;font-size:14px">
-                <span style="color:var(--muted)">Stykkpris</span>
+                <span style="color:var(--muted)">Bannerpris</span>
                 <span style="color:var(--text);font-weight:500">
                   <span v-if="priceLoading || sizesLoading" style="color:var(--faint)">Beregner…</span>
                   <span v-else-if="customPriceNok != null">{{ formatNok(customPriceNok) }}</span>
                   <span v-else style="color:var(--faint)">–</span>
                 </span>
               </div>
+              <div v-if="eyeletFeePerUnit > 0" style="display:flex;justify-content:space-between;font-size:14px">
+                <span style="color:var(--muted)">Maljer ({{ eyeletCount }} stk)</span>
+                <span style="color:var(--text);font-weight:500">{{ formatNok(eyeletFeePerUnit) }}</span>
+              </div>
               <div style="display:flex;justify-content:space-between;font-size:14px">
-                <span style="color:var(--muted)">Antall × pris</span>
-                <span style="color:var(--text);font-weight:500">
-                  <span v-if="customPriceNok != null">{{ qty }} × {{ formatNok(customPriceNok) }}</span>
-                  <span v-else style="color:var(--faint)">–</span>
-                </span>
+                <span style="color:var(--muted)">Antall</span>
+                <span style="color:var(--text);font-weight:500">{{ qty }} stk</span>
               </div>
               <div style="display:flex;justify-content:space-between;font-size:16px;padding-top:10px;border-top:1px solid var(--line-soft)">
                 <span style="font-weight:700;color:var(--text)">Delsum</span>
@@ -411,5 +473,41 @@ onMounted(async () => {
   border-radius: 10px;
   padding: 10px 14px;
   font-size: 14px;
+}
+
+/* ── Eyelet option selector ───────────── */
+.eyelet-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-2);
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.eyelet-option:hover { border-color: var(--muted); }
+.eyelet-option--active {
+  border-color: var(--accent) !important;
+  background: rgba(255, 106, 61, 0.07) !important;
+}
+.eyelet-radio { flex-shrink: 0; }
+.radio-outer {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s;
+}
+.radio-outer--active { border-color: var(--accent); }
+.radio-inner {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 </style>

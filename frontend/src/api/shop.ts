@@ -25,6 +25,12 @@ export async function fetchPrice(
   return data.priceNok
 }
 
+/** Returns the current price per eyelet (malje) in NOK. */
+export async function fetchEyeletPriceNok(): Promise<number> {
+  const { data } = await apiClient.get<{ pricePerEyeletNok: number }>('/sizes/eyelet-price')
+  return data.pricePerEyeletNok
+}
+
 // ─── Shipping endpoint ──────────────────────────────────────────────────────
 
 export interface ShippingCalculateRequest {

@@ -133,6 +133,36 @@ export interface Order {
   shipmentTracking: ShipmentTracking | null
 }
 
+// ─── Eyelets (maljer) ────────────────────────────────────────────────────────
+
+/** Eyelet (malje) finishing option. Hem is not possible on PVC banners. */
+export type EyeletOption = 'None' | 'FourCorners' | 'PerMeter'
+
+/**
+ * Count intermediate eyelets between two corner eyelets separated by `sideLength` cm.
+ * Mirrors `EyeletCalculator.CountIntermediatesOnSegment` in the backend (BANNERSH-93).
+ */
+export function countIntermediatesOnSegment(sideLength: number): number {
+  if (sideLength <= 120) return 0
+  if (sideLength <= 260) return 1
+  return 2 + countIntermediatesOnSegment(sideLength - 200)
+}
+
+/** Total eyelet count for a banner. Mirrors `EyeletCalculator.CountEyelets`. */
+export function countEyelets(widthCm: number, heightCm: number, option: EyeletOption): number {
+  if (option === 'None') return 0
+  if (option === 'FourCorners') return 4
+  // PerMeter
+  if (widthCm <= 0 || heightCm <= 0) return 0
+  return (
+    4
+    + countIntermediatesOnSegment(widthCm)  // top
+    + countIntermediatesOnSegment(widthCm)  // bottom
+    + countIntermediatesOnSegment(heightCm) // left
+    + countIntermediatesOnSegment(heightCm) // right
+  )
+}
+
 // ─── Cart (frontend only) ────────────────────────────────────────────────────
 
 export interface CartItem {
@@ -141,7 +171,12 @@ export interface CartItem {
   customWidthCm: number | null
   heightCm: number
   quantity: number
+  /** Base banner price per unit (excl. eyelets). */
   unitPriceNok: number
+  /** Eyelet finishing option chosen by the customer. */
+  eyeletOption: EyeletOption
+  /** Eyelet fee per unit (count × price_per_eyelet), pre-computed client-side for display. */
+  eyeletFeeNok: number
   notes?: string
   /** Optional reference to a BannerDesign uploaded via the banner builder. */
   designId?: number

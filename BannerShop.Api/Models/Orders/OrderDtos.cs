@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using BannerShop.Core.Enums;
+using BannerShop.Core.Helpers;
 
 namespace BannerShop.Api.Models.Orders;
 
@@ -59,6 +60,12 @@ public class OrderItemInputDto
     /// </summary>
     [Range(1, int.MaxValue)]
     public int? DesignRequestId { get; set; }
+
+    /// <summary>
+    /// Eyelet (malje) finishing option. Hem is not possible on PVC banners.
+    /// Defaults to <see cref="EyeletOption.None"/> (no eyelets).
+    /// </summary>
+    public EyeletOption EyeletOption { get; set; } = EyeletOption.None;
 }
 
 public class UpdateOrderStatusRequest
@@ -162,7 +169,14 @@ public class OrderItemDto
     public int HeightCm { get; set; }
     public int Quantity { get; set; }
     public decimal AreaSqm { get; set; }
+    /// <summary>Base banner price per unit (excluding eyelets).</summary>
     public decimal UnitPriceNok { get; set; }
+    /// <summary>Eyelet option chosen at order time ("None", "FourCorners", "PerMeter").</summary>
+    public string EyeletOption { get; set; } = "None";
+    /// <summary>Number of eyelets on one banner (0 when EyeletOption is None).</summary>
+    public int EyeletCount { get; set; }
+    /// <summary>Eyelet fee per unit (EyeletCount × price_per_eyelet at order time).</summary>
+    public decimal EyeletFeeNok { get; set; }
     public decimal LineTotalNok { get; set; }
     public string? Notes { get; set; }
     public int? BannerDesignId { get; set; }

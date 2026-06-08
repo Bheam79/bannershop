@@ -39,6 +39,18 @@ public class SizesController : ControllerBase
         return Ok(result);
     }
 
+    // ── GET /api/sizes/eyelet-price ───────────────────────────────────────────
+    /// <summary>
+    /// Returns the current price per eyelet (malje) in NOK.
+    /// Used by the frontend to compute eyelet addon costs before order submission.
+    /// </summary>
+    [HttpGet("eyelet-price")]
+    public async Task<IActionResult> GetEyeletPrice()
+    {
+        var pricePerEyelet = await _pricing.GetEyeletPriceNokAsync();
+        return Ok(new { pricePerEyeletNok = pricePerEyelet });
+    }
+
     // ── GET /api/sizes/{id}/price?customWidthCm=X ─────────────────────────────
     [HttpGet("{id:int}/price")]
     public async Task<IActionResult> GetPrice(int id, [FromQuery] int? customWidthCm = null)

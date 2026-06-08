@@ -1,4 +1,6 @@
 using BannerShop.Core.Entities;
+using BannerShop.Core.Enums;
+using BannerShop.Core.Helpers;
 using BannerShop.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -29,7 +31,8 @@ public class PricingService : IPricingService
             ?? p.GetValueOrDefault("base_price_per_sqm", 180m);
         var minimumPrice    = p.GetValueOrDefault("minimum_price",        399m);
         var customSurcharge = p.GetValueOrDefault("custom_width_surcharge", 150m);
-        var hemFlatFee      = p.GetValueOrDefault("hem_and_eyelets_flat_fee", 0m);
+        // NOTE: hem (søm) is not possible on PVC banners; eyelets (maljer) are a separate
+        // per-eyelet addon calculated via CalculateEyeletCostAsync — not included here.
         // BANNERSH-88: overlap between adjacent panels when a wide banner must be glued
         // together from multiple lengths. Used to determine the panel-count multiplier.
         var panelOverlapCm  = (int)p.GetValueOrDefault("banner_panel_overlap_cm", 5m);
@@ -60,7 +63,7 @@ public class PricingService : IPricingService
         }
 
         var surcharge = size.IsCustomWidth ? customSurcharge : 0m;
-        var pricePerPanel = basePrice + hemFlatFee + surcharge;
+        var pricePerPanel = basePrice + surcharge;
 
         // BANNERSH-88: panel-count multiplier. If the banner is wider than the material
         // can produce as a single piece (Material.MaxBannerWidthCm), the price scales by
@@ -91,6 +94,32 @@ public class PricingService : IPricingService
         if (material.WidthCm > 0) return material.WidthCm;
         return int.MaxValue;
     }
+
+    // ── Eyelet (malje) addon ─────────────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public async Task<decimal> GetEyeletPriceNokAsync()
+    {
+        var p = await _db.PricingParameters
+            .AsNoTracking()
+            .ToDictionaryAsync(x => x.Key, x => x.Value);
+        return p.GetValueOrDefault("eyelet_price_nok", 0m);
+    }
+
+    /// <inheritdoc/>
+    public async Task<(decimal FeeNok, int Count)> CalculateEyeletCostAsync(
+        int widthCm, int heightCm, EyeletOption option)
+    {
+        if (option == EyeletOption.None) return (0m, 0);
+
+        var count = EyeletCalculator.CountEyelets(widthCm, heightCm, option);
+        if (count == 0) return (0m, 0);
+
+        var pricePerEyelet = await GetEyeletPriceNokAsync();
+        return (decimal.Round(pricePerEyelet * count, 2), count);
+    }
+
+    // ── Panel helpers ─────────────────────────────────────────────────────────
 
     /// <summary>
     /// Compute the number of panels needed to cover <paramref name="bannerWidthCm"/> given

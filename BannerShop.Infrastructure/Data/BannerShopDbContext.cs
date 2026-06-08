@@ -161,6 +161,10 @@ public class BannerShopDbContext : DbContext
             e.Property(x => x.AreaSqm).HasColumnType("decimal(10,4)");
             e.Property(x => x.UnitPriceNok).HasColumnType("decimal(10,2)");
             e.Property(x => x.LineTotalNok).HasColumnType("decimal(10,2)");
+            // BANNERSH-93: eyelet (malje) addon — stored as string in DB for readability.
+            e.Property(x => x.EyeletOption).HasConversion<string>().HasMaxLength(20).HasDefaultValue(EyeletOption.None);
+            e.Property(x => x.EyeletCount).HasDefaultValue(0);
+            e.Property(x => x.EyeletFeeNok).HasColumnType("decimal(10,2)").HasDefaultValue(0m);
             e.HasOne(x => x.Order)
                 .WithMany(x => x.Items)
                 .HasForeignKey(x => x.OrderId)
@@ -359,7 +363,9 @@ public class BannerShopDbContext : DbContext
             new PricingParameter { Id = 1, Name = "Basispris per kvadratmeter", Key = "base_price_per_sqm", Value = 180m, Description = "NOK per m² for standard banner material (400g)" },
             new PricingParameter { Id = 2, Name = "Minimumspris", Key = "minimum_price", Value = 399m, Description = "Laveste pris for et enkelt banner (NOK)" },
             new PricingParameter { Id = 3, Name = "Tillegg valgfri bredde", Key = "custom_width_surcharge", Value = 150m, Description = "Ekstra kostnad for valgfri bredde (NOK)" },
-            new PricingParameter { Id = 4, Name = "Hem og øyebolter (flat avgift)", Key = "hem_and_eyelets_flat_fee", Value = 0m, Description = "Fast avgift for hem og øyebolter - inkludert i basispris" },
+            // BANNERSH-93: hem is not applicable on PVC banners. Eyelets (maljer) are a
+            // per-eyelet addon added to each order item — not baked into the base price.
+            new PricingParameter { Id = 4, Name = "Maljepris (per stk)", Key = "eyelet_price_nok", Value = 15m, Description = "Pris per malje (NOK). Tilvalg per banner — ikke inkludert i basispris." },
             new PricingParameter { Id = 5, Name = "Express produksjonstillegg", Key = "express_fee", Value = 500m, Description = "Tillegg for express produksjon (3 dager) i NOK" },
             new PricingParameter { Id = 6, Name = "Forsendelse: rull-diameter (cm)", Key = "shipping_tube_diameter_cm", Value = 15m, Description = "Estimert diameter på rullet banner-tube for forsendelse (cm)" },
             new PricingParameter { Id = 7, Name = "Forsendelse: emballasjevekt (g)", Key = "shipping_packaging_weight_g", Value = 500m, Description = "Vekt av emballasje (tube, lokk, etiketter) i gram" },

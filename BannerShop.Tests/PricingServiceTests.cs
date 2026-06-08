@@ -1,5 +1,6 @@
 using BannerShop.Api.Services;
 using BannerShop.Core.Entities;
+using BannerShop.Core.Enums;
 using BannerShop.Tests.Helpers;
 using FluentAssertions;
 using Xunit;
@@ -92,27 +93,62 @@ public class PricingServiceTests
         price.Should().Be(399m);
     }
 
+    // ── Eyelet (malje) addon ─────────────────────────────────────────────────────
+
     [Fact]
-    public async Task CalculatePrice_StandardSize_HemFeeAddedWhenNonZero()
+    public async Task CalculateEyeletCost_NoneOption_ReturnsZero()
+    {
+        var (service, _) = CreateSeeded();
+
+        var (fee, count) = await service.CalculateEyeletCostAsync(300, 150, EyeletOption.None);
+
+        fee.Should().Be(0m);
+        count.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task CalculateEyeletCost_FourCorners_ReturnsFourTimesPrice()
     {
         var db = DbHelper.CreateInMemory();
-        // Override hem fee to 50
         db.PricingParameters.AddRange(
-            new PricingParameter { Id = 1, Name = "base", Key = "base_price_per_sqm",       Value = 180m },
-            new PricingParameter { Id = 2, Name = "min",  Key = "minimum_price",             Value = 399m },
-            new PricingParameter { Id = 3, Name = "sur",  Key = "custom_width_surcharge",    Value = 150m },
-            new PricingParameter { Id = 4, Name = "hem",  Key = "hem_and_eyelets_flat_fee",  Value = 50m  }
+            new PricingParameter { Id = 4, Name = "eyelet", Key = "eyelet_price_nok", Value = 10m }
         );
         db.SaveChanges();
 
         var service = new PricingService(db);
-        var material = DbHelper.MakeMaterial();
-        // 300×150 = 4.5sqm; 4.5×180 = 810; + 50 hem = 860
-        var size = DbHelper.MakeStandardSize(1, 300, 150, material);
+        var (fee, count) = await service.CalculateEyeletCostAsync(300, 150, EyeletOption.FourCorners);
 
-        var price = await service.CalculatePriceAsync(size);
+        count.Should().Be(4);
+        fee.Should().Be(40m); // 4 × 10
+    }
 
-        price.Should().Be(860m);
+    [Fact]
+    public async Task CalculateEyeletCost_PerMeter_300x150_Returns10Eyelets()
+    {
+        // 300cm width: 2 intermediates per side (at 100 and 200) → top+bottom = 4
+        // 150cm height: 1 intermediate per side (at 75) → left+right = 2
+        // Total: 4 corners + 4 + 2 = 10 eyelets
+        var db = DbHelper.CreateInMemory();
+        db.PricingParameters.Add(new PricingParameter { Id = 4, Name = "eyelet", Key = "eyelet_price_nok", Value = 15m });
+        db.SaveChanges();
+
+        var service = new PricingService(db);
+        var (fee, count) = await service.CalculateEyeletCostAsync(300, 150, EyeletOption.PerMeter);
+
+        count.Should().Be(10);
+        fee.Should().Be(150m); // 10 × 15
+    }
+
+    [Fact]
+    public async Task CalculateEyeletCost_PerMeter_ZeroPriceParam_ReturnsZeroFeeNonZeroCount()
+    {
+        // If admin hasn't set a price yet (0m), count is computed but fee is 0.
+        var (service, _) = CreateSeeded(); // seeded eyelet_price_nok = 0m
+
+        var (fee, count) = await service.CalculateEyeletCostAsync(300, 150, EyeletOption.PerMeter);
+
+        count.Should().Be(10);
+        fee.Should().Be(0m);
     }
 
     [Fact]

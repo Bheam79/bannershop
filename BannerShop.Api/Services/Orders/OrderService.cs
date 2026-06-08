@@ -150,7 +150,13 @@ public class OrderService : IOrderService
             var unitPrice = await _pricing.CalculatePriceAsync(size, input.CustomWidthCm);
             var widthCm = size.IsCustomWidth ? (input.CustomWidthCm ?? 0) : (size.WidthCm ?? 0);
             var areaSqm = decimal.Round((widthCm / 100m) * (size.HeightCm / 100m), 4);
-            var lineTotal = decimal.Round(unitPrice * input.Quantity, 2);
+
+            // Eyelet (malje) addon — calculated server-side so the price is snapshotted
+            // against the pricing parameters at order time.
+            var (eyeletFee, eyeletCount) = await _pricing.CalculateEyeletCostAsync(
+                widthCm, size.HeightCm, input.EyeletOption);
+
+            var lineTotal = decimal.Round((unitPrice + eyeletFee) * input.Quantity, 2);
             itemsSubtotal += lineTotal;
 
             items.Add(new OrderItem
@@ -161,6 +167,9 @@ public class OrderService : IOrderService
                 Quantity         = input.Quantity,
                 AreaSqm          = areaSqm,
                 UnitPriceNok     = decimal.Round(unitPrice, 2),
+                EyeletOption     = input.EyeletOption,
+                EyeletCount      = eyeletCount,
+                EyeletFeeNok     = decimal.Round(eyeletFee, 2),
                 LineTotalNok     = lineTotal,
                 Notes            = string.IsNullOrWhiteSpace(input.Notes) ? null : input.Notes.Trim(),
                 BannerDesignId   = input.BannerDesignId,
@@ -645,6 +654,9 @@ public class OrderService : IOrderService
             Quantity = i.Quantity,
             AreaSqm = i.AreaSqm,
             UnitPriceNok = i.UnitPriceNok,
+            EyeletOption = i.EyeletOption.ToString(),
+            EyeletCount = i.EyeletCount,
+            EyeletFeeNok = i.EyeletFeeNok,
             LineTotalNok = i.LineTotalNok,
             Notes = i.Notes,
             BannerDesignId = i.BannerDesignId,

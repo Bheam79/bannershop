@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { DeliveryType } from '@/types'
+import type { DeliveryType, EyeletOption } from '@/types'
 
 // ── Request types ─────────────────────────────────────────────────────────────
 
@@ -17,6 +17,7 @@ export interface OrderDraftRequest {
     quantity: number
     notes?: string
     bannerDesignId?: number
+    eyeletOption?: EyeletOption
   }>
 }
 

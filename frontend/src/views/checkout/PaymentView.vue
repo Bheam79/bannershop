@@ -126,6 +126,7 @@ async function pay() {
           customWidthCm: item.customWidthCm ?? undefined,
           quantity: item.quantity,
           notes: item.notes ?? undefined,
+          eyeletOption: item.eyeletOption,
         })),
     })
     orderId = resp.orderId

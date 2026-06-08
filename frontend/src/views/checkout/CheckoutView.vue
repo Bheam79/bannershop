@@ -168,10 +168,15 @@ function formatNok(n: number): string {
             >
               <div>
                 <div class="item-name">{{ item.bannerSizeName }}</div>
-                <div class="item-sub">{{ item.quantity }} stk × {{ formatNok(item.unitPriceNok) }}</div>
+                <div class="item-sub">
+                  {{ item.quantity }} stk × {{ formatNok(item.unitPriceNok + item.eyeletFeeNok) }}
+                  <span v-if="item.eyeletOption !== 'None'" style="color:var(--faint)">
+                    (inkl. maljer)
+                  </span>
+                </div>
               </div>
               <div class="item-price">
-                {{ formatNok(item.unitPriceNok * item.quantity) }}
+                {{ formatNok((item.unitPriceNok + item.eyeletFeeNok) * item.quantity) }}
               </div>
             </li>
           </ul>

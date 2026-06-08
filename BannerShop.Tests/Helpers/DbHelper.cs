@@ -26,7 +26,7 @@ internal static class DbHelper
             new PricingParameter { Id = 1,  Name = "Base price per sqm",           Key = "base_price_per_sqm",             Value = 180m  },
             new PricingParameter { Id = 2,  Name = "Minimum price",                Key = "minimum_price",                  Value = 399m  },
             new PricingParameter { Id = 3,  Name = "Custom width surcharge",       Key = "custom_width_surcharge",         Value = 150m  },
-            new PricingParameter { Id = 4,  Name = "Hem flat fee",                 Key = "hem_and_eyelets_flat_fee",       Value = 0m    },
+            new PricingParameter { Id = 4,  Name = "Maljepris (per stk)",           Key = "eyelet_price_nok",               Value = 0m    },
             new PricingParameter { Id = 5,  Name = "Express fee",                  Key = "express_fee",                    Value = 500m  },
             new PricingParameter { Id = 6,  Name = "Tube diameter",                Key = "shipping_tube_diameter_cm",      Value = 15m   },
             new PricingParameter { Id = 7,  Name = "Packaging weight",             Key = "shipping_packaging_weight_g",    Value = 500m  },

@@ -9,7 +9,10 @@ export const useCartStore = defineStore('cart', () => {
   const expressFeeNok = ref<number>(0)
 
   const subtotal = computed(() =>
-    items.value.reduce((sum, item) => sum + item.unitPriceNok * item.quantity, 0)
+    items.value.reduce(
+      (sum, item) => sum + (item.unitPriceNok + item.eyeletFeeNok) * item.quantity,
+      0,
+    )
   )
 
   const total = computed(() =>
