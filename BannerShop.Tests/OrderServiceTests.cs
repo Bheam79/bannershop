@@ -1,5 +1,6 @@
 using BannerShop.Api.Models.Orders;
 using BannerShop.Api.Services;
+using BannerShop.Api.Services.Email;
 using BannerShop.Api.Services.Orders;
 using BannerShop.Api.Services.Orders.Stripe;
 using BannerShop.Api.Services.Shipping;
@@ -25,6 +26,23 @@ public class OrderServiceTests
         Mock<IStripePaymentService> stripeMock)
     CreateService()
     {
+        var (service, db, pricingMock, shippingMock, stripeMock, _) = CreateServiceWithEmail();
+        return (service, db, pricingMock, shippingMock, stripeMock);
+    }
+
+    /// <summary>
+    /// Extended overload that also returns the IEmailService mock so tests can
+    /// assert on transactional-email side effects (BANNERSH-59).
+    /// </summary>
+    private static (
+        OrderService service,
+        BannerShop.Infrastructure.Data.BannerShopDbContext db,
+        Mock<IPricingService> pricingMock,
+        Mock<IShippingService> shippingMock,
+        Mock<IStripePaymentService> stripeMock,
+        Mock<IEmailService> emailMock)
+    CreateServiceWithEmail()
+    {
         var db = DbHelper.CreateInMemory();
         DbHelper.SeedPricingParameters(db);
         DbHelper.SeedCatalog(db);
@@ -32,6 +50,7 @@ public class OrderServiceTests
         var pricingMock  = new Mock<IPricingService>();
         var shippingMock = new Mock<IShippingService>();
         var stripeMock   = new Mock<IStripePaymentService>();
+        var emailMock    = new Mock<IEmailService>();
 
         // Default shipping quote: 200 NOK standard, 3 carrier days
         shippingMock.Setup(s => s.CalculateAsync(
@@ -50,12 +69,18 @@ public class OrderServiceTests
                 It.IsAny<int>(), It.IsAny<int>(), It.IsAny<decimal>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new StripeIntentResult("pi_mock_1", "pi_mock_1_secret"));
 
+        // Default email mock: succeed silently
+        emailMock.Setup(e => e.SendAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
         var parcels = new ParcelCalculator(db);
         var service = new OrderService(db, pricingMock.Object, shippingMock.Object,
                                         parcels, stripeMock.Object,
+                                        emailMock.Object,
                                         NullLogger<OrderService>.Instance);
 
-        return (service, db, pricingMock, shippingMock, stripeMock);
+        return (service, db, pricingMock, shippingMock, stripeMock, emailMock);
     }
 
     private static CreateOrderDraftRequest MakeRequest(
