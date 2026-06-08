@@ -25,7 +25,23 @@ var builder = WebApplication.CreateBuilder(args);
 // ─── Local developer overrides ────────────────────────────────────────────────
 // appsettings.Local.json is git-ignored; copy appsettings.Local.json.example and
 // fill in your real API keys without touching the committed appsettings files.
-builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+// On production: `make up` copies it from the source tree; `make up` without a
+// source-side file removes any stale copy so a bad file can never cause a crash.
+// The try/catch guards against a malformed file surviving that cleanup.
+const string localJsonPath = "appsettings.Local.json";
+if (File.Exists(localJsonPath))
+{
+    try
+    {
+        builder.Configuration.AddJsonFile(localJsonPath, optional: false, reloadOnChange: true);
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(
+            $"[WARN] appsettings.Local.json exists but could not be loaded ({ex.Message}). " +
+            "Fix or delete the file; continuing without it.");
+    }
+}
 
 // ─── Database ─────────────────────────────────────────────────────────────────
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")

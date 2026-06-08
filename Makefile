@@ -292,6 +292,13 @@ config: secrets publish
 	'    "MaxPollSeconds": 600' \
 	'  }' \
 	'}' > $(APP_DIR)/appsettings.Production.json
+	@if [ -f $(ROOT_DIR)/BannerShop.Api/appsettings.Local.json ]; then \
+		echo ">>> Copying appsettings.Local.json → $(APP_DIR)/"; \
+		umask 077 && cp $(ROOT_DIR)/BannerShop.Api/appsettings.Local.json $(APP_DIR)/appsettings.Local.json; \
+	else \
+		rm -f $(APP_DIR)/appsettings.Local.json; \
+		echo ">>> No appsettings.Local.json in source tree — removed any stale copy from $(APP_DIR)/"; \
+	fi
 
 build: config
 
