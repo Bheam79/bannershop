@@ -22,6 +22,11 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ─── Local developer overrides ────────────────────────────────────────────────
+// appsettings.Local.json is git-ignored; copy appsettings.Local.json.example and
+// fill in your real API keys without touching the committed appsettings files.
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+
 // ─── Database ─────────────────────────────────────────────────────────────────
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");

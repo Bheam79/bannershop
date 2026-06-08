@@ -1,0 +1,23 @@
+{
+  "_comment": "Copy this file to appsettings.Local.json and fill in your real keys. The .Local.json file is git-ignored so secrets stay off the repo.",
+
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=127.0.0.1;Port=3306;Database=bannershop;User=bannershop;Password=bannershop_dev;"
+  },
+
+  "OpenAi": {
+    "ApiKey": "sk-proj-REPLACE_WITH_YOUR_OPENAI_KEY",
+    "ImageModel": "gpt-image-2",
+    "ImageQuality": "high"
+  },
+
+  "Replicate": {
+    "ApiToken": "r8_REPLACE_WITH_YOUR_REPLICATE_TOKEN"
+  },
+
+  "Stripe": {
+    "SecretKey": "sk_test_REPLACE_WITH_YOUR_STRIPE_SECRET_KEY",
+    "WebhookSecret": "whsec_REPLACE_WITH_YOUR_WEBHOOK_SECRET",
+    "PublishableKey": "pk_test_REPLACE_WITH_YOUR_STRIPE_PUBLISHABLE_KEY"
+  }
+}

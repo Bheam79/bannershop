@@ -8,6 +8,7 @@ obj/
 *.nupkg
 *.snupkg
 **/appsettings.*.local.json
+**/appsettings.Local.json
 
 ## ── Node / Frontend ──────────────────────────────────────────────────────────
 node_modules/
