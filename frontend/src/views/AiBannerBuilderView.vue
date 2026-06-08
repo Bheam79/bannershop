@@ -365,6 +365,13 @@ function removePhoto() {
   photoUploadError.value = null
 }
 
+// ── Clear age when switching to a non-birthday template ──────────────────────
+watch(selectedTemplateId, () => {
+  if (selectedTemplate.value?.category !== 'Birthday') {
+    personAge.value = null
+  }
+})
+
 // ── Step navigation ───────────────────────────────────────────────────────────
 function goToStep(s: 1 | 2 | 3) {
   if (s === 2 && !step1Valid.value) return
@@ -913,18 +920,50 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- Portrait photo upload -->
-        <div style="margin-bottom:2rem">
-          <h2 class="display" style="font-size:20px;color:var(--text);margin-bottom:4px">
-            Portrettfoto <span style="font-size:15px;font-weight:400;color:var(--faint)">(valgfritt)</span>
-          </h2>
-          <p style="font-size:14px;color:var(--muted);margin-bottom:16px">
+        <!-- Next -->
+        <div style="display:flex;justify-content:flex-end">
+          <button type="button" class="btn btn-primary" style="padding:12px 28px;font-size:15px" :disabled="!step1Valid" @click="goToStep(2)">
+            Neste: Tilpass <i class="fa-solid fa-arrow-right" style="font-size:12px"></i>
+          </button>
+        </div>
+      </template>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         STEP 2: Personalize
+    ════════════════════════════════════════════════════════════════════════ -->
+    <div v-else-if="step === 2">
+      <div class="bb-panel" style="display:grid;gap:20px">
+        <div>
+          <label for="personName" class="field-label">Navn <span style="color:var(--accent)">*</span></label>
+          <input id="personName" v-model="personName" type="text" maxlength="200" class="dark-input" placeholder="f.eks. Ole Petter" />
+        </div>
+        <div v-if="selectedTemplate?.category === 'Birthday'">
+          <label for="personAge" class="field-label">Alder <span style="color:var(--faint);font-weight:400">(valgfritt)</span></label>
+          <input id="personAge" v-model.number="personAge" type="number" min="0" max="130" class="dark-input" style="width:120px" placeholder="f.eks. 50" />
+        </div>
+        <div>
+          <label for="textContent" class="field-label">Tekst på banneret <span style="color:var(--accent)">*</span></label>
+          <textarea id="textContent" v-model="textContent" rows="3" maxlength="500" class="dark-input" style="resize:none" placeholder="f.eks. Gratulerer med 50-årsdagen!" />
+          <p style="margin-top:5px;font-size:12px;color:var(--faint)">{{ textContent.length }} / 500 tegn</p>
+        </div>
+        <div>
+          <label for="themeDescription" class="field-label">Tema / stil <span style="color:var(--accent)">*</span></label>
+          <input id="themeDescription" v-model="themeDescription" type="text" maxlength="500" class="dark-input" placeholder="f.eks. Tropisk fest, lilla og gull" />
+        </div>
+
+        <!-- Portrait photo upload (moved here from step 1) -->
+        <div>
+          <div class="field-label" style="margin-bottom:4px">
+            Portrettfoto <span style="font-size:12px;font-weight:400;color:var(--faint)">(valgfritt)</span>
+          </div>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
             Last opp et bilde av personen som feires — AI-en vil inkorporere det i banneret.
           </p>
 
           <div v-if="photoPreviewUrl" style="display:flex;align-items:flex-start;gap:18px">
-            <img :src="photoPreviewUrl" alt="Opplastet portrettfoto" style="width:120px;height:120px;object-fit:cover;border-radius:12px;border:1px solid var(--line-soft)" />
-            <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+            <img :src="photoPreviewUrl" alt="Opplastet portrettfoto" style="width:100px;height:100px;object-fit:cover;border-radius:12px;border:1px solid var(--line-soft)" />
+            <div style="display:flex;flex-direction:column;gap:10px;margin-top:6px">
               <span style="font-size:14px;color:#4ade80;font-weight:600;display:flex;align-items:center;gap:7px">
                 <i class="fa-solid fa-circle-check"></i> Foto lastet opp
               </span>
@@ -966,37 +1005,6 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- Next -->
-        <div style="display:flex;justify-content:flex-end">
-          <button type="button" class="btn btn-primary" style="padding:12px 28px;font-size:15px" :disabled="!step1Valid" @click="goToStep(2)">
-            Neste: Tilpass <i class="fa-solid fa-arrow-right" style="font-size:12px"></i>
-          </button>
-        </div>
-      </template>
-    </div>
-
-    <!-- ═══════════════════════════════════════════════════════════════════
-         STEP 2: Personalize
-    ════════════════════════════════════════════════════════════════════════ -->
-    <div v-else-if="step === 2">
-      <div class="bb-panel" style="display:grid;gap:20px">
-        <div>
-          <label for="personName" class="field-label">Navn <span style="color:var(--accent)">*</span></label>
-          <input id="personName" v-model="personName" type="text" maxlength="200" class="dark-input" placeholder="f.eks. Ole Petter" />
-        </div>
-        <div>
-          <label for="personAge" class="field-label">Alder <span style="color:var(--faint);font-weight:400">(valgfritt)</span></label>
-          <input id="personAge" v-model.number="personAge" type="number" min="0" max="130" class="dark-input" style="width:120px" placeholder="f.eks. 50" />
-        </div>
-        <div>
-          <label for="textContent" class="field-label">Tekst på banneret <span style="color:var(--accent)">*</span></label>
-          <textarea id="textContent" v-model="textContent" rows="3" maxlength="500" class="dark-input" style="resize:none" placeholder="f.eks. Gratulerer med 50-årsdagen!" />
-          <p style="margin-top:5px;font-size:12px;color:var(--faint)">{{ textContent.length }} / 500 tegn</p>
-        </div>
-        <div>
-          <label for="themeDescription" class="field-label">Tema / stil <span style="color:var(--accent)">*</span></label>
-          <input id="themeDescription" v-model="themeDescription" type="text" maxlength="500" class="dark-input" placeholder="f.eks. Tropisk fest, lilla og gull" />
-        </div>
         <div>
           <div class="field-label" style="margin-bottom:10px">Størrelsesformat</div>
           <div style="display:flex;gap:12px;flex-wrap:wrap">
