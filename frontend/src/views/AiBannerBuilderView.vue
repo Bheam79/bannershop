@@ -132,7 +132,8 @@ const step2Valid = computed(
 const effectivePaywallOptions = computed<PaywallOptions>(() => ({
   creditPackPriceNok: paywallData.value?.paywallOptions?.creditPackPriceNok ?? 29,
   creditPackCount: paywallData.value?.paywallOptions?.creditPackCount ?? 10,
-  bannerOrderActivationFeeNok: paywallData.value?.paywallOptions?.bannerOrderActivationFeeNok ?? 20,
+  bannerOrderActivationFeeNok: paywallData.value?.paywallOptions?.bannerOrderActivationFeeNok ?? 95,
+  bannerOrderCreditBonus: paywallData.value?.paywallOptions?.bannerOrderCreditBonus ?? 20,
   manualDesignerUrl: paywallData.value?.paywallOptions?.manualDesignerUrl ?? '/banner-builder/manual',
   uploadOwnUrl: paywallData.value?.paywallOptions?.uploadOwnUrl ?? '/banner-builder',
 }))
@@ -463,7 +464,8 @@ async function generateBanner() {
         paywallOptions: d.paywallOptions ?? {
           creditPackPriceNok: 29,
           creditPackCount: 10,
-          bannerOrderActivationFeeNok: 20,
+          bannerOrderActivationFeeNok: 95,
+          bannerOrderCreditBonus: 20,
           manualDesignerUrl: '/banner-builder/manual',
           uploadOwnUrl: '/banner-builder',
         },
@@ -577,7 +579,8 @@ async function regenerate() {
         paywallOptions: paywallData.value?.paywallOptions ?? {
           creditPackPriceNok: 29,
           creditPackCount: 10,
-          bannerOrderActivationFeeNok: 20,
+          bannerOrderActivationFeeNok: 95,
+          bannerOrderCreditBonus: 20,
           manualDesignerUrl: '/banner-builder/manual',
           uploadOwnUrl: '/banner-builder',
         },
@@ -1497,11 +1500,11 @@ onBeforeUnmount(() => {
                   </span>
                   <div style="text-align:left">
                     <div style="font-weight:700;font-size:15px;color:var(--text)">
-                      Legg inn bestillingen nå
-                      <span style="color:#4ade80">({{ effectivePaywallOptions.bannerOrderActivationFeeNok }} ytterligere forslag inkludert)</span>
+                      Betal for banneret nå
+                      <span style="color:#4ade80">({{ effectivePaywallOptions.bannerOrderCreditBonus }} ytterligere forslag inkludert)</span>
                     </div>
                     <div style="font-size:13px;color:var(--muted);margin-top:3px">
-                      Gå til kassen med ditt nåværende design
+                      Du kan fortsatt lage flere design før du sender inn bestillingen
                     </div>
                   </div>
                 </div>

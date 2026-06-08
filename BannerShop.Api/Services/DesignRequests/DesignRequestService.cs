@@ -201,7 +201,8 @@ public sealed class DesignRequestService : IDesignRequestService
         var pricing = await _db.PricingParameters.AsNoTracking()
             .Where(p => p.Key == "ai_credit_pack_price_nok"
                      || p.Key == "ai_credit_pack_count"
-                     || p.Key == "ai_banner_activation_fee_nok")
+                     || p.Key == "ai_banner_activation_fee_nok"
+                     || p.Key == "ai_banner_activation_credits")
             .ToDictionaryAsync(p => p.Key, p => p.Value, ct);
 
         return new AiPaywallResponseDto
@@ -213,6 +214,7 @@ public sealed class DesignRequestService : IDesignRequestService
                 CreditPackPriceNok = pricing.GetValueOrDefault("ai_credit_pack_price_nok", 29m),
                 CreditPackCount = (int)pricing.GetValueOrDefault("ai_credit_pack_count", 10m),
                 BannerOrderActivationFeeNok = pricing.GetValueOrDefault("ai_banner_activation_fee_nok", 95m),
+                BannerOrderCreditBonus = (int)pricing.GetValueOrDefault("ai_banner_activation_credits", 20m),
                 ManualDesignerUrl = "/banner-builder/manual",
                 UploadOwnUrl = "/banner-builder"
             }

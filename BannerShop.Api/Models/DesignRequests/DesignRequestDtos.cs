@@ -117,6 +117,8 @@ public class PaywallOptions
     public decimal CreditPackPriceNok { get; set; }
     public int CreditPackCount { get; set; }
     public decimal BannerOrderActivationFeeNok { get; set; }
+    /// <summary>Number of AI credits granted when the user places a banner order.</summary>
+    public int BannerOrderCreditBonus { get; set; }
     public string ManualDesignerUrl { get; set; } = "/banner-builder/manual";
     public string UploadOwnUrl { get; set; } = "/banner-builder";
 }

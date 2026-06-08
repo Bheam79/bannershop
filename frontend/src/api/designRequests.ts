@@ -38,6 +38,8 @@ export interface PaywallOptions {
   creditPackPriceNok: number
   creditPackCount: number
   bannerOrderActivationFeeNok: number
+  /** Number of AI credits granted when the user places a banner order. */
+  bannerOrderCreditBonus: number
   manualDesignerUrl: string
   uploadOwnUrl: string
 }
