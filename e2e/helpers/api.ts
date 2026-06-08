@@ -192,3 +192,301 @@ export async function apiSetShipping(
     throw new Error(`Set shipping failed (${res.status}): ${text}`)
   }
 }
+
+// ─── Design-request types ──────────────────────────────────────────────────────
+
+export interface TemplateInfo {
+  id: number
+  category: string
+  nameNb: string
+  nameEn: string
+  sortOrder: number
+}
+
+/**
+ * Customer-facing view of a single design request.
+ * `stripePaymentIntentId` will start with 'pi_mock_' in development
+ * (MockStripePaymentService is active when STRIPE_SECRET_KEY is unset).
+ */
+export interface DesignRequestInfo {
+  id: number
+  mode: string                     // 'Ai' | 'Manual'
+  status: string                   // 'Pending' | 'InProgress' | 'AwaitingApproval' | 'Final' | 'Cancelled' | 'Failed'
+  personName: string
+  textContent: string
+  themeDescription: string
+  aspectRatio: string
+  language: string
+  personAge: number | null
+  priceNok: number
+  stripePaymentIntentId: string | null
+  previewUrl: string | null
+  finalCroppedUrl: string | null
+  finalBannerDesignId: number | null
+  revisionCount: number
+  regenerationsRemaining: number
+  customerApprovedAt: string | null
+  designerNotes: string | null
+  lastError: string | null
+  revisions: Array<{
+    id: number
+    revisionNumber: number
+    customerComment: string
+    createdAt: string
+  }>
+  createdAt: string
+  updatedAt: string
+}
+
+/** Customer-facing list item for GET /api/design-requests. */
+export interface DesignRequestListInfo {
+  id: number
+  mode: string
+  status: string
+  aspectRatio: string
+  priceNok: number
+  bannerTemplateId: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** Admin list item — includes customer name/email. */
+export interface AdminDesignRequestListInfo {
+  id: number
+  mode: string
+  status: string
+  aspectRatio: string
+  personName: string
+  personAge: number | null
+  customerName: string
+  customerEmail: string
+  priceNok: number
+  bannerTemplateId: number
+  revisionCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+// ─── Design-request helper functions ──────────────────────────────────────────
+
+/** Shared option shape for both AI and Manual design-request creation. */
+interface DesignRequestOpts {
+  templateId: number
+  personName: string
+  textContent: string
+  themeDescription: string
+  /** ISO 639-1 language code; defaults to 'nb'. */
+  language?: string
+  /** Banner aspect ratio; defaults to '16:9'. */
+  aspectRatio?: string
+  personAge?: number | null
+}
+
+/**
+ * Fetch all public banner templates (GET /api/templates).
+ */
+export async function apiFetchTemplates(): Promise<TemplateInfo[]> {
+  const res = await fetch(`${API_URL}/api/templates`)
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Fetch templates failed (${res.status}): ${text}`)
+  }
+  return res.json() as Promise<TemplateInfo[]>
+}
+
+/**
+ * Create an AI design request (POST /api/design-requests/ai).
+ * Returns { designRequestId, clientSecret, totalNok }.
+ * In development the clientSecret starts with 'pi_mock_' (MockStripePaymentService).
+ */
+export async function apiCreateAiDesignRequest(
+  accessToken: string,
+  opts: DesignRequestOpts,
+): Promise<{ designRequestId: number; clientSecret: string; totalNok: number }> {
+  const res = await fetch(`${API_URL}/api/design-requests/ai`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      templateId: opts.templateId,
+      personName: opts.personName,
+      textContent: opts.textContent,
+      themeDescription: opts.themeDescription,
+      language: opts.language ?? 'nb',
+      aspectRatio: opts.aspectRatio ?? '16:9',
+      personAge: opts.personAge ?? null,
+    }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Create AI design request failed (${res.status}): ${text}`)
+  }
+  return res.json() as Promise<{ designRequestId: number; clientSecret: string; totalNok: number }>
+}
+
+/**
+ * Create a manual design request (POST /api/design-requests/manual).
+ * Returns { designRequestId, clientSecret, totalNok }.
+ * In development the clientSecret starts with 'pi_mock_' (MockStripePaymentService).
+ */
+export async function apiCreateManualDesignRequest(
+  accessToken: string,
+  opts: DesignRequestOpts,
+): Promise<{ designRequestId: number; clientSecret: string; totalNok: number }> {
+  const res = await fetch(`${API_URL}/api/design-requests/manual`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      templateId: opts.templateId,
+      personName: opts.personName,
+      textContent: opts.textContent,
+      themeDescription: opts.themeDescription,
+      language: opts.language ?? 'nb',
+      aspectRatio: opts.aspectRatio ?? '16:9',
+      personAge: opts.personAge ?? null,
+    }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Create manual design request failed (${res.status}): ${text}`)
+  }
+  return res.json() as Promise<{ designRequestId: number; clientSecret: string; totalNok: number }>
+}
+
+/**
+ * Get a single design request detail (GET /api/design-requests/{id}).
+ * Admins can access any request; customers can only access their own.
+ */
+export async function apiGetDesignRequest(
+  accessToken: string,
+  id: number,
+): Promise<DesignRequestInfo> {
+  const res = await fetch(`${API_URL}/api/design-requests/${id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Get design request ${id} failed (${res.status}): ${text}`)
+  }
+  return res.json() as Promise<DesignRequestInfo>
+}
+
+/**
+ * List the caller's own design requests (GET /api/design-requests).
+ */
+export async function apiListDesignRequests(
+  accessToken: string,
+): Promise<DesignRequestListInfo[]> {
+  const res = await fetch(`${API_URL}/api/design-requests`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`List design requests failed (${res.status}): ${text}`)
+  }
+  return res.json() as Promise<DesignRequestListInfo[]>
+}
+
+/**
+ * ADMIN: update the status of a design request
+ * (PUT /api/admin/design-requests/{id}/status).
+ * Requires a JWT obtained via apiLogin(getAdminEmail(), getAdminPassword()).
+ */
+export async function apiAdminUpdateDesignRequestStatus(
+  adminToken: string,
+  id: number,
+  status: string,
+  notes?: string,
+): Promise<void> {
+  const res = await fetch(`${API_URL}/api/admin/design-requests/${id}/status`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({ status, notes: notes ?? null }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Admin update design-request status failed (${res.status}): ${text}`)
+  }
+}
+
+/**
+ * ADMIN: list all design requests with optional filters
+ * (GET /api/admin/design-requests).
+ * Returns { items, totalCount } (a PagedResult).
+ * Requires a JWT obtained via apiLogin(getAdminEmail(), getAdminPassword()).
+ */
+export async function apiAdminListDesignRequests(
+  adminToken: string,
+  params?: { status?: string; mode?: string; search?: string; page?: number; pageSize?: number },
+): Promise<{ items: AdminDesignRequestListInfo[]; totalCount: number; page: number; pageSize: number }> {
+  const qs = new URLSearchParams()
+  if (params?.status) qs.set('status', params.status)
+  if (params?.mode) qs.set('mode', params.mode)
+  if (params?.search) qs.set('search', params.search)
+  if (params?.page !== undefined) qs.set('page', String(params.page))
+  if (params?.pageSize !== undefined) qs.set('pageSize', String(params.pageSize))
+
+  const url = `${API_URL}/api/admin/design-requests${qs.toString() ? `?${qs}` : ''}`
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${adminToken}` },
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Admin list design requests failed (${res.status}): ${text}`)
+  }
+  return res.json() as Promise<{
+    items: AdminDesignRequestListInfo[]
+    totalCount: number
+    page: number
+    pageSize: number
+  }>
+}
+
+/**
+ * Customer approves a design request preview
+ * (POST /api/design-requests/{id}/approve).
+ */
+export async function apiApproveDesignRequest(
+  accessToken: string,
+  id: number,
+): Promise<void> {
+  const res = await fetch(`${API_URL}/api/design-requests/${id}/approve`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Approve design request ${id} failed (${res.status}): ${text}`)
+  }
+}
+
+/**
+ * Customer requests a revision on a design request
+ * (POST /api/design-requests/{id}/revision).
+ */
+export async function apiRequestRevision(
+  accessToken: string,
+  id: number,
+  comment: string,
+): Promise<void> {
+  const res = await fetch(`${API_URL}/api/design-requests/${id}/revision`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ comment }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Request revision on design request ${id} failed (${res.status}): ${text}`)
+  }
+}
