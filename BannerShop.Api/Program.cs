@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json.Serialization;
 using BannerShop.Api.Services;
 using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Core;
@@ -178,7 +179,8 @@ builder.Services.AddCors(options =>
 });
 
 // ─── Controllers & Swagger ────────────────────────────────────────────────────
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
