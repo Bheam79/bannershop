@@ -20,10 +20,15 @@ import {
 } from '@/api/designRequests'
 import { getAiCreditsBalance, buyCreditPack } from '@/api/aiCredits'
 import { generateRequestIntegrity } from '@/composables/useRequestIntegrity'
+import { useAiCreditsStore } from '@/stores/aiCredits'
 
 // ── Router / auth ─────────────────────────────────────────────────────────────
 const router = useRouter()
 const auth = useAuthStore()
+// Shared credit-badge store (BANNERSH-87) — mirror every local creditsRemaining
+// update into the store so the header pill stays accurate without forcing the
+// user to navigate away from the wizard.
+const creditsStore = useAiCreditsStore()
 
 // ── Step state ────────────────────────────────────────────────────────────────
 const step = ref<1 | 2 | 3>(1)
@@ -131,6 +136,13 @@ const effectivePaywallOptions = computed<PaywallOptions>(() => ({
   manualDesignerUrl: paywallData.value?.paywallOptions?.manualDesignerUrl ?? '/banner-builder/manual',
   uploadOwnUrl: paywallData.value?.paywallOptions?.uploadOwnUrl ?? '/banner-builder',
 }))
+
+// BANNERSH-87: mirror the local creditsRemaining ref into the shared store so
+// the navbar credit badge updates the instant a generation succeeds, without
+// waiting for a route change to trigger App.vue's refetch.
+watch([creditsRemaining, hasUsedFreeGeneration], ([n, used]) => {
+  if (n !== null) creditsStore.setBalance(n, used ?? undefined)
+})
 
 // ── BANNERSH-83: free-generation eligibility ─────────────────────────────────
 // Logged-in users with no remaining free generation AND zero credits will be hit by

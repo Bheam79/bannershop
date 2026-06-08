@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
+import AiCreditBadge from '@/components/layout/AiCreditBadge.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -95,6 +96,7 @@ async function handleLogout() {
         <div style="display:flex;align-items:center;gap:14px">
           <template v-if="auth.isLoggedIn">
             <a href="/account" @click.prevent="router.push('/account')" style="color:var(--muted);font-weight:500;font-size:15.5px;text-decoration:none" class="nav-link">Min konto</a>
+            <AiCreditBadge />
             <button class="btn btn-ghost" style="font-size:14px;padding:8px 14px" @click="handleLogout">Logg ut</button>
           </template>
           <template v-else>

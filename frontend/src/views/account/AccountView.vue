@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { loadStripe } from '@stripe/stripe-js'
 import type { Stripe, StripeCardElement } from '@stripe/stripe-js'
 import { useAuthStore } from '@/stores/auth'
+import { useAiCreditsStore } from '@/stores/aiCredits'
 import apiClient from '@/api/client'
 import type { User } from '@/types'
 import { listOrders } from '@/api/orders'
@@ -17,6 +18,7 @@ import {
 } from '@/api/aiCredits'
 
 const auth = useAuthStore()
+const creditsStore = useAiCreditsStore()
 const router = useRouter()
 
 // ── Active orders summary ─────────────────────────────────────────────────────
@@ -96,6 +98,9 @@ async function loadAiCredits() {
       getCreditPackInfo().catch(() => null), // pack info shouldn't fail the widget
     ])
     creditsBalance.value = balance
+    // Mirror into the shared store so the header credit badge stays accurate
+    // (BANNERSH-87).
+    creditsStore.setBalance(balance.creditsRemaining, balance.hasUsedFreeGeneration)
     packInfo.value = info
   } catch (err: unknown) {
     const ex = err as { response?: { data?: { error?: string } }; message?: string }
@@ -223,7 +228,9 @@ async function confirmCreditPackPayment() {
   // Optimistically refresh balance and close modal.
   creditPackPhase.value = 'done'
   try {
-    creditsBalance.value = await getAiCreditsBalance()
+    const updated = await getAiCreditsBalance()
+    creditsBalance.value = updated
+    creditsStore.setBalance(updated.creditsRemaining, updated.hasUsedFreeGeneration)
   } catch {
     // Non-critical — balance will refresh on next navigation.
   }

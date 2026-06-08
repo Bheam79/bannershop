@@ -2,6 +2,7 @@
 import { RouterLink, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
+import AiCreditBadge from '@/components/layout/AiCreditBadge.vue'
 
 const auth = useAuthStore()
 const cart = useCartStore()
@@ -34,6 +35,7 @@ async function handleLogout() {
           <RouterLink to="/account" style="color:var(--muted);font-weight:500;font-size:15px;text-decoration:none" class="nb-link">Min konto</RouterLink>
           <RouterLink to="/account/orders" style="color:var(--muted);font-weight:500;font-size:15px;text-decoration:none" class="nb-link">Mine ordrer</RouterLink>
           <RouterLink to="/account/design-requests" style="color:var(--muted);font-weight:500;font-size:15px;text-decoration:none" class="nb-link">Mine design-bestillinger</RouterLink>
+          <AiCreditBadge />
           <button @click="handleLogout" style="background:none;border:none;cursor:pointer;color:var(--faint);font-size:14px;font-family:var(--font-ui);transition:color .15s" class="nb-link">Logg ut</button>
         </template>
         <template v-else>
