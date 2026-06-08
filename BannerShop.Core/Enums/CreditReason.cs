@@ -17,4 +17,11 @@ public enum CreditReason
 
     /// <summary>One credit consumed to run the AI pipeline for a generation attempt.</summary>
     Consumed,
+
+    /// <summary>
+    /// Credits granted manually by an admin (e.g. via the admin user-detail page).
+    /// Logged with a null <see cref="AiCreditTransaction.ReferenceId"/> because no
+    /// payment row backs the grant — i.e. these are "free" credits.
+    /// </summary>
+    AdminGrant,
 }

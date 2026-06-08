@@ -206,6 +206,14 @@ function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'bg-gray-100 text-
         <h2 class="font-semibold text-gray-100">Design-bestillinger</h2>
         <p class="text-sm text-gray-400 mt-1">Administrer AI- og manuelle designoppdrag</p>
       </RouterLink>
+      <RouterLink
+        to="/admin/users"
+        class="block bg-gray-800 rounded-xl border border-gray-700 p-6 hover:border-blue-500 hover:bg-gray-700 transition"
+      >
+        <div class="text-3xl mb-3">👥</div>
+        <h2 class="font-semibold text-gray-100">Brukere</h2>
+        <p class="text-sm text-gray-400 mt-1">Søk i brukere og tildel gratis AI-kreditter</p>
+      </RouterLink>
     </div>
   </div>
 </template>

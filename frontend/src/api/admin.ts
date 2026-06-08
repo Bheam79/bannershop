@@ -187,3 +187,76 @@ export async function setShipping(
   )
   return data
 }
+
+// ── Admin Users (BANNERSH-86) ─────────────────────────────────────────────────
+
+export interface AdminUserListItem {
+  id: number
+  email: string
+  name: string
+  phone: string | null
+  role: string
+  aiCreditsRemaining: number
+  hasUsedFreeAiGeneration: boolean
+  orderCount: number
+  createdAt: string
+}
+
+export interface AdminUsersPage {
+  items: AdminUserListItem[]
+  totalCount: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
+export interface AdminAiCreditTransaction {
+  id: number
+  amount: number
+  reason: string
+  referenceId: string | null
+  ipAddress: string | null
+  createdAt: string
+}
+
+export interface AdminUserDetail {
+  id: number
+  email: string
+  name: string
+  phone: string | null
+  role: string
+  aiCreditsRemaining: number
+  hasUsedFreeAiGeneration: boolean
+  orderCount: number
+  designRequestCount: number
+  createdAt: string
+  recentCreditTransactions: AdminAiCreditTransaction[]
+}
+
+export interface AdminUserFilter {
+  search?: string
+  page?: number
+  pageSize?: number
+}
+
+export async function listAdminUsers(filter: AdminUserFilter = {}): Promise<AdminUsersPage> {
+  const params: Record<string, string | number> = {}
+  if (filter.search) params.search = filter.search
+  if (filter.page) params.page = filter.page
+  if (filter.pageSize) params.pageSize = filter.pageSize
+  const { data } = await apiClient.get<AdminUsersPage>('/admin/users', { params })
+  return data
+}
+
+export async function getAdminUser(id: number): Promise<AdminUserDetail> {
+  const { data } = await apiClient.get<AdminUserDetail>(`/admin/users/${id}`)
+  return data
+}
+
+export async function grantAiCredits(id: number, amount: number): Promise<AdminUserDetail> {
+  const { data } = await apiClient.post<AdminUserDetail>(
+    `/admin/users/${id}/grant-credits`,
+    { amount },
+  )
+  return data
+}
