@@ -59,12 +59,13 @@ async function handleSubmit() {
       <form @submit.prevent="handleSubmit" style="display:grid;gap:18px">
 
         <div>
-          <label class="field-label">
+          <label for="name" class="field-label">
             <i class="fa-solid fa-user"></i>
             Fullt navn
             <span class="req-star">*</span>
           </label>
           <input
+            id="name"
             v-model="name"
             type="text"
             required
@@ -75,12 +76,13 @@ async function handleSubmit() {
         </div>
 
         <div>
-          <label class="field-label">
+          <label for="email" class="field-label">
             <i class="fa-solid fa-envelope"></i>
             E-post
             <span class="req-star">*</span>
           </label>
           <input
+            id="email"
             v-model="email"
             type="email"
             required
@@ -91,12 +93,13 @@ async function handleSubmit() {
         </div>
 
         <div>
-          <label class="field-label">
+          <label for="phone" class="field-label">
             <i class="fa-solid fa-phone"></i>
             Telefon
             <span style="color:var(--faint);font-weight:400;font-size:12px">(valgfritt)</span>
           </label>
           <input
+            id="phone"
             v-model="phone"
             type="tel"
             autocomplete="tel"
@@ -106,12 +109,13 @@ async function handleSubmit() {
         </div>
 
         <div>
-          <label class="field-label">
+          <label for="password" class="field-label">
             <i class="fa-solid fa-lock"></i>
             Passord
             <span class="req-star">*</span>
           </label>
           <input
+            id="password"
             v-model="password"
             type="password"
             required
@@ -122,12 +126,13 @@ async function handleSubmit() {
         </div>
 
         <div>
-          <label class="field-label">
+          <label for="confirm-password" class="field-label">
             <i class="fa-solid fa-lock"></i>
             Bekreft passord
             <span class="req-star">*</span>
           </label>
           <input
+            id="confirm-password"
             v-model="confirmPassword"
             type="password"
             required

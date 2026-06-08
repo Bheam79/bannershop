@@ -47,10 +47,11 @@ async function handleSubmit() {
 
       <form @submit.prevent="handleSubmit" style="display:grid;gap:18px">
         <div>
-          <label class="field-label">
+          <label for="email" class="field-label">
             <i class="fa-solid fa-envelope"></i> E-post
           </label>
           <input
+            id="email"
             v-model="email"
             type="email"
             required
@@ -61,10 +62,11 @@ async function handleSubmit() {
         </div>
 
         <div>
-          <label class="field-label">
+          <label for="password" class="field-label">
             <i class="fa-solid fa-lock"></i> Passord
           </label>
           <input
+            id="password"
             v-model="password"
             type="password"
             required
