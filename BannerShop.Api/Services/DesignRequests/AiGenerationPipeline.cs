@@ -167,13 +167,25 @@ public sealed class AiGenerationPipeline
 
             // 6. Crop to the customer's aspect ratio (only needed for 18:9).
             string finalRelative = resultRelative;
+            string finalAbs = resultAbs;
             if (request.AspectRatio == "18:9")
             {
                 var croppedFileName = $"design_{request.Id}_{DateTime.UtcNow:yyyyMMddHHmmss}_crop.png";
                 var croppedAbs = Path.Combine(userDir, croppedFileName);
                 await _images.CenterCropAsync(resultAbs, croppedAbs, ratioWidth: 2, ratioHeight: 1, ct);
                 finalRelative = BannerFileStorage.RelativePathFor(storageUserId, croppedFileName);
+                finalAbs = croppedAbs;
             }
+
+            // 6b. Generate a low-res JPEG preview (max 640 px on the longer side — BANNERSH-91).
+            // This is what customers see; the full-res finalRelative is reserved for printing.
+            const int PreviewMaxPx = 640;
+            const int PreviewQuality = 72;
+            var previewFileName = $"design_{request.Id}_{DateTime.UtcNow:yyyyMMddHHmmss}_preview.jpg";
+            var previewAbs = Path.Combine(userDir, previewFileName);
+            await _images.GeneratePreviewAsync(finalAbs, previewAbs,
+                rotationDegrees: 0, maxWidth: PreviewMaxPx, quality: PreviewQuality, ct);
+            var previewRelative = BannerFileStorage.RelativePathFor(storageUserId, previewFileName);
 
             // 7. Persist results: update BannerGeneration and DesignRequest.
             generation.StoragePath = resultRelative;
@@ -184,6 +196,7 @@ public sealed class AiGenerationPipeline
             // Keep backward-compat fields on DesignRequest populated for existing callers.
             request.AiResultStoragePath = resultRelative;
             request.FinalCroppedStoragePath = finalRelative;
+            request.AiPreviewPath = previewRelative;
             request.CurrentGenerationId = generation.Id;
             request.Status = DesignRequestStatus.AwaitingApproval;
             request.LastError = null;

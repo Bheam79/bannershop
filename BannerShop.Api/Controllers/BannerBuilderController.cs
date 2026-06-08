@@ -43,8 +43,8 @@ public class BannerBuilderController : ControllerBase
         (new byte[] { 0x57, 0x45, 0x42, 0x50 }, 8),
     };
 
-    private const int PreviewMaxWidth = 1200;
-    private const int PreviewQuality = 80;
+    private const int PreviewMaxWidth = 640;
+    private const int PreviewQuality = 75;
     private const int DefaultSelectedHeightCm = 150;
 
     private readonly BannerShopDbContext _db;

@@ -325,13 +325,16 @@ public sealed class DesignRequestService : IDesignRequestService
                 r.ThemeDescription,
                 r.DesignerPreviewPath,
                 r.FinalCroppedStoragePath,
-                r.AiResultStoragePath
+                r.AiResultStoragePath,
+                r.AiPreviewPath
             })
             .ToListAsync(ct);
 
         return rows.Select(r =>
         {
-            var previewPath = r.DesignerPreviewPath ?? r.FinalCroppedStoragePath ?? r.AiResultStoragePath;
+            // Prefer the low-res AI preview (BANNERSH-91) so customers can't easily repurpose
+            // the preview for printing. Fall back to the designer path or full-res for older rows.
+            var previewPath = r.AiPreviewPath ?? r.DesignerPreviewPath ?? r.FinalCroppedStoragePath ?? r.AiResultStoragePath;
             return new DesignRequestListItemDto
             {
                 Id = r.Id,
@@ -646,7 +649,9 @@ public sealed class DesignRequestService : IDesignRequestService
     {
         // Prefer the cropped print-ready asset; fall back to the raw AI result.
         var publicPath = r.FinalCroppedStoragePath ?? r.AiResultStoragePath;
-        var previewPath = r.DesignerPreviewPath ?? publicPath;
+        // Use the low-res AI preview when available (BANNERSH-91) so customers cannot repurpose
+        // the preview for printing. Admin views still expose FinalCroppedUrl at full resolution.
+        var previewPath = r.AiPreviewPath ?? r.DesignerPreviewPath ?? publicPath;
 
         return new DesignRequestDetailDto
         {

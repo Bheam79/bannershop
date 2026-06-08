@@ -76,6 +76,14 @@ public class DesignRequest
     /// <summary>Relative storage path of the cropped print-ready PNG.</summary>
     public string? FinalCroppedStoragePath { get; set; }
 
+    /// <summary>
+    /// Low-resolution JPEG preview (max 640 px on the longer side) generated alongside
+    /// <see cref="FinalCroppedStoragePath"/> by the AI pipeline (BANNERSH-91).
+    /// Served to customers instead of the full-resolution file so the preview cannot
+    /// be repurposed for printing. Null for requests processed before this field was added.
+    /// </summary>
+    public string? AiPreviewPath { get; set; }
+
     /// <summary>Last error message recorded by the AI pipeline (if any).</summary>
     public string? LastError { get; set; }
 
