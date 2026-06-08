@@ -301,7 +301,7 @@ async function handleLogout() {
             <div class="make-ico" style="background:rgba(255,106,61,.14);border-color:rgba(255,106,61,.3)"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--accent)"></i></div>
             <h3 class="display" style="font-size:20px;margin-bottom:8px">AI-designet banner</h3>
             <p style="color:var(--muted);font-size:15px;flex:1;margin-bottom:16px">Velg anledning, skriv inn navn og tekst – så lager AI et unikt banner for deg på minutter.</p>
-            <div style="font-size:14px;color:var(--faint);margin-bottom:14px"><b style="color:var(--text);font-family:var(--font-display);font-weight:700;font-size:18px">95 kr</b> for AI-design</div>
+            <div style="font-size:14px;color:var(--faint);margin-bottom:14px"><b style="color:#4ade80;font-family:var(--font-display);font-weight:700;font-size:18px">Gratis</b> for første generering</div>
             <button class="btn btn-primary" style="justify-content:center;width:100%">Lag AI-banner →</button>
           </div>
 

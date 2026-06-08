@@ -332,7 +332,11 @@ public sealed class DesignRequestService : IDesignRequestService
             .Include(x => x.Generations.OrderBy(g => g.CreatedAt))
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (r is null) return null;
-        if (r.UserId != callerUserId && !isAdmin) return null;
+        // Anonymous design requests (UserId=null) are accessible by anyone who knows the id —
+        // they are created by un-authed users and contain no secret personal data beyond what
+        // the person typed in the form.  The short-lived design-id is treated as the bearer.
+        // Authenticated requests are private to their owner (or admin).
+        if (r.UserId is not null && r.UserId != callerUserId && !isAdmin) return null;
         return ToDetail(r);
     }
 

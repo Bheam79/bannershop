@@ -580,6 +580,19 @@ function formatNok(n: number | null | undefined): string {
 onMounted(async () => {
   await loadTemplates()
   await loadCreditsBalance()
+
+  // Resume a pending AI design from a previous session.
+  // Common case: anonymous user generated a banner, registered/logged in, and was
+  // redirected back here.  The design-id was stored in localStorage before they left.
+  const draftIdStr = localStorage.getItem('ai_banner_draft_id')
+  if (draftIdStr && auth.isLoggedIn) {
+    const draftId = parseInt(draftIdStr, 10)
+    if (!isNaN(draftId) && draftId > 0) {
+      step.value = 3
+      designRequestId.value = draftId
+      startPolling(draftId)
+    }
+  }
 })
 
 onBeforeUnmount(() => {

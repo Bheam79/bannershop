@@ -52,8 +52,8 @@ import { RouterLink } from 'vue-router'
           — AI genererer et unikt banner for deg på minutter.
         </p>
         <div style="font-size:14px;color:var(--faint);margin-bottom:18px">
-          <b style="color:var(--text);font-family:var(--font-display);font-size:22px;font-weight:700">95 kr</b>
-          <span style="font-size:13px;margin-left:4px">for AI-design</span>
+          <b style="color:#4ade80;font-family:var(--font-display);font-size:22px;font-weight:700">Gratis</b>
+          <span style="font-size:13px;margin-left:4px">for første generering</span>
         </div>
         <RouterLink to="/banner-builder/ai" class="btn btn-primary" style="justify-content:center;width:100%">
           Lag AI-banner →
