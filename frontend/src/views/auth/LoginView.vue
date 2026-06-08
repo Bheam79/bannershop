@@ -26,7 +26,8 @@ async function handleSubmit() {
     const redirect = (route.query.redirect as string) || '/account'
     router.push(redirect)
   } catch (err: any) {
-    error.value = err.response?.data?.error ?? 'Innlogging feilet. Prøv igjen.'
+    console.error('Login error:', err.response?.data?.error ?? err)
+    error.value = 'Innlogging feilet. Sjekk e-post og passord og prøv igjen.'
   } finally {
     loading.value = false
   }
