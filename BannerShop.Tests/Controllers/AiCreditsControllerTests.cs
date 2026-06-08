@@ -33,6 +33,26 @@ public class AiCreditsControllerTests : IClassFixture<TestWebApplicationFactory>
         });
     }
 
+    // ── Public pack info (BANNERSH-71) ───────────────────────────────────────
+
+    [Fact]
+    public async Task GetCreditPackInfo_WithoutAuth_Returns200WithPricing()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/ai-credits/packs");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var doc = JsonSerializer.Deserialize<JsonElement>(
+            await response.Content.ReadAsStringAsync(), _json);
+
+        doc.GetProperty("priceNok").GetDecimal().Should().Be(29m,
+            "ai_credit_pack_price_nok is seeded to 29 kr");
+        doc.GetProperty("creditCount").GetInt32().Should().Be(10,
+            "ai_credit_pack_count is seeded to 10");
+    }
+
     // ── Auth guard ───────────────────────────────────────────────────────────
 
     [Fact]

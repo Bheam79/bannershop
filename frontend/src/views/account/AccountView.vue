@@ -1,11 +1,20 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { loadStripe } from '@stripe/stripe-js'
+import type { Stripe, StripeCardElement } from '@stripe/stripe-js'
 import { useAuthStore } from '@/stores/auth'
 import apiClient from '@/api/client'
 import type { User } from '@/types'
 import { listOrders } from '@/api/orders'
 import type { OrderListItem } from '@/api/orders'
+import {
+  getAiCreditsBalance,
+  getCreditPackInfo,
+  buyCreditPack,
+  type AiCreditsBalance,
+  type CreditPackInfo,
+} from '@/api/aiCredits'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -31,6 +40,11 @@ onMounted(async () => {
   } finally {
     ordersLoading.value = false
   }
+  await loadAiCredits()
+})
+
+onBeforeUnmount(() => {
+  cardElement.value?.destroy()
 })
 
 const STATUS_LABELS: Record<string, string> = {
@@ -60,6 +74,170 @@ function formatNok(n: number): string {
 }
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('nb-NO', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+// ── AI credits widget (BANNERSH-71) ───────────────────────────────────────────
+const creditsBalance = ref<AiCreditsBalance | null>(null)
+const creditsLoading = ref(true)
+const creditsError = ref<string | null>(null)
+const packInfo = ref<CreditPackInfo | null>(null)
+
+async function loadAiCredits() {
+  if (!auth.isLoggedIn) {
+    creditsLoading.value = false
+    return
+  }
+  creditsLoading.value = true
+  creditsError.value = null
+  try {
+    // Balance + pack-info in parallel — both are tiny GETs and independent.
+    const [balance, info] = await Promise.all([
+      getAiCreditsBalance(),
+      getCreditPackInfo().catch(() => null), // pack info shouldn't fail the widget
+    ])
+    creditsBalance.value = balance
+    packInfo.value = info
+  } catch (err: unknown) {
+    const ex = err as { response?: { data?: { error?: string } }; message?: string }
+    creditsError.value =
+      ex.response?.data?.error ?? ex.message ?? 'Kunne ikke laste AI-kreditter.'
+  } finally {
+    creditsLoading.value = false
+  }
+}
+
+// Credit-pack purchase modal (inline Stripe Elements, mirrors AiBannerBuilderView).
+type CreditPackPhase = 'menu' | 'loading' | 'card' | 'processing' | 'done' | 'error'
+const buyModalOpen = ref(false)
+const creditPackPhase = ref<CreditPackPhase>('menu')
+const creditPackError = ref<string | null>(null)
+const packDetails = ref<{ clientSecret: string; creditCount: number; priceNok: number } | null>(null)
+const stripeCardError = ref<string | null>(null)
+
+const stripeRef = ref<Stripe | null>(null)
+const cardElement = ref<StripeCardElement | null>(null)
+const cardMountEl = ref<HTMLDivElement | null>(null)
+
+function openBuyModal() {
+  creditPackPhase.value = 'menu'
+  creditPackError.value = null
+  stripeCardError.value = null
+  packDetails.value = null
+  buyModalOpen.value = true
+}
+
+function closeBuyModal() {
+  if (creditPackPhase.value === 'processing') return // never close mid-payment
+  buyModalOpen.value = false
+  creditPackPhase.value = 'menu'
+  cardElement.value?.destroy()
+  cardElement.value = null
+  stripeRef.value = null
+}
+
+async function initStripe(): Promise<boolean> {
+  if (stripeRef.value) return true
+  const key = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined
+  if (!key || key.startsWith('pk_test_REPLACE')) {
+    creditPackError.value =
+      'Stripe er ikke konfigurert i dette miljøet. Kortbetaling er ikke tilgjengelig.'
+    creditPackPhase.value = 'error'
+    return false
+  }
+  try {
+    const stripe = await loadStripe(key)
+    if (!stripe) {
+      creditPackError.value = 'Stripe kunne ikke lastes. Prøv igjen.'
+      creditPackPhase.value = 'error'
+      return false
+    }
+    stripeRef.value = stripe
+    return true
+  } catch {
+    creditPackError.value = 'Stripe kunne ikke initialiseres.'
+    creditPackPhase.value = 'error'
+    return false
+  }
+}
+
+async function startCreditPackPurchase() {
+  creditPackPhase.value = 'loading'
+  creditPackError.value = null
+
+  try {
+    packDetails.value = await buyCreditPack()
+    const ok = await initStripe()
+    if (!ok) return
+    creditPackPhase.value = 'card'
+    // Card element mounts via the watch on cardMountEl below.
+  } catch (e: unknown) {
+    const ex = e as { response?: { data?: { error?: string } }; message?: string }
+    creditPackError.value =
+      ex.response?.data?.error ?? ex.message ?? 'Feil ved oppstart av betaling.'
+    creditPackPhase.value = 'error'
+  }
+}
+
+watch(cardMountEl, (el) => {
+  if (!el || !stripeRef.value) return
+  if (cardElement.value) {
+    cardElement.value.mount(el)
+    return
+  }
+  const elements = stripeRef.value.elements()
+  const card = elements.create('card', {
+    style: {
+      base: {
+        fontFamily: 'Hanken Grotesk, ui-sans-serif, system-ui, sans-serif',
+        fontSize: '16px',
+        color: '#f4efe8',
+        '::placeholder': { color: '#8a8073' },
+      },
+      invalid: { color: '#ff6a3d' },
+    },
+    hidePostalCode: true,
+  })
+  card.on('change', (event) => {
+    stripeCardError.value = event.error?.message ?? null
+  })
+  card.mount(el)
+  cardElement.value = card
+})
+
+async function confirmCreditPackPayment() {
+  if (!stripeRef.value || !cardElement.value || !packDetails.value) return
+  creditPackPhase.value = 'processing'
+  stripeCardError.value = null
+
+  const { error } = await stripeRef.value.confirmCardPayment(packDetails.value.clientSecret, {
+    payment_method: { card: cardElement.value },
+  })
+
+  if (error) {
+    stripeCardError.value = error.message ?? 'Betalingen feilet. Prøv igjen.'
+    creditPackPhase.value = 'card'
+    return
+  }
+
+  // Payment succeeded — credits are granted by the Stripe webhook asynchronously.
+  // Optimistically refresh balance and close modal.
+  creditPackPhase.value = 'done'
+  try {
+    creditsBalance.value = await getAiCreditsBalance()
+  } catch {
+    // Non-critical — balance will refresh on next navigation.
+  }
+  setTimeout(() => {
+    buyModalOpen.value = false
+    cardElement.value?.destroy()
+    cardElement.value = null
+    stripeRef.value = null
+    creditPackPhase.value = 'menu'
+  }, 1400)
+}
+
+function goToBannerBuilder() {
+  router.push('/banner-builder/ai')
 }
 
 // ── Profile form ──────────────────────────────────────────────────────────────
@@ -216,6 +394,70 @@ async function changePassword() {
       </div>
     </div>
 
+    <!-- AI credits widget (BANNERSH-71) -->
+    <div class="panel ai-credits-panel">
+      <div class="ai-credits-header">
+        <h2 class="section-title">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>
+          AI banner forslag
+        </h2>
+        <RouterLink to="/banner-builder/ai" class="link-more">
+          Lag nytt banner
+          <i class="fa-solid fa-arrow-right"></i>
+        </RouterLink>
+      </div>
+
+      <div v-if="creditsLoading" class="spinner-wrap">
+        <i class="fa-solid fa-circle-notch fa-spin spinner-icon"></i>
+      </div>
+
+      <div v-else-if="creditsError" class="alert-error">
+        <i class="fa-solid fa-circle-exclamation"></i>
+        {{ creditsError }}
+      </div>
+
+      <div v-else-if="creditsBalance" class="ai-credits-body">
+        <div class="ai-credits-balance">
+          <span class="ai-credits-label">AI forslag tilgjengelig</span>
+          <span class="ai-credits-count">{{ creditsBalance.creditsRemaining }}</span>
+        </div>
+
+        <p
+          v-if="!creditsBalance.hasUsedFreeGeneration"
+          class="ai-credits-free-hint"
+        >
+          <i class="fa-solid fa-gift"></i>
+          Du har <strong>1 gratis AI-forslag</strong> igjen — prøv det!
+        </p>
+
+        <div class="ai-credits-actions">
+          <button
+            v-if="!creditsBalance.hasUsedFreeGeneration"
+            type="button"
+            class="btn btn-primary"
+            @click="goToBannerBuilder"
+          >
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            Bruk gratis AI-forslag
+          </button>
+          <button
+            type="button"
+            class="btn"
+            :class="creditsBalance.hasUsedFreeGeneration ? 'btn-primary' : 'btn-soft'"
+            @click="openBuyModal"
+          >
+            <i class="fa-solid fa-bag-shopping"></i>
+            <template v-if="packInfo">
+              Kjøp {{ packInfo.creditCount }} AI forslag ({{ formatNok(packInfo.priceNok) }})
+            </template>
+            <template v-else>
+              Kjøp AI forslag
+            </template>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Profile section -->
     <div class="panel">
       <h2 class="section-title">
@@ -324,6 +566,120 @@ async function changePassword() {
         </div>
       </form>
     </div>
+
+    <!-- ═════════════════════════════════════════════════════════════════════
+         Buy credits modal — inline Stripe Elements card form (BANNERSH-71)
+    ════════════════════════════════════════════════════════════════════════ -->
+    <Teleport to="body">
+      <div v-if="buyModalOpen" class="modal-backdrop" @click.self="closeBuyModal">
+        <div class="modal-box" role="dialog" aria-modal="true" aria-label="Kjøp AI banner forslag">
+          <button
+            v-if="creditPackPhase !== 'processing'"
+            type="button"
+            class="modal-close-btn"
+            aria-label="Lukk"
+            @click="closeBuyModal"
+          >
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+
+          <!-- Menu phase -->
+          <div v-if="creditPackPhase === 'menu'">
+            <div class="modal-head">
+              <div class="modal-ico">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+              </div>
+              <h2 class="display modal-title">Kjøp AI banner forslag</h2>
+              <p class="modal-sub">
+                <template v-if="packInfo">
+                  <strong>{{ packInfo.creditCount }} AI forslag</strong> for
+                  <strong>{{ formatNok(packInfo.priceNok) }}</strong> — kreditene legges til
+                  kontoen din umiddelbart etter betaling.
+                </template>
+                <template v-else>
+                  Kortbetaling via Stripe — kreditene legges til kontoen din umiddelbart.
+                </template>
+              </p>
+            </div>
+            <button
+              type="button"
+              class="btn btn-primary modal-cta"
+              @click="startCreditPackPurchase"
+            >
+              <i class="fa-solid fa-credit-card"></i>
+              Fortsett til betaling
+            </button>
+          </div>
+
+          <!-- Loading phase -->
+          <div v-else-if="creditPackPhase === 'loading'" class="modal-status">
+            <i class="fa-solid fa-circle-notch fa-spin modal-status-ico"></i>
+            <p>Forbereder betaling…</p>
+          </div>
+
+          <!-- Card phase -->
+          <div v-else-if="creditPackPhase === 'card' && packDetails">
+            <button
+              type="button"
+              class="modal-back-btn"
+              @click="creditPackPhase = 'menu'"
+            >
+              <i class="fa-solid fa-arrow-left"></i> Tilbake
+            </button>
+
+            <h3 class="display modal-title" style="margin-top: 0.5rem">
+              Kjøp {{ packDetails.creditCount }} AI banner forslag
+            </h3>
+            <p class="modal-sub">
+              Pris: <strong>{{ formatNok(packDetails.priceNok) }}</strong> — belastes med en gang.
+            </p>
+
+            <label class="field-label modal-card-label">Kortdetaljer</label>
+            <div ref="cardMountEl" class="stripe-mount" />
+            <p v-if="stripeCardError" class="alert-error modal-card-error">
+              <i class="fa-solid fa-circle-exclamation"></i> {{ stripeCardError }}
+            </p>
+
+            <button
+              type="button"
+              class="btn btn-primary modal-cta"
+              @click="confirmCreditPackPayment"
+            >
+              <i class="fa-solid fa-lock"></i>
+              Betal {{ formatNok(packDetails.priceNok) }}
+            </button>
+            <p class="modal-foot">
+              <i class="fa-solid fa-shield-halved"></i>
+              Sikret av Stripe. Vi lagrer ikke kortinformasjon.
+            </p>
+          </div>
+
+          <!-- Processing phase -->
+          <div v-else-if="creditPackPhase === 'processing'" class="modal-status">
+            <i class="fa-solid fa-circle-notch fa-spin modal-status-ico"></i>
+            <p>Behandler betaling…</p>
+          </div>
+
+          <!-- Done phase -->
+          <div v-else-if="creditPackPhase === 'done'" class="modal-status">
+            <i class="fa-solid fa-circle-check modal-status-ico modal-status-ok"></i>
+            <h3 class="display modal-title">Betaling godkjent!</h3>
+            <p>Kreditene er lagt til kontoen din.</p>
+          </div>
+
+          <!-- Error phase -->
+          <div v-else-if="creditPackPhase === 'error'" class="modal-status">
+            <div class="alert-error modal-error-card">
+              <i class="fa-solid fa-circle-exclamation"></i>
+              <span>{{ creditPackError }}</span>
+            </div>
+            <button type="button" class="btn btn-soft modal-back-btn-bottom" @click="creditPackPhase = 'menu'">
+              Prøv igjen
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
   </div>
 </template>
@@ -528,4 +884,173 @@ async function changePassword() {
 .badge-ready    { background: rgba(160,110,220,.15); color: #c9a8f5;      border: 1px solid rgba(160,110,220,.3); }
 .badge-shipped  { background: rgba(60,180,100,.13);  color: #7de0a8;      border: 1px solid rgba(60,180,100,.28); }
 .badge-cancelled{ background: rgba(220,60,60,.12);   color: #f4a57a;      border: 1px solid rgba(220,60,60,.28); }
+
+/* ── AI credits widget (BANNERSH-71) ────────────────────────── */
+.ai-credits-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.ai-credits-header .section-title { margin-bottom: 0; }
+.ai-credits-body { display: flex; flex-direction: column; gap: 0.875rem; }
+.ai-credits-balance {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+}
+.ai-credits-label {
+  font-size: 0.875rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.ai-credits-count {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--accent);
+  font-family: var(--font-display);
+  line-height: 1;
+}
+.ai-credits-free-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(231,185,78,.1);
+  border: 1px solid rgba(231,185,78,.28);
+  border-radius: 10px;
+  color: var(--gold, #e7d08a);
+  font-size: 0.875rem;
+}
+.ai-credits-free-hint i { color: var(--gold, #e7d08a); flex-shrink: 0; }
+.ai-credits-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+}
+.ai-credits-actions .btn { flex: 1; min-width: 180px; justify-content: center; }
+
+/* ── Buy credits modal ──────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 8, 6, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+  backdrop-filter: blur(4px);
+}
+.modal-box {
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  padding: 28px 28px 24px;
+  width: 100%;
+  max-width: 460px;
+  position: relative;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+.modal-close-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 14px;
+  transition: background 0.15s, color 0.15s;
+}
+.modal-close-btn:hover { background: var(--line); color: var(--text); }
+.modal-head { text-align: center; margin-bottom: 20px; }
+.modal-ico {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(255,106,61,.15);
+  border: 1px solid rgba(255,106,61,.3);
+  display: grid;
+  place-items: center;
+  margin: 0 auto 12px;
+  font-size: 22px;
+  color: var(--accent);
+}
+.modal-title {
+  font-size: 1.25rem;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.modal-sub {
+  font-size: 0.875rem;
+  color: var(--muted);
+  margin: 0 auto;
+  max-width: 30em;
+}
+.modal-cta {
+  width: 100%;
+  justify-content: center;
+  padding: 13px;
+  font-size: 0.9375rem;
+  border-radius: 12px;
+  margin-top: 18px;
+}
+.modal-foot {
+  font-size: 0.75rem;
+  color: var(--faint);
+  text-align: center;
+  margin-top: 10px;
+}
+.modal-foot i { margin-right: 4px; }
+.modal-status { text-align: center; padding: 1.5rem 0.5rem; }
+.modal-status-ico { font-size: 32px; color: var(--accent); margin-bottom: 12px; display: block; }
+.modal-status-ok { color: #4ade80; }
+.modal-status p { color: var(--muted); }
+.modal-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 0 12px;
+  font-family: var(--font-ui);
+}
+.modal-back-btn:hover { color: var(--accent); }
+.modal-back-btn-bottom { margin-top: 12px; }
+.modal-card-label { margin-bottom: 8px; }
+.modal-card-error { margin-top: 10px; }
+.modal-error-card {
+  flex-direction: column;
+  text-align: center;
+  gap: 8px;
+  padding: 18px;
+}
+
+.stripe-mount {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  min-height: 44px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.stripe-mount:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255,106,61,.18);
+}
 </style>

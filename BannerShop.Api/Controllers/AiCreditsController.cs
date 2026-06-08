@@ -46,6 +46,24 @@ public class AiCreditsController : ControllerBase
         });
     }
 
+    // ── GET /api/ai-credits/packs ────────────────────────────────────────────
+    /// <summary>
+    /// Public credit-pack info — price and credit count for the current pack offering.
+    /// Used by widgets (e.g. AccountView buy-credits button) that need to display the
+    /// price without going through the paywall 402 flow (BANNERSH-71).
+    /// </summary>
+    [HttpGet("packs")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetCreditPackInfo(CancellationToken ct)
+    {
+        var (priceNok, creditCount) = await ReadCreditPackPricingAsync(ct);
+        return Ok(new
+        {
+            priceNok    = priceNok,
+            creditCount = creditCount
+        });
+    }
+
     // ── POST /api/ai-credits/packs/buy ───────────────────────────────────────
     /// <summary>
     /// Initiates a credit-pack purchase. Returns a Stripe PaymentIntent client secret
@@ -59,14 +77,7 @@ public class AiCreditsController : ControllerBase
         var userId = GetUserId();
         if (userId == 0) return Unauthorized();
 
-        // Load credit-pack pricing parameters (seeded by BANNERSH-65).
-        var pricingDict = await _db.PricingParameters
-            .AsNoTracking()
-            .Where(p => p.Key == "ai_credit_pack_price_nok" || p.Key == "ai_credit_pack_count")
-            .ToDictionaryAsync(p => p.Key, p => p.Value, ct);
-
-        var priceNok    = pricingDict.GetValueOrDefault("ai_credit_pack_price_nok", 29m);
-        var creditCount = (int)pricingDict.GetValueOrDefault("ai_credit_pack_count", 10m);
+        var (priceNok, creditCount) = await ReadCreditPackPricingAsync(ct);
 
         // A client-side idempotency key prevents duplicate PIs if the request is retried.
         var idempotencyKey = Guid.NewGuid().ToString("N");
@@ -80,6 +91,22 @@ public class AiCreditsController : ControllerBase
             creditCount  = creditCount,
             priceNok     = priceNok
         });
+    }
+
+    /// <summary>
+    /// Loads the credit-pack pricing parameters (seeded by BANNERSH-65), falling back to
+    /// the documented defaults (29 kr / 10 credits) if they are missing.
+    /// </summary>
+    private async Task<(decimal PriceNok, int CreditCount)> ReadCreditPackPricingAsync(CancellationToken ct)
+    {
+        var pricingDict = await _db.PricingParameters
+            .AsNoTracking()
+            .Where(p => p.Key == "ai_credit_pack_price_nok" || p.Key == "ai_credit_pack_count")
+            .ToDictionaryAsync(p => p.Key, p => p.Value, ct);
+
+        var priceNok    = pricingDict.GetValueOrDefault("ai_credit_pack_price_nok", 29m);
+        var creditCount = (int)pricingDict.GetValueOrDefault("ai_credit_pack_count", 10m);
+        return (priceNok, creditCount);
     }
 
     private int GetUserId()
