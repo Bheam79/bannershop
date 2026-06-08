@@ -124,6 +124,7 @@ public class AdminSizesController : ControllerBase
             Id = s.Material.Id,
             Name = s.Material.Name,
             WidthCm = s.Material.WidthCm,
+            MaxBannerWidthCm = s.Material.MaxBannerWidthCm > 0 ? s.Material.MaxBannerWidthCm : s.Material.WidthCm,
             WeightGsm = s.Material.WeightGsm,
             PricePerSqm = s.Material.PricePerSqm,
             AvailableFrom = s.Material.AvailableFrom

@@ -43,7 +43,11 @@ public class SizesController : ControllerBase
     [HttpGet("{id:int}/price")]
     public async Task<IActionResult> GetPrice(int id, [FromQuery] int? customWidthCm = null)
     {
-        var size = await _db.BannerSizes.FindAsync(id);
+        // Include Material so PricingService can apply the multi-panel multiplier
+        // (BANNERSH-88) when the requested width exceeds Material.MaxBannerWidthCm.
+        var size = await _db.BannerSizes
+            .Include(s => s.Material)
+            .FirstOrDefaultAsync(s => s.Id == id);
         if (size == null) return NotFound();
 
         if (size.IsCustomWidth && customWidthCm is null)
@@ -74,6 +78,7 @@ public class SizesController : ControllerBase
             Id = s.Material.Id,
             Name = s.Material.Name,
             WidthCm = s.Material.WidthCm,
+            MaxBannerWidthCm = s.Material.MaxBannerWidthCm > 0 ? s.Material.MaxBannerWidthCm : s.Material.WidthCm,
             WeightGsm = s.Material.WeightGsm,
             PricePerSqm = s.Material.PricePerSqm,
             AvailableFrom = s.Material.AvailableFrom

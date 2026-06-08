@@ -36,7 +36,8 @@ internal static class DbHelper
             new PricingParameter { Id = 11, Name = "AI credit pack price",         Key = "ai_credit_pack_price_nok",       Value = 29m   },
             new PricingParameter { Id = 12, Name = "AI credit pack count",         Key = "ai_credit_pack_count",           Value = 10m   },
             new PricingParameter { Id = 13, Name = "AI activation fee",            Key = "ai_banner_activation_fee_nok",   Value = 95m   },
-            new PricingParameter { Id = 14, Name = "AI activation credits",        Key = "ai_banner_activation_credits",   Value = 20m   }
+            new PricingParameter { Id = 14, Name = "AI activation credits",        Key = "ai_banner_activation_credits",   Value = 20m   },
+            new PricingParameter { Id = 15, Name = "Banner panel overlap",         Key = "banner_panel_overlap_cm",        Value = 5m    }
         );
         db.SaveChanges();
     }
@@ -44,8 +45,8 @@ internal static class DbHelper
     /// <summary>Seeds materials and banner sizes (matching production seed).</summary>
     public static void SeedCatalog(BannerShopDbContext db)
     {
-        var mat1 = new Material { Id = 1, Name = "400g Frontlit Banner (160cm)", WidthCm = 160, WeightGsm = 400, PricePerSqm = 180m, AvailableFrom = null };
-        var mat2 = new Material { Id = 2, Name = "680g Heavy Duty Banner (180cm)", WidthCm = 180, WeightGsm = 680, PricePerSqm = 140m, AvailableFrom = new DateTime(2026, 8, 31, 0, 0, 0, DateTimeKind.Utc) };
+        var mat1 = new Material { Id = 1, Name = "400g Frontlit Banner (160cm)", WidthCm = 160, MaxBannerWidthCm = 160, WeightGsm = 400, PricePerSqm = 180m, AvailableFrom = null };
+        var mat2 = new Material { Id = 2, Name = "680g Heavy Duty Banner (180cm)", WidthCm = 180, MaxBannerWidthCm = 180, WeightGsm = 680, PricePerSqm = 140m, AvailableFrom = new DateTime(2026, 8, 31, 0, 0, 0, DateTimeKind.Utc) };
         db.Materials.AddRange(mat1, mat2);
 
         db.BannerSizes.AddRange(
@@ -58,12 +59,16 @@ internal static class DbHelper
     }
 
     /// <summary>Creates a test material with sensible defaults.</summary>
-    public static Material MakeMaterial(int id = 1, int widthCm = 160, int weightGsm = 400, DateTime? availableFrom = null)
+    public static Material MakeMaterial(int id = 1, int widthCm = 160, int weightGsm = 400, DateTime? availableFrom = null, int? maxBannerWidthCm = null)
         => new Material
         {
             Id = id,
             Name = $"Test Material {id}",
             WidthCm = widthCm,
+            // Default MaxBannerWidthCm to a large value so existing tests (written before
+            // BANNERSH-88) don't accidentally trigger the multi-panel multiplier. Tests
+            // that need to exercise the multiplier should pass `maxBannerWidthCm` explicitly.
+            MaxBannerWidthCm = maxBannerWidthCm ?? 10_000,
             WeightGsm = weightGsm,
             PricePerSqm = 180m,
             AvailableFrom = availableFrom

@@ -4,6 +4,12 @@ export interface Material {
   id: number
   name: string
   widthCm: number
+  /**
+   * Max banner width producible as a single panel — anything wider is priced as
+   * a 2× / 3× / … multi-panel banner (BANNERSH-88). Defaults to {@link widthCm} on
+   * the server when set to 0/unset.
+   */
+  maxBannerWidthCm: number
   weightGsm: number
   pricePerSqm: number
   availableFrom: string | null

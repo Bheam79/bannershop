@@ -67,6 +67,16 @@ cd /workspace/repo/BannerShop.Api && dotnet run
 - 2 materials (160cm/400g and 180cm/680g), 7 banner sizes, 5 pricing parameters
 - Seed is in `BannerShopDbContext.SeedData()` — applied via migration
 
+## Multi-panel pricing (BANNERSH-88)
+`Material.MaxBannerWidthCm` is the max banner width producible as a single panel. When a
+banner exceeds it, `PricingService` multiplies the per-panel formula price by the panel
+count (×1 / ×2 / ×3 / …). The panel formula is `⌈(width − overlap) / (max − overlap)⌉`
+where `overlap` is the `banner_panel_overlap_cm` pricing parameter (default 5 cm).
+Fixed-price sizes skip both the formula AND the multiplier — admin sets the final price
+manually. The multiplier requires `Material` to be `.Include`d; if the navigation is
+null, `PricingService` falls back to single-panel pricing (so it never crashes on stale
+callers).
+
 ## Banner builder (BANNERSH-15)
 - File uploads land under `FileStorage:BasePath` (default `/workspace/uploads`) and are served via StaticFiles at `FileStorage:PublicUrlPrefix` (default `/uploads`).
 - `IImageProcessingService` uses `SixLabors.ImageSharp` for raster ops and `PDFtoImage` for PDF→PNG (first page only, 200 DPI).

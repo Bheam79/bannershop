@@ -32,6 +32,8 @@ public class AdminMaterialsController : ControllerBase
         {
             Name = req.Name,
             WidthCm = req.WidthCm,
+            // BANNERSH-88: 0 from the client means "same as roll width".
+            MaxBannerWidthCm = req.MaxBannerWidthCm > 0 ? req.MaxBannerWidthCm : req.WidthCm,
             WeightGsm = req.WeightGsm,
             PricePerSqm = req.PricePerSqm,
             AvailableFrom = req.AvailableFrom
@@ -50,6 +52,8 @@ public class AdminMaterialsController : ControllerBase
 
         m.Name = req.Name;
         m.WidthCm = req.WidthCm;
+        // BANNERSH-88: 0 means "same as roll width".
+        m.MaxBannerWidthCm = req.MaxBannerWidthCm > 0 ? req.MaxBannerWidthCm : req.WidthCm;
         m.WeightGsm = req.WeightGsm;
         m.PricePerSqm = req.PricePerSqm;
         m.AvailableFrom = req.AvailableFrom;
@@ -79,6 +83,8 @@ public class AdminMaterialsController : ControllerBase
         Id = m.Id,
         Name = m.Name,
         WidthCm = m.WidthCm,
+        // BANNERSH-88: surface stored value (already normalised on save).
+        MaxBannerWidthCm = m.MaxBannerWidthCm > 0 ? m.MaxBannerWidthCm : m.WidthCm,
         WeightGsm = m.WeightGsm,
         PricePerSqm = m.PricePerSqm,
         AvailableFrom = m.AvailableFrom

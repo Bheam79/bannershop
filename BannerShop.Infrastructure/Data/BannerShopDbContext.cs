@@ -37,6 +37,11 @@ public class BannerShopDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Name).HasMaxLength(100).IsRequired();
             e.Property(x => x.PricePerSqm).HasColumnType("decimal(10,2)");
+            // Max banner width without gluing multiple panels together (BANNERSH-88).
+            // Defaults to 0 at the SQL level — the migration backfills existing rows with
+            // their roll width, and PricingService treats a non-positive value as "fall back
+            // to Material.WidthCm" so manually-inserted rows still work.
+            e.Property(x => x.MaxBannerWidthCm).HasDefaultValue(0);
         });
 
         // BannerSize
@@ -321,6 +326,7 @@ public class BannerShopDbContext : DbContext
                 Id = 1,
                 Name = "400g Frontlit Banner (160cm)",
                 WidthCm = 160,
+                MaxBannerWidthCm = 160,
                 WeightGsm = 400,
                 PricePerSqm = 180m,
                 AvailableFrom = null
@@ -330,6 +336,7 @@ public class BannerShopDbContext : DbContext
                 Id = 2,
                 Name = "680g Heavy Duty Banner (180cm)",
                 WidthCm = 180,
+                MaxBannerWidthCm = 180,
                 WeightGsm = 680,
                 PricePerSqm = 140m,
                 AvailableFrom = new DateTime(2026, 8, 31, 0, 0, 0, DateTimeKind.Utc)
@@ -363,7 +370,10 @@ public class BannerShopDbContext : DbContext
             new PricingParameter { Id = 11, Name = "AI kreditpakke pris (NOK)", Key = "ai_credit_pack_price_nok", Value = 29m, Description = "Pris for en kreditpakke med AI forslag (NOK)" },
             new PricingParameter { Id = 12, Name = "AI kreditpakke antall", Key = "ai_credit_pack_count", Value = 10m, Description = "Antall AI genererings-kreditter per kreditpakke" },
             new PricingParameter { Id = 13, Name = "AI aktiveringsgebyr (NOK)", Key = "ai_banner_activation_fee_nok", Value = 95m, Description = "Obligatorisk AI aktiveringsgebyr ved bestilling av banner med AI design (NOK)" },
-            new PricingParameter { Id = 14, Name = "AI kreditter ved bestilling", Key = "ai_banner_activation_credits", Value = 20m, Description = "Antall AI kreditter som gis når AI aktiveringsgebyret er betalt" }
+            new PricingParameter { Id = 14, Name = "AI kreditter ved bestilling", Key = "ai_banner_activation_credits", Value = 20m, Description = "Antall AI kreditter som gis når AI aktiveringsgebyret er betalt" },
+            // BANNERSH-88: multi-panel pricing — overlap between panels when a banner is wider
+            // than Material.MaxBannerWidthCm and must be assembled from multiple panels.
+            new PricingParameter { Id = 15, Name = "Panel-overlapp (cm)", Key = "banner_panel_overlap_cm", Value = 5m, Description = "Overlapp i cm mellom panel ved sammenliming av brede banner. Bestemmer pris-multiplikator (×2, ×3, …) når bestilt bredde overstiger materialets maks bredde." }
         );
 
         // Seed BannerTemplates (celebration categories shown in the banner builder)
