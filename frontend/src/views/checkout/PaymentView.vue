@@ -88,6 +88,78 @@ const processing = ref(false)
 const paymentError = ref<string | null>(null)
 const apiError = ref<string | null>(null)
 
+// ── Mock-payment modal (shown when Stripe is not configured) ──────────────────
+const showMockModal = ref(false)
+const mockPassword = ref('')
+const mockPasswordError = ref<string | null>(null)
+const mockProcessing = ref(false)
+
+function openMockModal() {
+  mockPassword.value = ''
+  mockPasswordError.value = null
+  showMockModal.value = true
+}
+
+function closeMockModal() {
+  showMockModal.value = false
+}
+
+async function confirmMockPayment() {
+  if (mockPassword.value !== 'test1234') {
+    mockPasswordError.value = 'Feil passord. Prøv igjen.'
+    return
+  }
+  mockPasswordError.value = null
+  mockProcessing.value = true
+  apiError.value = null
+
+  let orderId: number
+  let clientSecret: string
+
+  try {
+    const resp = await createOrderDraft({
+      deliveryType: checkout.deliveryType,
+      shippingAddress: {
+        line1: checkout.address.line1,
+        postalCode: checkout.address.postalCode,
+        city: checkout.address.city,
+        country: 'NO',
+      },
+      items: cart.items
+        .filter((item) => item.bannerSizeId != null)
+        .map((item) => ({
+          bannerSizeId: item.bannerSizeId!,
+          customWidthCm: item.customWidthCm ?? undefined,
+          quantity: item.quantity,
+          notes: item.notes ?? undefined,
+          eyeletOption: item.eyeletOption,
+        })),
+    })
+    orderId = resp.orderId
+    clientSecret = resp.clientSecret
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { error?: string } }; message?: string }
+    apiError.value =
+      e.response?.data?.error || e.message || 'Kunne ikke opprette ordre. Prøv igjen.'
+    mockProcessing.value = false
+    closeMockModal()
+    return
+  }
+
+  // Mock bypass — backend returns pi_mock_* when Stripe is not configured
+  if (clientSecret.startsWith('pi_mock_')) {
+    cart.clear()
+    checkout.clear()
+    router.push(`/checkout/confirmation/${orderId}`)
+    return
+  }
+
+  // Unexpected: Stripe is actually configured; fall back to standard pay()
+  mockProcessing.value = false
+  closeMockModal()
+  pay()
+}
+
 // ── Price calculations (mirror of CheckoutView) ───────────────────────────────
 const subtotal = computed(() => cart.subtotal)
 const shippingCost = computed(() => checkout.shippingCostNok)
@@ -234,7 +306,19 @@ async function pay() {
           <!-- Stripe not configured warning -->
           <div v-if="stripeError" class="alert-warn">
             <i class="fa-solid fa-triangle-exclamation"></i>
-            <div><strong>Stripe ikke tilgjengelig:</strong> {{ stripeError }}</div>
+            <div>
+              <strong>Stripe ikke tilgjengelig:</strong> {{ stripeError }}
+              <br/>
+              <button type="button" class="mock-pay-link" @click="openMockModal">
+                Marker ordre som betalt (testmodus)
+              </button>
+            </div>
+          </div>
+
+          <!-- Error from order-creation during mock pay -->
+          <div v-if="stripeError && apiError" class="alert-error" style="margin-top:0.75rem">
+            <i class="fa-solid fa-circle-exclamation"></i>
+            {{ apiError }}
           </div>
 
           <template v-else>
@@ -326,6 +410,63 @@ async function pay() {
       </aside>
     </div>
   </div>
+
+  <!-- ── Mock-payment password modal ─────────────────────────────────────── -->
+  <Teleport to="body">
+    <div v-if="showMockModal" class="modal-backdrop" @click.self="closeMockModal">
+      <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="mock-modal-title">
+        <div class="modal-header">
+          <h3 id="mock-modal-title" class="modal-title">
+            <i class="fa-solid fa-key"></i>
+            Testmodus – Marker som betalt
+          </h3>
+          <button type="button" class="modal-close" @click="closeMockModal" aria-label="Lukk">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <p class="modal-desc">
+          Stripe er ikke konfigurert. Skriv inn testpassordet for å simulere en vellykket betaling og fullføre ordren.
+        </p>
+
+        <div class="modal-field">
+          <label class="field-label" for="mock-pw-input">
+            <i class="fa-solid fa-lock"></i>
+            Passord
+          </label>
+          <input
+            id="mock-pw-input"
+            v-model="mockPassword"
+            type="password"
+            class="mock-pw-input"
+            placeholder="Skriv inn passord…"
+            autocomplete="off"
+            @keyup.enter="confirmMockPayment"
+          />
+          <p v-if="mockPasswordError" class="field-error">
+            <i class="fa-solid fa-circle-exclamation"></i>
+            {{ mockPasswordError }}
+          </p>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" @click="closeMockModal">
+            Avbryt
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="mockProcessing"
+            @click="confirmMockPayment"
+          >
+            <i v-if="mockProcessing" class="fa-solid fa-circle-notch fa-spin"></i>
+            <i v-else class="fa-solid fa-check"></i>
+            {{ mockProcessing ? 'Behandler…' : 'Bekreft' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -551,4 +692,109 @@ async function pay() {
 }
 .summary-row--total { font-weight: 700; font-size: 1rem; color: var(--text); }
 .summary-total-price { color: var(--accent); }
+
+/* ── Mock pay link ──────────────────────────────────────────── */
+.mock-pay-link {
+  all: unset;
+  cursor: pointer;
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.15s;
+}
+.mock-pay-link:hover { color: var(--accent-2); }
+
+/* ── Modal backdrop + box ───────────────────────────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  backdrop-filter: blur(2px);
+}
+
+.modal-box {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  font-family: var(--font-display);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+.modal-title i { color: var(--accent); }
+
+.modal-close {
+  all: unset;
+  cursor: pointer;
+  color: var(--faint);
+  font-size: 1.125rem;
+  padding: 2px 4px;
+  border-radius: 6px;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+.modal-close:hover { color: var(--text); }
+
+.modal-desc {
+  font-size: 0.875rem;
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0 0 1.25rem;
+}
+
+.modal-field { margin-bottom: 1rem; }
+
+.mock-pw-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.9375rem;
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.mock-pw-input::placeholder { color: var(--faint); }
+.mock-pw-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 106, 61, 0.18);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.625rem;
+  margin-top: 1.25rem;
+}
 </style>
