@@ -46,6 +46,17 @@ BACKEND_PORT  := 17080
 ASPNET_URLS   := http://0.0.0.0:$(BACKEND_PORT)
 ADMIN_EMAIL   := admin@bannershop.no
 
+# ── Optional transactional-email (SMTP) ──────────────────────────────────────
+# Override on the command line, e.g.
+#   make up SMTP_HOST=smtp.eu.mailgun.org SMTP_USER=postmaster@... SMTP_PASS=...
+# Leaving these empty wires up NullEmailService — the API still runs fine,
+# but order-confirmation / shipment-dispatched mails are suppressed.
+EMAIL_FROM    ?= noreply@bannershop.no
+SMTP_HOST     ?=
+SMTP_PORT     ?= 587
+SMTP_USER     ?=
+SMTP_PASS     ?=
+
 ROOT_DIR      := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 PROD_BASE     := $(HOME)/.local/share/bannershop
 APP_DIR       := $(PROD_BASE)/app
@@ -241,6 +252,13 @@ config: secrets publish
 	'    "PublicBaseUrl": "/files",' \
 	'    "MaxUploadBytes": 52428800,' \
 	'    "AllowedMimeTypes": [ "image/jpeg", "image/png", "image/webp", "application/pdf" ]' \
+	'  },' \
+	'  "Email": {' \
+	'    "From": "$(EMAIL_FROM)",' \
+	'    "SmtpHost": "$(SMTP_HOST)",' \
+	'    "SmtpPort": $(SMTP_PORT),' \
+	'    "SmtpUser": "$(SMTP_USER)",' \
+	'    "SmtpPass": "$(SMTP_PASS)"' \
 	'  }' \
 	'}' > $(APP_DIR)/appsettings.Production.json
 

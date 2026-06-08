@@ -120,6 +120,11 @@ dotnet-ef database update \
 | `Bring__SenderCountryCode` | Shop's country code (default `NO`) |
 | `Bring__ProductCodes` | Comma-separated Bring product codes (default `SERVICEPAKKE`) |
 | `Bring__ClientUrl` | Identifier sent in `X-Bring-Client-URL` header |
+| `Email__From` | Sender address (e.g. `noreply@bannershop.no`) |
+| `Email__SmtpHost` | SMTP server hostname; leave empty to disable email (`NullEmailService`) |
+| `Email__SmtpPort` | SMTP port (default `587`) |
+| `Email__SmtpUser` | SMTP AUTH username |
+| `Email__SmtpPass` | SMTP AUTH password |
 | `Admin__SeedEmail` | Initial admin user email |
 | `Admin__SeedPassword` | Initial admin user password |
 | `VITE_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (frontend `.env`) |
@@ -163,6 +168,25 @@ material gsm; the relevant knobs live in the `PricingParameter` table:
 
 Results are cached in memory for 1 hour per (postal code, parcel dimensions) to
 avoid hammering the Bring API.
+
+## Transactional Email (SMTP)
+
+Order-confirmation and shipment-dispatched emails are sent through `IEmailService`.
+
+- Configure delivery via `Email__SmtpHost`, `Email__SmtpPort` (default `587`),
+  `Email__SmtpUser`, `Email__SmtpPass` and `Email__From`.
+- SMTP AUTH is always required; an empty user/pass pair will provoke an auth
+  failure at the server so misconfiguration is surfaced loudly rather than
+  silently dropping mail.
+- If `Email__SmtpHost` is empty (or unset), the API auto-wires
+  `NullEmailService` instead — all calls succeed and are logged but no mail
+  is actually sent. This is the default in dev and in any deployment that
+  does not need outbound email. The fallback logs at `Debug` in Development
+  and at `Warning` elsewhere so a dropped email in Production is visible
+  in the logs.
+- Email failures inside `OrderService` (Stripe webhook → `MarkPaidAsync`,
+  admin → `SetShippingAsync`) are caught and logged; they never propagate
+  back to the caller so webhook retries / admin requests are unaffected.
 
 ## Orders, Payments & Production
 
