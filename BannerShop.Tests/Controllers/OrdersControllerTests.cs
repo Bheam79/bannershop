@@ -43,7 +43,7 @@ public class OrdersControllerTests : IClassFixture<TestWebApplicationFactory>
         var client = _factory.CreateClient();
         var req = new
         {
-            deliveryType = 0, // 0 = Standard (numeric — STJ doesn't parse enum names without JsonStringEnumConverter)
+            deliveryType = "Standard",
             shippingAddress = new { line1 = "Test St", postalCode = "0001", city = "Oslo" },
             items = new[] { new { bannerSizeId = 1, quantity = 1 } }
         };
@@ -103,7 +103,7 @@ public class OrdersControllerTests : IClassFixture<TestWebApplicationFactory>
     public async Task CreateDraft_Express_IncludesExpressFeeInBreakdown()
     {
         var client = RegisterAndGetAuthenticatedClient();
-        var req = BuildDraftRequest(bannerSizeId: 1, deliveryType: 1); // 1 = Express
+        var req = BuildDraftRequest(bannerSizeId: 1, deliveryType: "Express");
 
         var response = await client.PostAsJsonAsync("/api/orders/draft", req);
 
@@ -161,7 +161,7 @@ public class OrdersControllerTests : IClassFixture<TestWebApplicationFactory>
         var client = RegisterAndGetAuthenticatedClient();
         var req = new
         {
-            deliveryType = 0, // 0 = Standard
+            deliveryType = "Standard",
             shippingAddress = new { line1 = "St", postalCode = "0001", city = "Oslo" },
             items = Array.Empty<object>()
         };
@@ -228,9 +228,8 @@ public class OrdersControllerTests : IClassFixture<TestWebApplicationFactory>
         return doc.GetProperty("orderId").GetInt32();
     }
 
-    private static object BuildDraftRequest(int bannerSizeId, int deliveryType = 0, int? customWidthCm = null)
+    private static object BuildDraftRequest(int bannerSizeId, string deliveryType = "Standard", int? customWidthCm = null)
     {
-        // deliveryType: 0=Standard, 1=Express  (numeric — STJ doesn't parse enum names without JsonStringEnumConverter)
         var item = customWidthCm.HasValue
             ? (object)new { bannerSizeId, quantity = 1, customWidthCm }
             : new { bannerSizeId, quantity = 1 };
