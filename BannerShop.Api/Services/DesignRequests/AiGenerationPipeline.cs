@@ -129,6 +129,13 @@ public sealed class AiGenerationPipeline
                 AspectRatio: request.AspectRatio,
                 HasPortrait: referenceAbs is not null));
 
+            // BANNERSH-155: surface the deterministic base prompt in journalctl
+            // so operators can verify the celebrant name (and other inputs) made
+            // it into the overlay instruction before the LLM refinement step.
+            _log.LogInformation(
+                "Pipeline: DesignRequest {Id} base prompt: {BasePrompt}",
+                designRequestId, basePrompt);
+
             // 2b. Refine the prompt via LLM (BANNERSH-61). Failures fall back
             // to the deterministic base prompt — see IPromptRefinementService.
             var prompt = await _refiner.RefineAsync(new PromptRefinementInput(
@@ -143,6 +150,13 @@ public sealed class AiGenerationPipeline
                 BasePrompt: basePrompt), ct);
             if (string.IsNullOrWhiteSpace(prompt))
                 prompt = basePrompt;
+
+            // BANNERSH-155: log the FINAL prompt actually sent to the image model
+            // (post-refinement, or the base prompt if refinement was a no-op /
+            // fell back). This is what gpt-image-2 sees.
+            _log.LogInformation(
+                "Pipeline: DesignRequest {Id} final prompt: {FinalPrompt}",
+                designRequestId, prompt);
 
             // 3. Generate
             // BANNERSH-98: explicitly log the IAiImageService implementation type
