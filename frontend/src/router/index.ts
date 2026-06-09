@@ -81,9 +81,10 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
-      // Old design-requests listing — redirect to unified Mine ordrer
       path: '/account/design-requests',
-      redirect: '/account/orders',
+      name: 'account-design-requests',
+      component: () => import('@/views/account/AccountDesignRequestsView.vue'),
+      meta: { requiresAuth: true },
     },
     {
       path: '/account/design-requests/:id',
