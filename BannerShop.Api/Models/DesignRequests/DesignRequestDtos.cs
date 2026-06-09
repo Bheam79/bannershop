@@ -144,8 +144,24 @@ public class AiPaywallResponseDto
 /// <summary>The set of next-step prompts the frontend can offer when the user hits the paywall.</summary>
 public class PaywallOptions
 {
-    public decimal CreditPackPriceNok { get; set; }
-    public int CreditPackCount { get; set; }
+    // ── Small pack (29 kr / 5 credits) ────────────────────────────────────────
+    /// <summary>Price of the small credit pack (BANNERSH-137).</summary>
+    public decimal CreditPackSmallPriceNok { get; set; }
+    /// <summary>Number of credits in the small pack (BANNERSH-137).</summary>
+    public int CreditPackSmallCount { get; set; }
+
+    // ── Large pack (95 kr / 20 credits) ───────────────────────────────────────
+    /// <summary>Price of the large credit pack (BANNERSH-137).</summary>
+    public decimal CreditPackLargePriceNok { get; set; }
+    /// <summary>Number of credits in the large pack (BANNERSH-137).</summary>
+    public int CreditPackLargeCount { get; set; }
+
+    // ── Legacy aliases — kept so older frontend code still compiles until updated ──
+    /// <summary>Alias for <see cref="CreditPackSmallPriceNok"/> — kept for backward compat.</summary>
+    public decimal CreditPackPriceNok { get => CreditPackSmallPriceNok; set => CreditPackSmallPriceNok = value; }
+    /// <summary>Alias for <see cref="CreditPackSmallCount"/> — kept for backward compat.</summary>
+    public int CreditPackCount { get => CreditPackSmallCount; set => CreditPackSmallCount = value; }
+
     public decimal BannerOrderActivationFeeNok { get; set; }
     /// <summary>Number of AI credits granted when the user places a banner order.</summary>
     public int BannerOrderCreditBonus { get; set; }

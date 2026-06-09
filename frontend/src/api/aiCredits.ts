@@ -11,11 +11,19 @@ export interface CreditPackBuyResponse {
   clientSecret: string
   creditCount: number
   priceNok: number
+  pack: 'small' | 'large'
 }
 
-export interface CreditPackInfo {
+/** One tier of the credit-pack offering (BANNERSH-137). */
+export interface CreditPackTier {
   priceNok: number
   creditCount: number
+}
+
+/** Both tiers returned by GET /api/ai-credits/packs (BANNERSH-137). */
+export interface CreditPackInfo {
+  small: CreditPackTier
+  large: CreditPackTier
 }
 
 // ── API calls ─────────────────────────────────────────────────────────────────
@@ -28,8 +36,8 @@ export async function getAiCreditsBalance(): Promise<AiCreditsBalance> {
 
 /**
  * GET /api/ai-credits/packs — no auth required.
- * Returns the current credit-pack price and credit count so widgets can show
- * the buy CTA without first hitting the paywall 402 flow (BANNERSH-71).
+ * Returns both pack tiers (small + large) so widgets can show buy CTAs without
+ * going through the paywall 402 flow (BANNERSH-71, BANNERSH-137).
  */
 export async function getCreditPackInfo(): Promise<CreditPackInfo> {
   const { data } = await apiClient.get<CreditPackInfo>('/ai-credits/packs')
@@ -38,12 +46,10 @@ export async function getCreditPackInfo(): Promise<CreditPackInfo> {
 
 /**
  * POST /api/ai-credits/packs/buy — requires auth.
- * Creates a Stripe PaymentIntent for the credit pack; returns the client secret,
- * credit count, and price so the frontend can present the card form.
- * Credits are granted by the Stripe webhook (payment_intent.succeeded) after
- * payment completes.
+ * Creates a Stripe PaymentIntent for the chosen credit-pack tier (BANNERSH-137).
+ * Credits are granted by the Stripe webhook (payment_intent.succeeded) after payment.
  */
-export async function buyCreditPack(): Promise<CreditPackBuyResponse> {
-  const { data } = await apiClient.post<CreditPackBuyResponse>('/ai-credits/packs/buy')
+export async function buyCreditPack(pack: 'small' | 'large' = 'small'): Promise<CreditPackBuyResponse> {
+  const { data } = await apiClient.post<CreditPackBuyResponse>('/ai-credits/packs/buy', { pack })
   return data
 }

@@ -247,12 +247,12 @@ async function initStripe(): Promise<boolean> {
   }
 }
 
-async function startCreditPackPurchase() {
+async function startCreditPackPurchase(pack: 'small' | 'large' = 'small') {
   creditPackPhase.value = 'loading'
   creditPackError.value = null
 
   try {
-    packDetails.value = await buyCreditPack()
+    packDetails.value = await buyCreditPack(pack)
     const ok = await initStripe()
     if (!ok) return
     creditPackPhase.value = 'card'
@@ -532,7 +532,7 @@ async function changePassword() {
           >
             <i class="fa-solid fa-bag-shopping"></i>
             <template v-if="packInfo">
-              Kjøp {{ packInfo.creditCount }} AI forslag ({{ formatNok(packInfo.priceNok) }})
+              Kjøp AI forslag (fra {{ formatNok(packInfo.small.priceNok) }})
             </template>
             <template v-else>
               Kjøp AI forslag
@@ -675,23 +675,37 @@ async function changePassword() {
               </div>
               <h2 class="display modal-title">Kjøp AI banner forslag</h2>
               <p class="modal-sub">
-                <template v-if="packInfo">
-                  <strong>{{ packInfo.creditCount }} AI forslag</strong> for
-                  <strong>{{ formatNok(packInfo.priceNok) }}</strong> — kreditene legges til
-                  kontoen din umiddelbart etter betaling.
-                </template>
-                <template v-else>
-                  Kortbetaling via Stripe — kreditene legges til kontoen din umiddelbart.
-                </template>
+                Velg en pakke — kreditene legges til kontoen din umiddelbart etter betaling.
               </p>
             </div>
+            <!-- Small pack -->
             <button
               type="button"
               class="btn btn-primary modal-cta"
-              @click="startCreditPackPurchase"
+              style="margin-bottom: 10px"
+              @click="startCreditPackPurchase('small')"
             >
-              <i class="fa-solid fa-credit-card"></i>
-              Fortsett til betaling
+              <i class="fa-solid fa-bag-shopping"></i>
+              <template v-if="packInfo">
+                Liten — {{ packInfo.small.creditCount }} forslag ({{ formatNok(packInfo.small.priceNok) }})
+              </template>
+              <template v-else>
+                Liten — 5 forslag (29 kr)
+              </template>
+            </button>
+            <!-- Large pack -->
+            <button
+              type="button"
+              class="btn btn-primary modal-cta"
+              @click="startCreditPackPurchase('large')"
+            >
+              <i class="fa-solid fa-bags-shopping"></i>
+              <template v-if="packInfo">
+                Stor — {{ packInfo.large.creditCount }} forslag ({{ formatNok(packInfo.large.priceNok) }})
+              </template>
+              <template v-else>
+                Stor — 20 forslag (95 kr)
+              </template>
             </button>
           </div>
 

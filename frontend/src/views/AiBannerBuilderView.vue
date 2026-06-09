@@ -22,7 +22,7 @@ import {
   type AiPaywallData,
   type PaywallOptions,
 } from '@/api/designRequests'
-import { getAiCreditsBalance, buyCreditPack } from '@/api/aiCredits'
+import { getAiCreditsBalance, buyCreditPack, type CreditPackTier } from '@/api/aiCredits'
 import { generateRequestIntegrity } from '@/composables/useRequestIntegrity'
 import { useAiCreditsStore } from '@/stores/aiCredits'
 
@@ -162,8 +162,12 @@ const step2Valid = computed(
 
 // Effective paywall options: use last-known from API, or sensible defaults
 const effectivePaywallOptions = computed<PaywallOptions>(() => ({
-  creditPackPriceNok: paywallData.value?.paywallOptions?.creditPackPriceNok ?? 29,
-  creditPackCount: paywallData.value?.paywallOptions?.creditPackCount ?? 10,
+  creditPackSmallPriceNok: paywallData.value?.paywallOptions?.creditPackSmallPriceNok ?? paywallData.value?.paywallOptions?.creditPackPriceNok ?? 29,
+  creditPackSmallCount: paywallData.value?.paywallOptions?.creditPackSmallCount ?? paywallData.value?.paywallOptions?.creditPackCount ?? 5,
+  creditPackLargePriceNok: paywallData.value?.paywallOptions?.creditPackLargePriceNok ?? 95,
+  creditPackLargeCount: paywallData.value?.paywallOptions?.creditPackLargeCount ?? 20,
+  creditPackPriceNok: paywallData.value?.paywallOptions?.creditPackSmallPriceNok ?? paywallData.value?.paywallOptions?.creditPackPriceNok ?? 29,
+  creditPackCount: paywallData.value?.paywallOptions?.creditPackSmallCount ?? paywallData.value?.paywallOptions?.creditPackCount ?? 5,
   bannerOrderActivationFeeNok: paywallData.value?.paywallOptions?.bannerOrderActivationFeeNok ?? 95,
   bannerOrderCreditBonus: paywallData.value?.paywallOptions?.bannerOrderCreditBonus ?? 20,
   manualDesignerUrl: paywallData.value?.paywallOptions?.manualDesignerUrl ?? '/banner-builder/manual',
@@ -537,8 +541,12 @@ async function generateBanner() {
         reason: d.reason ?? 'insufficient_credits',
         creditsRemaining: d.creditsRemaining ?? 0,
         paywallOptions: d.paywallOptions ?? {
+          creditPackSmallPriceNok: 29,
+          creditPackSmallCount: 5,
+          creditPackLargePriceNok: 95,
+          creditPackLargeCount: 20,
           creditPackPriceNok: 29,
-          creditPackCount: 10,
+          creditPackCount: 5,
           bannerOrderActivationFeeNok: 95,
           bannerOrderCreditBonus: 20,
           manualDesignerUrl: '/banner-builder/manual',
@@ -767,8 +775,12 @@ async function regenerate() {
         reason: d?.paywallMetadata?.reason ?? d?.error ?? 'insufficient_credits',
         creditsRemaining: d?.creditsRemaining ?? 0,
         paywallOptions: paywallData.value?.paywallOptions ?? {
+          creditPackSmallPriceNok: 29,
+          creditPackSmallCount: 5,
+          creditPackLargePriceNok: 95,
+          creditPackLargeCount: 20,
           creditPackPriceNok: 29,
-          creditPackCount: 10,
+          creditPackCount: 5,
           bannerOrderActivationFeeNok: 95,
           bannerOrderCreditBonus: 20,
           manualDesignerUrl: '/banner-builder/manual',
@@ -843,7 +855,7 @@ async function initStripe(): Promise<boolean> {
   }
 }
 
-async function startCreditPackPurchase() {
+async function startCreditPackPurchase(pack: 'small' | 'large' = 'small') {
   if (!auth.isLoggedIn) {
     void router.push(`/login?redirect=${encodeURIComponent('/banner-builder/ai')}`)
     return
@@ -852,7 +864,7 @@ async function startCreditPackPurchase() {
   creditPackError.value = null
 
   try {
-    packDetails.value = await buyCreditPack()
+    packDetails.value = await buyCreditPack(pack)
     const ok = await initStripe()
     if (!ok) return
     creditPackPhase.value = 'card'
@@ -1881,11 +1893,11 @@ onBeforeUnmount(() => {
             </div>
 
             <div style="display:grid;gap:12px">
-              <!-- Option 1: Buy credit pack -->
+              <!-- Option 1a: Buy small credit pack (Liten) -->
               <button
                 type="button"
                 class="paywall-option paywall-option-primary"
-                @click="startCreditPackPurchase"
+                @click="startCreditPackPurchase('small')"
               >
                 <div style="display:flex;align-items:flex-start;gap:14px">
                   <span class="paywall-option-ico" style="background:rgba(255,106,61,.15);color:var(--accent)">
@@ -1893,11 +1905,34 @@ onBeforeUnmount(() => {
                   </span>
                   <div style="text-align:left">
                     <div style="font-weight:700;font-size:15px;color:var(--text)">
-                      Kjøp pakke med {{ effectivePaywallOptions.creditPackCount }} AI banner forslag
-                      <span style="color:var(--accent)">({{ formatNok(effectivePaywallOptions.creditPackPriceNok) }})</span>
+                      Liten pakke — {{ effectivePaywallOptions.creditPackSmallCount }} AI forslag
+                      <span style="color:var(--accent)">({{ formatNok(effectivePaywallOptions.creditPackSmallPriceNok) }})</span>
                     </div>
                     <div style="font-size:13px;color:var(--muted);margin-top:3px">
                       Kortbetaling via Stripe — umiddelbar tilgang
+                    </div>
+                  </div>
+                </div>
+                <i class="fa-solid fa-chevron-right" style="color:var(--faint);font-size:12px;flex-shrink:0"></i>
+              </button>
+
+              <!-- Option 1b: Buy large credit pack (Stor) -->
+              <button
+                type="button"
+                class="paywall-option paywall-option-primary"
+                @click="startCreditPackPurchase('large')"
+              >
+                <div style="display:flex;align-items:flex-start;gap:14px">
+                  <span class="paywall-option-ico" style="background:rgba(255,106,61,.2);color:var(--accent)">
+                    <i class="fa-solid fa-bags-shopping"></i>
+                  </span>
+                  <div style="text-align:left">
+                    <div style="font-weight:700;font-size:15px;color:var(--text)">
+                      Stor pakke — {{ effectivePaywallOptions.creditPackLargeCount }} AI forslag
+                      <span style="color:var(--accent)">({{ formatNok(effectivePaywallOptions.creditPackLargePriceNok) }})</span>
+                    </div>
+                    <div style="font-size:13px;color:var(--muted);margin-top:3px">
+                      Beste verdi — spar over 50% per forslag
                     </div>
                   </div>
                 </div>

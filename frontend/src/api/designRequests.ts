@@ -35,6 +35,12 @@ export interface CreateAiDesignRequestResult {
 
 /** Paywall options carried in a 402 response from POST /api/design-requests/ai. */
 export interface PaywallOptions {
+  // ── Two-tier pack pricing (BANNERSH-137) ──────────────────────────────────
+  creditPackSmallPriceNok: number
+  creditPackSmallCount: number
+  creditPackLargePriceNok: number
+  creditPackLargeCount: number
+  // ── Legacy aliases (still sent by the backend for backward compat) ─────────
   creditPackPriceNok: number
   creditPackCount: number
   bannerOrderActivationFeeNok: number

@@ -420,10 +420,13 @@ public class BannerShopDbContext : DbContext
             new PricingParameter { Id = 9, Name = "Standard leveringstid (dager)", Key = "standard_lead_time_days", Value = 14m, Description = "Produksjons- og leveringstid for standard ordre (dager fra bestilling)" },
             new PricingParameter { Id = 10, Name = "Express leveringstid (dager)", Key = "express_lead_time_days", Value = 3m, Description = "Produksjonstid for express-ordre (dager fra bestilling, før forsendelse)" },
             // BANNERSH-65: AI credit pool pricing parameters
-            new PricingParameter { Id = 11, Name = "AI kreditpakke pris (NOK)", Key = "ai_credit_pack_price_nok", Value = 29m, Description = "Pris for en kreditpakke med AI forslag (NOK)" },
-            new PricingParameter { Id = 12, Name = "AI kreditpakke antall", Key = "ai_credit_pack_count", Value = 10m, Description = "Antall AI genererings-kreditter per kreditpakke" },
+            // BANNERSH-137: split into small (29 kr / 5 gen) and large (95 kr / 20 gen) tiers.
+            new PricingParameter { Id = 11, Name = "AI kreditpakke liten pris (NOK)", Key = "ai_credit_pack_price_nok", Value = 29m, Description = "Pris for liten kreditpakke med AI forslag (NOK)" },
+            new PricingParameter { Id = 12, Name = "AI kreditpakke liten antall", Key = "ai_credit_pack_count", Value = 5m, Description = "Antall AI genererings-kreditter per liten kreditpakke" },
             new PricingParameter { Id = 13, Name = "AI aktiveringsgebyr (NOK)", Key = "ai_banner_activation_fee_nok", Value = 95m, Description = "Obligatorisk AI aktiveringsgebyr ved bestilling av banner med AI design (NOK)" },
             new PricingParameter { Id = 14, Name = "AI kreditter ved bestilling", Key = "ai_banner_activation_credits", Value = 20m, Description = "Antall AI kreditter som gis når AI aktiveringsgebyret er betalt" },
+            new PricingParameter { Id = 16, Name = "AI kreditpakke stor pris (NOK)", Key = "ai_credit_pack_large_price_nok", Value = 95m, Description = "Pris for stor kreditpakke med AI forslag (NOK)" },
+            new PricingParameter { Id = 17, Name = "AI kreditpakke stor antall", Key = "ai_credit_pack_large_count", Value = 20m, Description = "Antall AI genererings-kreditter per stor kreditpakke" },
             // BANNERSH-88: multi-panel pricing — overlap between panels when a banner is wider
             // than Material.MaxBannerWidthCm and must be assembled from multiple panels.
             new PricingParameter { Id = 15, Name = "Panel-overlapp (cm)", Key = "banner_panel_overlap_cm", Value = 5m, Description = "Overlapp i cm mellom panel ved sammenliming av brede banner. Bestemmer pris-multiplikator (×2, ×3, …) når bestilt bredde overstiger materialets maks bredde." }

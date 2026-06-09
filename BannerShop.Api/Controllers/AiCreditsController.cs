@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using BannerShop.Api.Services.AiCredits;
 using BannerShop.Api.Services.Orders.Stripe;
@@ -9,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 namespace BannerShop.Api.Controllers;
 
 /// <summary>
-/// AI generation credit pool endpoints (BANNERSH-65, BANNERSH-69).
+/// AI generation credit pool endpoints (BANNERSH-65, BANNERSH-69, BANNERSH-137).
 /// </summary>
 [ApiController]
 [Route("api/ai-credits")]
@@ -48,36 +49,61 @@ public class AiCreditsController : ControllerBase
 
     // ── GET /api/ai-credits/packs ────────────────────────────────────────────
     /// <summary>
-    /// Public credit-pack info — price and credit count for the current pack offering.
-    /// Used by widgets (e.g. AccountView buy-credits button) that need to display the
-    /// price without going through the paywall 402 flow (BANNERSH-71).
+    /// Public credit-pack info — price and credit count for both pack tiers (BANNERSH-137).
+    /// Used by widgets that need to display the buy CTA without going through the paywall 402 flow.
     /// </summary>
     [HttpGet("packs")]
     [AllowAnonymous]
     public async Task<IActionResult> GetCreditPackInfo(CancellationToken ct)
     {
-        var (priceNok, creditCount) = await ReadCreditPackPricingAsync(ct);
+        var pricingDict = await LoadAllPackPricingAsync(ct);
+
+        var smallPrice = pricingDict.GetValueOrDefault("ai_credit_pack_price_nok", 29m);
+        var smallCount = (int)pricingDict.GetValueOrDefault("ai_credit_pack_count", 5m);
+        var largePrice = pricingDict.GetValueOrDefault("ai_credit_pack_large_price_nok", 95m);
+        var largeCount = (int)pricingDict.GetValueOrDefault("ai_credit_pack_large_count", 20m);
+
         return Ok(new
         {
-            priceNok    = priceNok,
-            creditCount = creditCount
+            small = new { priceNok = smallPrice, creditCount = smallCount },
+            large = new { priceNok = largePrice, creditCount = largeCount }
         });
     }
 
     // ── POST /api/ai-credits/packs/buy ───────────────────────────────────────
     /// <summary>
-    /// Initiates a credit-pack purchase. Returns a Stripe PaymentIntent client secret
-    /// the frontend uses to confirm payment. Credits are granted by the Stripe webhook
-    /// after payment_intent.succeeded fires (BANNERSH-69).
+    /// Initiates a credit-pack purchase for the chosen tier (BANNERSH-137).
+    /// Body: { "pack": "small" | "large" } — defaults to "small" for backward compatibility.
+    /// Returns a Stripe PaymentIntent client secret; credits are granted by the Stripe webhook.
     /// </summary>
     [HttpPost("packs/buy")]
     [Authorize]
-    public async Task<IActionResult> BuyCreditPack(CancellationToken ct)
+    public async Task<IActionResult> BuyCreditPack(
+        [FromBody] BuyCreditPackRequest? request,
+        CancellationToken ct)
     {
         var userId = GetUserId();
         if (userId == 0) return Unauthorized();
 
-        var (priceNok, creditCount) = await ReadCreditPackPricingAsync(ct);
+        var pack = (request?.Pack ?? "small").ToLowerInvariant();
+        if (pack != "small" && pack != "large")
+            return BadRequest(new { error = "Invalid pack. Must be 'small' or 'large'." });
+
+        var pricingDict = await LoadAllPackPricingAsync(ct);
+
+        decimal priceNok;
+        int creditCount;
+
+        if (pack == "large")
+        {
+            priceNok    = pricingDict.GetValueOrDefault("ai_credit_pack_large_price_nok", 95m);
+            creditCount = (int)pricingDict.GetValueOrDefault("ai_credit_pack_large_count", 20m);
+        }
+        else
+        {
+            priceNok    = pricingDict.GetValueOrDefault("ai_credit_pack_price_nok", 29m);
+            creditCount = (int)pricingDict.GetValueOrDefault("ai_credit_pack_count", 5m);
+        }
 
         // A client-side idempotency key prevents duplicate PIs if the request is retried.
         var idempotencyKey = Guid.NewGuid().ToString("N");
@@ -89,24 +115,24 @@ public class AiCreditsController : ControllerBase
         {
             clientSecret = intent.ClientSecret,
             creditCount  = creditCount,
-            priceNok     = priceNok
+            priceNok     = priceNok,
+            pack         = pack
         });
     }
 
     /// <summary>
-    /// Loads the credit-pack pricing parameters (seeded by BANNERSH-65), falling back to
-    /// the documented defaults (29 kr / 10 credits) if they are missing.
+    /// Loads all credit-pack pricing parameters at once to avoid multiple round-trips.
+    /// Falls back to the documented defaults when rows are missing.
     /// </summary>
-    private async Task<(decimal PriceNok, int CreditCount)> ReadCreditPackPricingAsync(CancellationToken ct)
+    private async Task<Dictionary<string, decimal>> LoadAllPackPricingAsync(CancellationToken ct)
     {
-        var pricingDict = await _db.PricingParameters
+        return await _db.PricingParameters
             .AsNoTracking()
-            .Where(p => p.Key == "ai_credit_pack_price_nok" || p.Key == "ai_credit_pack_count")
+            .Where(p => p.Key == "ai_credit_pack_price_nok"
+                     || p.Key == "ai_credit_pack_count"
+                     || p.Key == "ai_credit_pack_large_price_nok"
+                     || p.Key == "ai_credit_pack_large_count")
             .ToDictionaryAsync(p => p.Key, p => p.Value, ct);
-
-        var priceNok    = pricingDict.GetValueOrDefault("ai_credit_pack_price_nok", 29m);
-        var creditCount = (int)pricingDict.GetValueOrDefault("ai_credit_pack_count", 10m);
-        return (priceNok, creditCount);
     }
 
     private int GetUserId()
@@ -114,4 +140,11 @@ public class AiCreditsController : ControllerBase
         var raw = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return int.TryParse(raw, out var id) ? id : 0;
     }
+}
+
+/// <summary>Body for POST /api/ai-credits/packs/buy (BANNERSH-137).</summary>
+public class BuyCreditPackRequest
+{
+    /// <summary>"small" or "large". Defaults to "small" when omitted.</summary>
+    public string Pack { get; set; } = "small";
 }

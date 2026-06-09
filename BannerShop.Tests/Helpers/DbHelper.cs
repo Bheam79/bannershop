@@ -33,11 +33,13 @@ internal static class DbHelper
             new PricingParameter { Id = 8,  Name = "Max length",                   Key = "shipping_max_length_cm",         Value = 240m  },
             new PricingParameter { Id = 9,  Name = "Standard lead time",           Key = "standard_lead_time_days",        Value = 14m   },
             new PricingParameter { Id = 10, Name = "Express lead time",            Key = "express_lead_time_days",         Value = 3m    },
-            new PricingParameter { Id = 11, Name = "AI credit pack price",         Key = "ai_credit_pack_price_nok",       Value = 29m   },
-            new PricingParameter { Id = 12, Name = "AI credit pack count",         Key = "ai_credit_pack_count",           Value = 10m   },
-            new PricingParameter { Id = 13, Name = "AI activation fee",            Key = "ai_banner_activation_fee_nok",   Value = 95m   },
-            new PricingParameter { Id = 14, Name = "AI activation credits",        Key = "ai_banner_activation_credits",   Value = 20m   },
-            new PricingParameter { Id = 15, Name = "Banner panel overlap",         Key = "banner_panel_overlap_cm",        Value = 5m    }
+            new PricingParameter { Id = 11, Name = "AI credit pack small price",    Key = "ai_credit_pack_price_nok",             Value = 29m   },
+            new PricingParameter { Id = 12, Name = "AI credit pack small count",   Key = "ai_credit_pack_count",                 Value = 5m    },
+            new PricingParameter { Id = 13, Name = "AI activation fee",            Key = "ai_banner_activation_fee_nok",         Value = 95m   },
+            new PricingParameter { Id = 14, Name = "AI activation credits",        Key = "ai_banner_activation_credits",         Value = 20m   },
+            new PricingParameter { Id = 15, Name = "Banner panel overlap",         Key = "banner_panel_overlap_cm",              Value = 5m    },
+            new PricingParameter { Id = 16, Name = "AI credit pack large price",   Key = "ai_credit_pack_large_price_nok",       Value = 95m   },
+            new PricingParameter { Id = 17, Name = "AI credit pack large count",   Key = "ai_credit_pack_large_count",           Value = 20m   }
         );
         db.SaveChanges();
     }

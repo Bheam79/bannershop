@@ -8,8 +8,8 @@ using Xunit;
 namespace BannerShop.Tests.Controllers;
 
 /// <summary>
-/// Integration tests for AiCreditsController (BANNERSH-69).
-/// Covers auth guard and happy-path behaviour of POST /api/ai-credits/packs/buy.
+/// Integration tests for AiCreditsController (BANNERSH-69, BANNERSH-137).
+/// Covers auth guard and happy-path behaviour of the credit-pack endpoints.
 /// </summary>
 public class AiCreditsControllerTests : IClassFixture<TestWebApplicationFactory>
 {
@@ -33,10 +33,10 @@ public class AiCreditsControllerTests : IClassFixture<TestWebApplicationFactory>
         });
     }
 
-    // ── Public pack info (BANNERSH-71) ───────────────────────────────────────
+    // ── Public pack info (BANNERSH-71, BANNERSH-137) ─────────────────────────
 
     [Fact]
-    public async Task GetCreditPackInfo_WithoutAuth_Returns200WithPricing()
+    public async Task GetCreditPackInfo_WithoutAuth_Returns200WithBothTiers()
     {
         var client = _factory.CreateClient();
 
@@ -47,10 +47,17 @@ public class AiCreditsControllerTests : IClassFixture<TestWebApplicationFactory>
         var doc = JsonSerializer.Deserialize<JsonElement>(
             await response.Content.ReadAsStringAsync(), _json);
 
-        doc.GetProperty("priceNok").GetDecimal().Should().Be(29m,
+        // Small tier
+        doc.GetProperty("small").GetProperty("priceNok").GetDecimal().Should().Be(29m,
             "ai_credit_pack_price_nok is seeded to 29 kr");
-        doc.GetProperty("creditCount").GetInt32().Should().Be(10,
-            "ai_credit_pack_count is seeded to 10");
+        doc.GetProperty("small").GetProperty("creditCount").GetInt32().Should().Be(5,
+            "ai_credit_pack_count is seeded to 5 (BANNERSH-137)");
+
+        // Large tier
+        doc.GetProperty("large").GetProperty("priceNok").GetDecimal().Should().Be(95m,
+            "ai_credit_pack_large_price_nok is seeded to 95 kr");
+        doc.GetProperty("large").GetProperty("creditCount").GetInt32().Should().Be(20,
+            "ai_credit_pack_large_count is seeded to 20");
     }
 
     // ── Auth guard ───────────────────────────────────────────────────────────
@@ -75,14 +82,14 @@ public class AiCreditsControllerTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    // ── Happy path ───────────────────────────────────────────────────────────
+    // ── Happy path — small pack ───────────────────────────────────────────────
 
     [Fact]
-    public async Task BuyCreditPack_WithAuth_Returns200WithClientSecretAndPricing()
+    public async Task BuyCreditPack_SmallPack_Returns200WithCorrectPricing()
     {
         var client = RegisterAndGetAuthenticatedClient();
 
-        var response = await client.PostAsync("/api/ai-credits/packs/buy", null);
+        var response = await client.PostAsJsonAsync("/api/ai-credits/packs/buy", new { pack = "small" });
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -91,38 +98,99 @@ public class AiCreditsControllerTests : IClassFixture<TestWebApplicationFactory>
 
         doc.GetProperty("clientSecret").GetString().Should().NotBeNullOrEmpty(
             "MockStripePaymentService must return a deterministic fake client secret");
-        doc.GetProperty("creditCount").GetInt32().Should().Be(10,
-            "ai_credit_pack_count is seeded to 10");
+        doc.GetProperty("creditCount").GetInt32().Should().Be(5,
+            "ai_credit_pack_count is seeded to 5 (BANNERSH-137)");
         doc.GetProperty("priceNok").GetDecimal().Should().Be(29m,
             "ai_credit_pack_price_nok is seeded to 29 kr");
+        doc.GetProperty("pack").GetString().Should().Be("small");
     }
+
+    [Fact]
+    public async Task BuyCreditPack_DefaultPack_Returns200WithSmallTier()
+    {
+        var client = RegisterAndGetAuthenticatedClient();
+
+        // POST with no body — should default to small pack for backward compat.
+        var response = await client.PostAsync("/api/ai-credits/packs/buy", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        var doc = JsonSerializer.Deserialize<JsonElement>(body, _json);
+
+        doc.GetProperty("creditCount").GetInt32().Should().Be(5,
+            "default pack is 'small' which has 5 credits");
+        doc.GetProperty("priceNok").GetDecimal().Should().Be(29m);
+    }
+
+    // ── Happy path — large pack ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task BuyCreditPack_LargePack_Returns200WithLargeTierPricing()
+    {
+        var client = RegisterAndGetAuthenticatedClient();
+
+        var response = await client.PostAsJsonAsync("/api/ai-credits/packs/buy", new { pack = "large" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        var doc = JsonSerializer.Deserialize<JsonElement>(body, _json);
+
+        doc.GetProperty("clientSecret").GetString().Should().NotBeNullOrEmpty();
+        doc.GetProperty("creditCount").GetInt32().Should().Be(20,
+            "ai_credit_pack_large_count is seeded to 20");
+        doc.GetProperty("priceNok").GetDecimal().Should().Be(95m,
+            "ai_credit_pack_large_price_nok is seeded to 95 kr");
+        doc.GetProperty("pack").GetString().Should().Be("large");
+    }
+
+    [Fact]
+    public async Task BuyCreditPack_InvalidPack_Returns400()
+    {
+        var client = RegisterAndGetAuthenticatedClient();
+
+        var response = await client.PostAsJsonAsync("/api/ai-credits/packs/buy", new { pack = "mega" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    // ── Pricing reflected from DB ─────────────────────────────────────────────
 
     [Fact]
     public async Task BuyCreditPack_PricingFromDb_ReflectsSeededValues()
     {
-        // Override pricing params to verify the endpoint reads from DB, not hard-coded defaults.
+        // Verify the endpoint reads from DB, not hard-coded defaults.
         _factory.SeedDatabase(db =>
         {
-            var pack  = db.PricingParameters.FirstOrDefault(p => p.Key == "ai_credit_pack_price_nok");
-            var count = db.PricingParameters.FirstOrDefault(p => p.Key == "ai_credit_pack_count");
-            if (pack is not null && count is not null)
-            {
-                // The seeded values are 29 and 10; just confirm they are reflected correctly.
-                pack.Value.Should().Be(29m);
-                count.Value.Should().Be(10m);
-            }
+            var smallPrice = db.PricingParameters.FirstOrDefault(p => p.Key == "ai_credit_pack_price_nok");
+            var smallCount = db.PricingParameters.FirstOrDefault(p => p.Key == "ai_credit_pack_count");
+            var largePrice = db.PricingParameters.FirstOrDefault(p => p.Key == "ai_credit_pack_large_price_nok");
+            var largeCount = db.PricingParameters.FirstOrDefault(p => p.Key == "ai_credit_pack_large_count");
+
+            smallPrice?.Value.Should().Be(29m);
+            smallCount?.Value.Should().Be(5m);
+            largePrice?.Value.Should().Be(95m);
+            largeCount?.Value.Should().Be(20m);
         });
 
         var client = RegisterAndGetAuthenticatedClient();
 
-        var response = await client.PostAsync("/api/ai-credits/packs/buy", null);
+        // Small pack
+        var smallResp = await client.PostAsJsonAsync("/api/ai-credits/packs/buy", new { pack = "small" });
+        smallResp.StatusCode.Should().Be(HttpStatusCode.OK);
+        var smallDoc = JsonSerializer.Deserialize<JsonElement>(
+            await smallResp.Content.ReadAsStringAsync(), _json);
+        smallDoc.GetProperty("priceNok").GetDecimal().Should().Be(29m);
+        smallDoc.GetProperty("creditCount").GetInt32().Should().Be(5);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var doc = JsonSerializer.Deserialize<JsonElement>(
-            await response.Content.ReadAsStringAsync(), _json);
-
-        doc.GetProperty("priceNok").GetDecimal().Should().Be(29m);
-        doc.GetProperty("creditCount").GetInt32().Should().Be(10);
+        // Large pack
+        var largeResp = await client.PostAsJsonAsync("/api/ai-credits/packs/buy", new { pack = "large" });
+        largeResp.StatusCode.Should().Be(HttpStatusCode.OK);
+        var largeDoc = JsonSerializer.Deserialize<JsonElement>(
+            await largeResp.Content.ReadAsStringAsync(), _json);
+        largeDoc.GetProperty("priceNok").GetDecimal().Should().Be(95m);
+        largeDoc.GetProperty("creditCount").GetInt32().Should().Be(20);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
