@@ -163,6 +163,72 @@ public class BannerPromptServiceTests
     }
 
     [Fact]
+    public void Text_overlay_includes_safe_zone_instruction()
+    {
+        // Both person-centred and non-person-centred overlays must instruct the model
+        // to keep text away from the image edges so nothing is clipped by the 18:9
+        // center-crop or by print finishing.
+        var promptPerson = _sut.BuildPrompt(new BannerPromptInput(
+            Category: BannerTemplateCategory.Birthday,
+            Language: "nb",
+            PersonName: "Emma",
+            PersonAge: 20,
+            TextContent: "Gratulerer!",
+            ThemeDescription: "",
+            AspectRatio: "16:9",
+            HasPortrait: false));
+
+        promptPerson.Should().Contain("safe zone");
+
+        var promptNonPerson = _sut.BuildPrompt(new BannerPromptInput(
+            Category: BannerTemplateCategory.Christmas,
+            Language: "nb",
+            PersonName: "",
+            PersonAge: null,
+            TextContent: "God jul",
+            ThemeDescription: "",
+            AspectRatio: "16:9",
+            HasPortrait: false));
+
+        promptNonPerson.Should().Contain("safe zone");
+    }
+
+    [Fact]
+    public void Portrait_instruction_uses_position_hint_when_supplied()
+    {
+        var prompt = _sut.BuildPrompt(new BannerPromptInput(
+            Category: BannerTemplateCategory.Birthday,
+            Language: "nb",
+            PersonName: "Emma",
+            PersonAge: 20,
+            TextContent: "Gratulerer!",
+            ThemeDescription: "",
+            AspectRatio: "16:9",
+            HasPortrait: true,
+            PortraitPosition: "at the left-of-center"));
+
+        prompt.Should().Contain("at the left-of-center");
+        prompt.Should().Contain("preserve the face from the reference image");
+    }
+
+    [Fact]
+    public void Portrait_instruction_defaults_to_natural_placement_when_no_position_hint()
+    {
+        var prompt = _sut.BuildPrompt(new BannerPromptInput(
+            Category: BannerTemplateCategory.Birthday,
+            Language: "nb",
+            PersonName: "Emma",
+            PersonAge: 20,
+            TextContent: "Gratulerer!",
+            ThemeDescription: "",
+            AspectRatio: "16:9",
+            HasPortrait: true));
+
+        prompt.Should().Contain("naturally within the scene");
+        prompt.Should().Contain("preserve the face from the reference image");
+    }
+
+    [Fact]
     public void Non_person_centred_category_uses_single_text_overlay()
     {
         // Christmas is NOT person-centred — only TextContent goes in the overlay.

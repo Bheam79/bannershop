@@ -14,7 +14,14 @@ public record BannerPromptInput(
     string TextContent,
     string ThemeDescription,
     string AspectRatio,         // "16:9" or "18:9"
-    bool HasPortrait
+    bool HasPortrait,
+    /// <summary>
+    /// Optional horizontal position hint for the portrait composite, e.g.
+    /// "at the left-of-center", "at the center", "at the right-of-center".
+    /// Derived from the design request ID in the pipeline so successive
+    /// generations vary their composition rather than always centering the face.
+    /// </summary>
+    string? PortraitPosition = null
 );
 
 /// <summary>

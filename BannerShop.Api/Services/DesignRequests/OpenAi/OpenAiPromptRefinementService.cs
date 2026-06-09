@@ -153,8 +153,9 @@ public sealed class OpenAiPromptRefinementService : IPromptRefinementService
         system.AppendLine("Goals when rewriting the customer's request into the final image prompt:");
         system.AppendLine("  • Stay faithful to the celebration category and any theme keywords the customer gave.");
         system.AppendLine("  • Expand terse themes (e.g. \"minecraft\", \"tropical\", \"pirates\") into a vivid, concrete visual description.");
-        system.AppendLine("  • If a portrait was uploaded, instruct the model to embed the celebrant's photo prominently and preserve their face, matching the colour and lighting of the photo to the surrounding scene.");
+        system.AppendLine("  • If a portrait was uploaded, instruct the model to embed the celebrant's photo prominently and preserve their face, matching the colour and lighting of the photo to the surrounding scene. Use the portrait-position hint from the base prompt (left-of-center / center / right-of-center) to vary the composition — do NOT always place the portrait dead-centre.");
         system.AppendLine("  • Keep the customer's exact overlay text in double-quotes, in the requested language, with the instruction to render it as large, readable banner typography.");
+        system.AppendLine("  • ALL text must be placed well within the safe zone — at least 10% inward from every edge — so nothing is clipped by print finishing or aspect-ratio cropping. Never position text against the top or bottom edge.");
         system.AppendLine("  • Specify the aspect ratio, photorealistic / print-quality, no watermarks, no logos.");
         system.AppendLine();
         system.AppendLine("Output rules (important):");

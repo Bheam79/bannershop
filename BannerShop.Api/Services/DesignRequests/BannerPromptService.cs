@@ -27,6 +27,8 @@ public sealed class BannerPromptService : IBannerPromptService
             sb.Append(" Feature a prominent portrait of ").Append(SafeName(input.PersonName));
             if (input.PersonAge is int age and > 0 and < 130)
                 sb.Append(", ").Append(age.ToString(CultureInfo.InvariantCulture)).Append(" years old");
+            var pos = input.PortraitPosition is { Length: > 0 } p ? p : "naturally within the scene";
+            sb.Append(", positioned ").Append(pos);
             sb.Append(" — preserve the face from the reference image.");
         }
         else if (!string.IsNullOrWhiteSpace(input.PersonName))
@@ -49,7 +51,7 @@ public sealed class BannerPromptService : IBannerPromptService
                 // rendered text on the banner, not just as background context.
                 sb.Append(" Overlay these text elements in large, readable ")
                   .Append(langName)
-                  .Append(" typography: the name \"")
+                  .Append(" typography, well within the safe zone (at least 10% from every edge so nothing is clipped by print finishing or aspect-ratio crop): the name \"")
                   .Append(name.Replace("\"", "\\\""))
                   .Append("\" prominently, and below it the message \"")
                   .Append(text.Replace("\"", "\\\""))
@@ -59,7 +61,7 @@ public sealed class BannerPromptService : IBannerPromptService
             {
                 sb.Append(" Overlay this text in large, readable ")
                   .Append(langName)
-                  .Append(" typography: \"")
+                  .Append(" typography, well within the safe zone (at least 10% from every edge so nothing is clipped): \"")
                   .Append(text.Replace("\"", "\\\""))
                   .Append("\".");
             }

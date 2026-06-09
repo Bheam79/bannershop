@@ -119,6 +119,16 @@ public sealed class AiGenerationPipeline
                 referenceAbs = null;
             }
 
+            // Derive a portrait-position hint from the request ID so successive
+            // generations vary their composition (left / center / right of center)
+            // rather than always placing the face dead-centre.
+            string? portraitPosition = null;
+            if (referenceAbs is not null)
+            {
+                var positions = new[] { "at the center", "at the left-of-center", "at the right-of-center" };
+                portraitPosition = positions[Math.Abs(request.Id) % positions.Length];
+            }
+
             var basePrompt = _prompts.BuildPrompt(new BannerPromptInput(
                 Category: request.BannerTemplate.Category,
                 Language: request.Language,
@@ -127,7 +137,8 @@ public sealed class AiGenerationPipeline
                 TextContent: request.TextContent,
                 ThemeDescription: request.ThemeDescription,
                 AspectRatio: request.AspectRatio,
-                HasPortrait: referenceAbs is not null));
+                HasPortrait: referenceAbs is not null,
+                PortraitPosition: portraitPosition));
 
             // BANNERSH-155: surface the deterministic base prompt in journalctl
             // so operators can verify the celebrant name (and other inputs) made
