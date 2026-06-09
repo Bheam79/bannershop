@@ -17,6 +17,30 @@ export interface LoginResponse {
 }
 
 /**
+ * Pre-seed an IpAiUsage row for the given IP address (BANNERSH-114).
+ *
+ * Anonymous AI generation grants 1 free request per IP per rolling 30 days.
+ * To deterministically test the "paywall on second attempt" scenario
+ * (BANNERSH-79, scenario 3), Playwright calls this BEFORE the first browser
+ * generation attempt so the IP is already in the "used" state.
+ *
+ * The endpoint is only registered in Development — see TestOnlyController and
+ * the Program.cs guard that strips it from MVC discovery in all other
+ * environments (it returns 404 in Production).
+ */
+export async function apiSeedIpAiUsage(ipAddress: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/test/seed-ip-ai-usage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ipAddress }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Seed IpAiUsage failed (${res.status}): ${text}`)
+  }
+}
+
+/**
  * Log in via the API and return the auth response.
  */
 export async function apiLogin(email: string, password: string): Promise<LoginResponse> {

@@ -237,8 +237,18 @@ builder.Services.AddCors(options =>
 });
 
 // ─── Controllers & Swagger ────────────────────────────────────────────────────
-builder.Services.AddControllers()
+var controllersBuilder = builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+
+// BANNERSH-114: TestOnlyController exposes pre-seed endpoints used by Playwright
+// E2E specs (e.g. POST /api/test/seed-ip-ai-usage). Outside Development we strip
+// it from MVC's controller discovery so the routes literally do not exist —
+// requests get a vanilla 404 instead of any test-only behavior.
+if (!builder.Environment.IsDevelopment())
+{
+    controllersBuilder.ConfigureApplicationPartManager(apm =>
+        apm.FeatureProviders.Add(new BannerShop.Api.Controllers.TestOnlyControllerExcludingFeatureProvider()));
+}
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
