@@ -24,4 +24,7 @@ public enum CreditReason
     /// payment row backs the grant — i.e. these are "free" credits.
     /// </summary>
     AdminGrant,
+
+    /// <summary>5 credits granted automatically when a new user account is created (signup bonus).</summary>
+    SignupBonus,
 }

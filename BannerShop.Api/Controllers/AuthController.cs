@@ -1,7 +1,9 @@
 using System.Security.Claims;
 using BannerShop.Api.Models.Auth;
 using BannerShop.Api.Services;
+using BannerShop.Api.Services.AiCredits;
 using BannerShop.Core.Entities;
+using BannerShop.Core.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -12,8 +14,15 @@ namespace BannerShop.Api.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _auth;
+    private readonly IAiCreditService _aiCredits;
+    private readonly ILogger<AuthController> _logger;
 
-    public AuthController(IAuthService auth) => _auth = auth;
+    public AuthController(IAuthService auth, IAiCreditService aiCredits, ILogger<AuthController> logger)
+    {
+        _auth = auth;
+        _aiCredits = aiCredits;
+        _logger = logger;
+    }
 
     // ── POST /api/auth/register ───────────────────────────────────────────────
     [HttpPost("register")]
@@ -22,6 +31,18 @@ public class AuthController : ControllerBase
         var result = await _auth.RegisterAsync(req.Email, req.Password, req.Name, req.Phone);
         if (!result.Success)
             return BadRequest(new { error = result.Error });
+
+        // Grant signup bonus credits — failure must never break registration.
+        try
+        {
+            var userId = result.User!.Id;
+            await _aiCredits.GrantAsync(userId, 5, CreditReason.SignupBonus, referenceId: $"signup:{userId}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to grant signup bonus credits to user {UserId}", result.User!.Id);
+        }
+
         return Ok(ToAuthResponse(result));
     }
 
