@@ -237,7 +237,15 @@ test.describe('Design requests', () => {
       return
     }
 
-    const { designRequestId: drId, userAuth } = await seedAiRequestInStatus(
+    // BANNERSH-122: use a Manual request to avoid the race between the
+    // background AI pipeline and the admin status update. AI requests are
+    // created with Status=InProgress and immediately processed by
+    // AiGenerationPipeline (which advances them to AwaitingApproval via the
+    // instant MockAiImageService), so by the time the page loads the status
+    // text would be "Klar til godkjenning" instead of "Designet er under
+    // arbeid". Manual requests have no background pipeline, so the admin's
+    // InProgress status sticks.
+    const { designRequestId: drId, userAuth } = await seedManualRequestInStatus(
       adminAuth.accessToken,
       'InProgress',
     )
