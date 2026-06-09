@@ -20,6 +20,7 @@ public class AdminOrdersController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> List(
         [FromQuery] OrderStatus? status = null,
+        [FromQuery] OrderType? orderType = null,
         [FromQuery] DateTime? fromUtc = null,
         [FromQuery] DateTime? toUtc = null,
         [FromQuery] string? search = null,
@@ -30,6 +31,7 @@ public class AdminOrdersController : ControllerBase
         var paged = await _orders.ListAllAsync(new AdminOrderFilter
         {
             Status = status,
+            OrderType = orderType,
             FromUtc = fromUtc,
             ToUtc = toUtc,
             Search = search,

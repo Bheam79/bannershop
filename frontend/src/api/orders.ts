@@ -36,9 +36,36 @@ export interface OrderDraftResponse {
   }
 }
 
+// ── Type-specific detail sub-objects ─────────────────────────────────────────
+
+export interface CustomBannerDetail {
+  previewUrl: string | null
+  bannerSizeName: string | null
+  materialName: string | null
+}
+
+export interface AiBannerDetail {
+  previewUrl: string | null
+  themeDescription: string | null
+  personName: string | null
+  revisionCount: number
+  designRequestId: number | null
+}
+
+export interface ManualDesignDetail {
+  previewUrl: string | null
+  aspectRatio: string | null
+  designerNotes: string | null
+  designRequestId: number | null
+}
+
 export interface OrderListItem {
   id: number
   status: string
+  /** Fulfilment flow: CustomBanner / AiBanner / ManualDesign */
+  orderType?: string
+  /** Lifecycle state per state-machine */
+  orderState?: string
   deliveryType: string
   totalNok: number
   itemCount: number
@@ -47,6 +74,10 @@ export interface OrderListItem {
   // Present in admin responses
   customerName?: string | null
   customerEmail?: string | null
+  // Type-specific sub-objects (admin responses only)
+  customBanner?: CustomBannerDetail | null
+  aiBanner?: AiBannerDetail | null
+  manualDesign?: ManualDesignDetail | null
 }
 
 export interface OrdersPage {
@@ -74,6 +105,7 @@ export interface OrderItemDetail {
   lineTotalNok: number
   notes: string | null
   bannerDesignId: number | null
+  designRequestId: number | null
   currentProductionStage: string
   productionStatusHistory: ProductionStatusEntry[]
 }
@@ -93,6 +125,10 @@ export interface OrderDetailResponse {
   customerName?: string | null
   customerEmail?: string | null
   status: string
+  /** Fulfilment flow: CustomBanner / AiBanner / ManualDesign */
+  orderType?: string
+  /** Lifecycle state per state-machine */
+  orderState?: string
   deliveryType: string
   shippingCostNok: number
   expressFeeNok: number
@@ -109,6 +145,10 @@ export interface OrderDetailResponse {
   } | null
   items: OrderItemDetail[]
   shipmentTracking: ShipmentTracking | null
+  // Type-specific sub-objects
+  customBanner?: CustomBannerDetail | null
+  aiBanner?: AiBannerDetail | null
+  manualDesign?: ManualDesignDetail | null
 }
 
 // ── API calls ─────────────────────────────────────────────────────────────────

@@ -166,6 +166,8 @@ public class AiBannerDetailDto
     public string? PersonName { get; set; }
     /// <summary>Number of AI re-generations the customer has requested so far.</summary>
     public int RevisionCount { get; set; }
+    /// <summary>ID of the linked DesignRequest (if any). Used by admin to navigate to design detail.</summary>
+    public int? DesignRequestId { get; set; }
 }
 
 /// <summary>
@@ -180,6 +182,8 @@ public class ManualDesignDetailDto
     public string? AspectRatio { get; set; }
     /// <summary>Internal notes from the designer / admin.</summary>
     public string? DesignerNotes { get; set; }
+    /// <summary>ID of the linked DesignRequest. Used by admin to upload the finished design.</summary>
+    public int? DesignRequestId { get; set; }
 }
 
 public class OrderListItemDto

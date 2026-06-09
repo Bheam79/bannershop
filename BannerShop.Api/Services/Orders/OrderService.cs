@@ -363,6 +363,8 @@ public class OrderService : IOrderService
         var query = _db.Orders.AsNoTracking().AsQueryable();
         if (filter.Status is { } s)
             query = query.Where(o => o.Status == s);
+        if (filter.OrderType is { } t)
+            query = query.Where(o => o.OrderType == t);
         if (filter.FromUtc is { } from)
             query = query.Where(o => o.CreatedAt >= from);
         if (filter.ToUtc is { } to)
@@ -681,6 +683,8 @@ public class OrderService : IOrderService
 
         await _db.SaveChangesAsync(ct);
         var full = await LoadFullOrderAsync(orderId, ct);
+        if (full is not null && next == OrderState.InProduction)
+            await TrySendProductionStartedAsync(full, ct);
         var drAdvance = await LoadDesignRequestForOrderAsync(orderId, ct);
         return OrderActionResult.Ok(ToDetailDto(full!, drAdvance));
     }
@@ -835,7 +839,8 @@ public class OrderService : IOrderService
                     PreviewUrl = previewPath is null ? null : _storage.PublicUrlFor(previewPath),
                     ThemeDescription = dr.ThemeDescription,
                     PersonName = dr.PersonName,
-                    RevisionCount = dr.RevisionCount
+                    RevisionCount = dr.RevisionCount,
+                    DesignRequestId = dr.Id
                 }, null);
             }
             case OrderType.ManualDesign:
@@ -846,7 +851,8 @@ public class OrderService : IOrderService
                 {
                     PreviewUrl = previewPath is null ? null : _storage.PublicUrlFor(previewPath),
                     AspectRatio = dr.AspectRatio,
-                    DesignerNotes = dr.DesignerNotes
+                    DesignerNotes = dr.DesignerNotes,
+                    DesignRequestId = dr.Id
                 });
             }
             default:
@@ -965,6 +971,27 @@ public class OrderService : IOrderService
         }
     }
 
+    private async Task TrySendProductionStartedAsync(Order order, CancellationToken ct)
+    {
+        var to = order.User?.Email;
+        if (string.IsNullOrWhiteSpace(to))
+        {
+            _logger.LogWarning("Skipping production-started email for order {OrderId}: no recipient email on user.", order.Id);
+            return;
+        }
+
+        try
+        {
+            var subject = $"Bestillingen din er sendt til produksjon – BannerShop #{order.Id}";
+            var body = BuildProductionStartedHtml(order);
+            await _email.SendAsync(to, subject, body, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send production-started email for order {OrderId} to {To}", order.Id, to);
+        }
+    }
+
     private async Task TrySendShipmentDispatchedAsync(Order order, CancellationToken ct)
     {
         var to = order.User?.Email;
@@ -1048,6 +1075,24 @@ public class OrderService : IOrderService
             sb.Append($"<p>Estimert leveringsdato: <strong>{Esc(estimatedDelivery)}</strong>.</p>");
             sb.Append("<p>Vi gir beskjed igjen så snart pakken er sendt fra oss.</p>");
         }
+        sb.Append("<p>Vennlig hilsen,<br/>BannerShop</p>");
+        sb.Append("</body></html>");
+        return sb.ToString();
+    }
+
+    private static string BuildProductionStartedHtml(Order o)
+    {
+        var customerName = string.IsNullOrWhiteSpace(o.User?.Name) ? "kunde" : o.User!.Name;
+        var estimatedDelivery = o.EstimatedDelivery.HasValue
+            ? o.EstimatedDelivery.Value.ToString("d. MMMM yyyy", NoCulture)
+            : "ikke fastsatt";
+
+        var sb = new StringBuilder();
+        sb.Append("<html><body style=\"font-family:Arial,Helvetica,sans-serif;color:#222;\">");
+        sb.Append($"<p>Hei {Esc(customerName)},</p>");
+        sb.Append($"<p>Bestillingen din <strong>#{o.Id}</strong> er nå sendt til produksjon. Vi er i gang med å trykke banneret ditt!</p>");
+        sb.Append($"<p>Estimert leveringsdato: <strong>{Esc(estimatedDelivery)}</strong>.</p>");
+        sb.Append("<p>Du vil motta en ny melding når pakken er sendt fra oss.</p>");
         sb.Append("<p>Vennlig hilsen,<br/>BannerShop</p>");
         sb.Append("</body></html>");
         return sb.ToString();

@@ -91,6 +91,8 @@ public class PagedResult<T>
 public class AdminOrderFilter
 {
     public OrderStatus? Status { get; init; }
+    /// <summary>Filter by order fulfilment type (CustomBanner / AiBanner / ManualDesign).</summary>
+    public OrderType? OrderType { get; init; }
     public DateTime? FromUtc { get; init; }
     public DateTime? ToUtc { get; init; }
     /// <summary>Free-text search across order id, customer email and name.</summary>

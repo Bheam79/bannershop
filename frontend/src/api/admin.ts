@@ -126,6 +126,8 @@ export async function uploadDesignRequestPreview(
 
 export interface AdminOrderFilter {
   status?: string
+  /** Filter by order type: CustomBanner | AiBanner | ManualDesign */
+  orderType?: string
   fromUtc?: string
   toUtc?: string
   search?: string
@@ -137,6 +139,7 @@ export async function listAdminOrders(filter: AdminOrderFilter = {}): Promise<Or
   // Strip undefined/empty values
   const params: Record<string, string | number> = {}
   if (filter.status) params.status = filter.status
+  if (filter.orderType) params.orderType = filter.orderType
   if (filter.fromUtc) params.fromUtc = filter.fromUtc
   if (filter.toUtc) params.toUtc = filter.toUtc
   if (filter.search) params.search = filter.search
@@ -154,6 +157,15 @@ export async function getAdminOrder(id: number): Promise<OrderDetailResponse> {
 export async function updateOrderStatus(id: number, status: string): Promise<OrderDetailResponse> {
   const { data } = await apiClient.put<OrderDetailResponse>(`/admin/orders/${id}/status`, { status })
   return data
+}
+
+export async function advanceOrderState(id: number, toState: string): Promise<OrderDetailResponse> {
+  const { data } = await apiClient.post<OrderDetailResponse>(`/admin/orders/${id}/advance-state`, { toState })
+  return data
+}
+
+export async function markOrderDelivered(id: number): Promise<OrderDetailResponse> {
+  return advanceOrderState(id, 'Delivered')
 }
 
 export async function updateProductionStage(

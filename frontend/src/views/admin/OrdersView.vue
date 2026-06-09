@@ -9,6 +9,7 @@ const router = useRouter()
 // ── Filter state ──────────────────────────────────────────────────────────────
 const filters = reactive({
   status: '',
+  orderType: '',
   fromDate: '',
   toDate: '',
   search: '',
@@ -29,6 +30,7 @@ async function load(p = 1) {
   try {
     const result = await listAdminOrders({
       status: filters.status || undefined,
+      orderType: filters.orderType || undefined,
       fromUtc: filters.fromDate ? `${filters.fromDate}T00:00:00Z` : undefined,
       toUtc: filters.toDate ? `${filters.toDate}T23:59:59Z` : undefined,
       search: filters.search || undefined,
@@ -52,6 +54,7 @@ function applyFilters() {
 
 function clearFilters() {
   filters.status = ''
+  filters.orderType = ''
   filters.fromDate = ''
   filters.toDate = ''
   filters.search = ''
@@ -78,9 +81,10 @@ const STATUS_LABELS: Record<string, string> = {
 }
 const STATUS_CLASSES: Record<string, string> = {
   Draft: 'bg-gray-100 text-gray-600', PendingPayment: 'bg-yellow-100 text-yellow-800',
-  Paid: 'bg-blue-100 text-blue-800', InProduction: 'bg-blue-100 text-blue-800',
+  Paid: 'bg-blue-100 text-blue-800', InProduction: 'bg-indigo-100 text-indigo-800',
   ReadyToShip: 'bg-purple-100 text-purple-800', Shipped: 'bg-green-100 text-green-800',
   Delivered: 'bg-green-100 text-green-700', Cancelled: 'bg-red-100 text-red-700',
+  DesignReady: 'bg-cyan-100 text-cyan-800', CustomerApproval: 'bg-orange-100 text-orange-800',
 }
 function statusLabel(s: string) { return STATUS_LABELS[s] ?? s }
 function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'bg-gray-100 text-gray-600' }
@@ -90,7 +94,33 @@ function deliveryLabel(d: string) {
   return 'Standard'
 }
 
+// Order type chip helpers
+const ORDER_TYPE_LABELS: Record<string, string> = {
+  CustomBanner: 'Tilpasset',
+  AiBanner: 'AI',
+  ManualDesign: 'Designer',
+}
+const ORDER_TYPE_CLASSES: Record<string, string> = {
+  CustomBanner: 'bg-blue-900/50 text-blue-300',
+  AiBanner: 'bg-cyan-900/50 text-cyan-300',
+  ManualDesign: 'bg-indigo-900/50 text-indigo-300',
+}
+function orderTypeLabel(t: string | undefined) { return t ? (ORDER_TYPE_LABELS[t] ?? t) : '—' }
+function orderTypeClass(t: string | undefined) { return t ? (ORDER_TYPE_CLASSES[t] ?? 'bg-gray-700 text-gray-300') : 'bg-gray-700 text-gray-300' }
+
+// State badge uses orderState when available, falls back to status
+function displayState(order: OrderListItem) { return order.orderState ?? order.status }
+function stateLabel(order: OrderListItem): string {
+  const s = displayState(order)
+  return STATUS_LABELS[s] ?? s
+}
+function stateClass(order: OrderListItem): string {
+  const s = displayState(order)
+  return STATUS_CLASSES[s] ?? 'bg-gray-100 text-gray-600'
+}
+
 const ALL_STATUSES = Object.keys(STATUS_LABELS)
+const ALL_ORDER_TYPES = Object.keys(ORDER_TYPE_LABELS)
 </script>
 
 <template>
@@ -104,9 +134,9 @@ const ALL_STATUSES = Object.keys(STATUS_LABELS)
 
     <!-- ── Filters ──────────────────────────────────────────────────────── -->
     <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-5">
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         <!-- Search -->
-        <div class="lg:col-span-1">
+        <div class="lg:col-span-2">
           <input
             v-model="filters.search"
             type="text"
@@ -114,6 +144,16 @@ const ALL_STATUSES = Object.keys(STATUS_LABELS)
             class="w-full bg-gray-900 border border-gray-600 text-gray-100 placeholder:text-gray-500 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             @keyup.enter="applyFilters"
           />
+        </div>
+        <!-- Order type -->
+        <div>
+          <select
+            v-model="filters.orderType"
+            class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Alle typer</option>
+            <option v-for="t in ALL_ORDER_TYPES" :key="t" :value="t">{{ orderTypeLabel(t) }}</option>
+          </select>
         </div>
         <!-- Status -->
         <div>
@@ -126,21 +166,12 @@ const ALL_STATUSES = Object.keys(STATUS_LABELS)
           </select>
         </div>
         <!-- From date -->
-        <div>
+        <div class="flex gap-2">
           <input
             v-model="filters.fromDate"
             type="date"
             class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Fra dato"
-          />
-        </div>
-        <!-- To date -->
-        <div>
-          <input
-            v-model="filters.toDate"
-            type="date"
-            class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Til dato"
           />
         </div>
       </div>
@@ -182,9 +213,10 @@ const ALL_STATUSES = Object.keys(STATUS_LABELS)
           <thead class="bg-gray-900 border-b border-gray-700">
             <tr>
               <th class="text-left px-4 py-3 font-medium text-gray-400">Ordre #</th>
+              <th class="text-left px-4 py-3 font-medium text-gray-400">Type</th>
               <th class="text-left px-4 py-3 font-medium text-gray-400">Kunde</th>
               <th class="text-left px-4 py-3 font-medium text-gray-400">Dato</th>
-              <th class="text-left px-4 py-3 font-medium text-gray-400">Status</th>
+              <th class="text-left px-4 py-3 font-medium text-gray-400">Tilstand</th>
               <th class="text-left px-4 py-3 font-medium text-gray-400 hidden md:table-cell">Levering</th>
               <th class="text-left px-4 py-3 font-medium text-gray-400 hidden lg:table-cell">Varer</th>
               <th class="text-right px-4 py-3 font-medium text-gray-400">Totalt</th>
@@ -199,13 +231,21 @@ const ALL_STATUSES = Object.keys(STATUS_LABELS)
             >
               <td class="px-4 py-3 font-medium text-blue-400">#{{ order.id }}</td>
               <td class="px-4 py-3">
+                <span
+                  class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                  :class="orderTypeClass(order.orderType)"
+                >
+                  {{ orderTypeLabel(order.orderType) }}
+                </span>
+              </td>
+              <td class="px-4 py-3">
                 <div class="font-medium text-gray-200">{{ order.customerName ?? '—' }}</div>
                 <div class="text-xs text-gray-500">{{ order.customerEmail }}</div>
               </td>
               <td class="px-4 py-3 text-gray-400">{{ formatDate(order.createdAt) }}</td>
               <td class="px-4 py-3">
-                <span class="text-xs font-semibold px-2 py-0.5 rounded-full" :class="statusClass(order.status)">
-                  {{ statusLabel(order.status) }}
+                <span class="text-xs font-semibold px-2 py-0.5 rounded-full" :class="stateClass(order)">
+                  {{ stateLabel(order) }}
                 </span>
               </td>
               <td class="px-4 py-3 text-gray-400 hidden md:table-cell">{{ deliveryLabel(order.deliveryType) }}</td>

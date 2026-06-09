@@ -6,6 +6,8 @@ import {
   updateOrderStatus,
   updateProductionStage,
   setShipping,
+  advanceOrderState,
+  uploadDesignRequestPreview,
 } from '@/api/admin'
 import type { OrderDetailResponse, OrderItemDetail } from '@/api/orders'
 
@@ -37,7 +39,6 @@ function syncForms() {
   if (!order.value) return
   newStatus.value = order.value.status
 
-  // Init per-item production forms
   for (const item of order.value.items) {
     if (!prodForms.value[item.id]) {
       prodForms.value[item.id] = { stage: item.currentProductionStage, notes: '' }
@@ -46,7 +47,6 @@ function syncForms() {
     }
   }
 
-  // Pre-fill shipping from existing tracking
   if (order.value.shipmentTracking) {
     const t = order.value.shipmentTracking
     shipForm.carrier = t.carrier
@@ -61,7 +61,189 @@ function todayStr(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-// ── Status update ─────────────────────────────────────────────────────────────
+// ── State-machine helpers ─────────────────────────────────────────────────────
+const STATE_SEQUENCES: Record<string, string[]> = {
+  CustomBanner:  ['Draft', 'Paid', 'InProduction', 'Shipped', 'Delivered'],
+  AiBanner:      ['Draft', 'Paid', 'CustomerApproval', 'InProduction', 'Shipped', 'Delivered'],
+  ManualDesign:  ['Draft', 'Paid', 'DesignReady', 'CustomerApproval', 'InProduction', 'Shipped', 'Delivered'],
+}
+
+const STATE_LABELS: Record<string, string> = {
+  Draft:            'Utkast',
+  Paid:             'Betalt',
+  DesignReady:      'Design klart',
+  CustomerApproval: 'Kundeaproval',
+  InProduction:     'Under produksjon',
+  Shipped:          'Sendt',
+  Delivered:        'Levert',
+  Cancelled:        'Kansellert',
+}
+
+const currentSequence = computed((): string[] => {
+  if (!order.value?.orderType) return []
+  return STATE_SEQUENCES[order.value.orderType] ?? (STATE_SEQUENCES['CustomBanner'] as string[])
+})
+
+const currentStateIndex = computed(() => {
+  if (!order.value?.orderState) return -1
+  return currentSequence.value.indexOf(order.value.orderState)
+})
+
+// ── Order type & state helpers ────────────────────────────────────────────────
+const ORDER_TYPE_LABELS: Record<string, string> = {
+  CustomBanner: 'Tilpasset banner',
+  AiBanner: 'AI-banner',
+  ManualDesign: 'Designerbannem',
+}
+const ORDER_TYPE_CLASSES: Record<string, string> = {
+  CustomBanner: 'bg-blue-900/50 text-blue-300',
+  AiBanner: 'bg-cyan-900/50 text-cyan-300',
+  ManualDesign: 'bg-indigo-900/50 text-indigo-300',
+}
+
+function orderTypeLabel(t: string | undefined) { return t ? (ORDER_TYPE_LABELS[t] ?? t) : '—' }
+function orderTypeClass(t: string | undefined) { return t ? (ORDER_TYPE_CLASSES[t] ?? 'bg-gray-700 text-gray-300') : '' }
+
+const ORDER_STATE_LABELS: Record<string, string> = {
+  Draft: 'Utkast', Paid: 'Betalt', DesignReady: 'Design klart',
+  CustomerApproval: 'Venter kundeaproval', InProduction: 'Under produksjon',
+  Shipped: 'Sendt', Delivered: 'Levert', Cancelled: 'Kansellert',
+}
+const ORDER_STATE_CLASSES: Record<string, string> = {
+  Draft: 'bg-gray-100 text-gray-600', Paid: 'bg-blue-100 text-blue-800',
+  DesignReady: 'bg-cyan-100 text-cyan-800', CustomerApproval: 'bg-orange-100 text-orange-800',
+  InProduction: 'bg-indigo-100 text-indigo-800', Shipped: 'bg-green-100 text-green-800',
+  Delivered: 'bg-green-100 text-green-700', Cancelled: 'bg-red-100 text-red-700',
+}
+
+function stateLabel(s: string | undefined) {
+  if (!s) return '—'
+  return ORDER_STATE_LABELS[s] ?? s
+}
+function stateClass(s: string | undefined) {
+  if (!s) return 'bg-gray-100 text-gray-600'
+  return ORDER_STATE_CLASSES[s] ?? 'bg-gray-100 text-gray-600'
+}
+
+// ── Contextual action computeds ───────────────────────────────────────────────
+const isCustomBanner  = computed(() => order.value?.orderType === 'CustomBanner')
+const isAiBanner      = computed(() => order.value?.orderType === 'AiBanner')
+const isManualDesign  = computed(() => order.value?.orderType === 'ManualDesign')
+const currentState    = computed(() => order.value?.orderState)
+
+// For ManualDesign: the linked design request ID (from manualDesign sub-object)
+const designRequestId = computed<number | null>(() => {
+  if (isManualDesign.value) return order.value?.manualDesign?.designRequestId ?? null
+  if (isAiBanner.value) return order.value?.aiBanner?.designRequestId ?? null
+  return null
+})
+
+// ── Action: Send til produksjon (CustomBanner Paid → InProduction) ────────────
+const sendToProductionBusy = ref(false)
+const sendToProductionError = ref('')
+const sendToProductionSuccess = ref('')
+
+async function sendToProduction() {
+  sendToProductionBusy.value = true
+  sendToProductionError.value = ''
+  sendToProductionSuccess.value = ''
+  try {
+    order.value = await advanceOrderState(orderId, 'InProduction')
+    syncForms()
+    sendToProductionSuccess.value = 'Ordren er sendt til produksjon. Kunden varsles.'
+    setTimeout(() => { sendToProductionSuccess.value = '' }, 4000)
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { error?: string } } }
+    sendToProductionError.value = e.response?.data?.error ?? 'Feil ved oppdatering.'
+  } finally {
+    sendToProductionBusy.value = false
+  }
+}
+
+// ── Action: Last opp ferdig design (ManualDesign Paid → DesignReady) ──────────
+const designFile = ref<File | null>(null)
+const designFileInput = ref<HTMLInputElement | null>(null)
+const uploadDesignBusy = ref(false)
+const uploadDesignError = ref('')
+const uploadDesignSuccess = ref('')
+
+function onDesignFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  designFile.value = input.files?.[0] ?? null
+  uploadDesignError.value = ''
+}
+
+async function uploadFinishedDesign() {
+  if (!designFile.value || !designRequestId.value) return
+  if (designFile.value.size > 20 * 1024 * 1024) {
+    uploadDesignError.value = 'Filen er for stor (maks 20 MB).'
+    return
+  }
+  uploadDesignBusy.value = true
+  uploadDesignError.value = ''
+  uploadDesignSuccess.value = ''
+  try {
+    await uploadDesignRequestPreview(designRequestId.value, designFile.value)
+    // Reload order to get updated state
+    order.value = await getAdminOrder(orderId)
+    syncForms()
+    designFile.value = null
+    if (designFileInput.value) designFileInput.value.value = ''
+    uploadDesignSuccess.value = 'Design lastet opp. Kunden varsles for godkjenning.'
+    setTimeout(() => { uploadDesignSuccess.value = '' }, 4000)
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { error?: string } } }
+    uploadDesignError.value = e.response?.data?.error ?? 'Opplasting feilet.'
+  } finally {
+    uploadDesignBusy.value = false
+  }
+}
+
+// ── Action: Force-advance from CustomerApproval → InProduction (admin override) ──
+const forceApprovalBusy = ref(false)
+const forceApprovalError = ref('')
+const forceApprovalSuccess = ref('')
+
+async function forceAdvanceFromApproval() {
+  forceApprovalBusy.value = true
+  forceApprovalError.value = ''
+  forceApprovalSuccess.value = ''
+  try {
+    order.value = await advanceOrderState(orderId, 'InProduction')
+    syncForms()
+    forceApprovalSuccess.value = 'Ordren er sendt til produksjon.'
+    setTimeout(() => { forceApprovalSuccess.value = '' }, 4000)
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { error?: string } } }
+    forceApprovalError.value = e.response?.data?.error ?? 'Feil ved oppdatering.'
+  } finally {
+    forceApprovalBusy.value = false
+  }
+}
+
+// ── Action: Merk som levert (Shipped → Delivered) ─────────────────────────────
+const markDeliveredBusy = ref(false)
+const markDeliveredError = ref('')
+const markDeliveredSuccess = ref('')
+
+async function markDelivered() {
+  markDeliveredBusy.value = true
+  markDeliveredError.value = ''
+  markDeliveredSuccess.value = ''
+  try {
+    order.value = await advanceOrderState(orderId, 'Delivered')
+    syncForms()
+    markDeliveredSuccess.value = 'Ordren er merket som levert.'
+    setTimeout(() => { markDeliveredSuccess.value = '' }, 4000)
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { error?: string } } }
+    markDeliveredError.value = e.response?.data?.error ?? 'Feil ved oppdatering.'
+  } finally {
+    markDeliveredBusy.value = false
+  }
+}
+
+// ── Status update (legacy / advanced) ────────────────────────────────────────
 const newStatus = ref('')
 const statusSaving = ref(false)
 const statusError = ref('')
@@ -167,15 +349,6 @@ const PRODUCTION_STAGES = [
   { value: 'Finishing', label: 'Etterbehandling' },
   { value: 'ReadyToShip', label: 'Klar til frakt' },
 ]
-const STATUS_LABELS: Record<string, string> = Object.fromEntries(ORDER_STATUSES.map(s => [s.value, s.label]))
-const STATUS_CLASSES: Record<string, string> = {
-  Draft: 'bg-gray-100 text-gray-600', PendingPayment: 'bg-yellow-100 text-yellow-800',
-  Paid: 'bg-blue-100 text-blue-800', InProduction: 'bg-blue-100 text-blue-800',
-  ReadyToShip: 'bg-purple-100 text-purple-800', Shipped: 'bg-green-100 text-green-800',
-  Delivered: 'bg-green-100 text-green-700', Cancelled: 'bg-red-100 text-red-700',
-}
-function statusLabel(s: string) { return STATUS_LABELS[s] ?? s }
-function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'bg-gray-100 text-gray-600' }
 function prodStageLabel(s: string) {
   return PRODUCTION_STAGES.find(x => x.value === s)?.label ?? s
 }
@@ -225,13 +398,61 @@ const deliveryLabel = computed(() => {
       <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-5">
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 class="text-xl font-bold text-gray-100">Ordre #{{ order.id }}</h1>
+            <div class="flex items-center gap-3 mb-1">
+              <h1 class="text-xl font-bold text-gray-100">Ordre #{{ order.id }}</h1>
+              <!-- Order type chip -->
+              <span
+                v-if="order.orderType"
+                class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                :class="orderTypeClass(order.orderType)"
+              >
+                {{ orderTypeLabel(order.orderType) }}
+              </span>
+            </div>
             <p class="text-sm text-gray-500 mt-0.5">Opprettet {{ formatDateTime(order.createdAt) }}</p>
           </div>
-          <span class="text-sm font-semibold px-3 py-1.5 rounded-full" :class="statusClass(order.status)">
-            {{ statusLabel(order.status) }}
+          <!-- Current state badge -->
+          <span class="text-sm font-semibold px-3 py-1.5 rounded-full" :class="stateClass(order.orderState)">
+            {{ stateLabel(order.orderState) }}
           </span>
         </div>
+
+        <!-- State progression stepper -->
+        <div v-if="currentSequence.length" class="mt-5">
+          <div class="flex items-center overflow-x-auto pb-1 gap-0">
+            <template v-for="(step, idx) in currentSequence" :key="step">
+              <!-- Connector line (not before first) -->
+              <div
+                v-if="idx > 0"
+                class="flex-1 h-0.5 min-w-4"
+                :class="idx <= currentStateIndex ? 'bg-blue-500' : 'bg-gray-700'"
+              />
+              <!-- Step circle + label -->
+              <div class="flex flex-col items-center shrink-0">
+                <div
+                  class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-colors"
+                  :class="
+                    idx < currentStateIndex
+                      ? 'bg-blue-600 border-blue-600 text-white'
+                      : idx === currentStateIndex
+                        ? 'bg-blue-500 border-blue-400 text-white ring-2 ring-blue-400/40'
+                        : 'bg-gray-800 border-gray-600 text-gray-500'
+                  "
+                >
+                  <span v-if="idx < currentStateIndex">✓</span>
+                  <span v-else>{{ idx + 1 }}</span>
+                </div>
+                <span
+                  class="text-xs mt-1 text-center max-w-16 leading-tight"
+                  :class="idx <= currentStateIndex ? 'text-gray-300' : 'text-gray-600'"
+                >
+                  {{ STATE_LABELS[step] ?? step }}
+                </span>
+              </div>
+            </template>
+          </div>
+        </div>
+
         <div class="grid sm:grid-cols-4 gap-4 mt-5 text-sm">
           <div>
             <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-0.5">Leveringstype</div>
@@ -249,6 +470,263 @@ const deliveryLabel = computed(() => {
             <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-0.5">Sist oppdatert</div>
             <div class="font-medium text-gray-400">{{ formatDateTime(order.updatedAt) }}</div>
           </div>
+        </div>
+      </div>
+
+      <!-- ── Contextual action buttons ────────────────────────────────────── -->
+      <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-5">
+        <h2 class="text-base font-semibold text-gray-100 mb-4">Handlinger</h2>
+
+        <!-- CustomBanner + Paid: Send til produksjon -->
+        <template v-if="isCustomBanner && currentState === 'Paid'">
+          <div class="flex items-center gap-3 flex-wrap">
+            <button
+              :disabled="sendToProductionBusy"
+              class="bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              @click="sendToProduction"
+            >
+              {{ sendToProductionBusy ? 'Behandler…' : '🖨 Send til produksjon' }}
+            </button>
+            <span v-if="sendToProductionSuccess" class="text-green-400 text-sm">✓ {{ sendToProductionSuccess }}</span>
+            <span v-if="sendToProductionError" class="text-red-400 text-sm">{{ sendToProductionError }}</span>
+          </div>
+          <p class="text-xs text-gray-400 mt-2">Setter ordren til «Under produksjon» og varsler kunden på e-post.</p>
+        </template>
+
+        <!-- ManualDesign + Paid: Last opp ferdig design -->
+        <template v-else-if="isManualDesign && currentState === 'Paid'">
+          <div class="mb-2">
+            <p class="text-sm text-gray-300 mb-3">
+              Last opp det ferdige designet for å varsle kunden om godkjenning.
+            </p>
+            <div class="flex flex-col sm:flex-row gap-3 items-start">
+              <input
+                ref="designFileInput"
+                type="file"
+                accept="image/jpeg,image/jpg,image/png"
+                class="block text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-900/50 file:text-blue-300 hover:file:bg-blue-900"
+                @change="onDesignFileChange"
+              />
+              <button
+                :disabled="!designFile || uploadDesignBusy"
+                class="bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                @click="uploadFinishedDesign"
+              >
+                {{ uploadDesignBusy ? 'Laster opp…' : '📤 Last opp ferdig design' }}
+              </button>
+            </div>
+            <div v-if="designFile" class="mt-1 text-xs text-gray-500">
+              Valgt: {{ designFile.name }} ({{ (designFile.size / 1024 / 1024).toFixed(1) }} MB)
+            </div>
+            <div v-if="uploadDesignSuccess" class="mt-2 text-green-400 text-sm">✓ {{ uploadDesignSuccess }}</div>
+            <div v-if="uploadDesignError" class="mt-2 text-red-400 text-sm">{{ uploadDesignError }}</div>
+          </div>
+        </template>
+
+        <!-- AI/Manual in CustomerApproval: waiting for customer, admin can force -->
+        <template v-else-if="(isAiBanner || isManualDesign) && currentState === 'CustomerApproval'">
+          <div class="bg-orange-900/20 border border-orange-700 rounded-lg px-4 py-3 mb-4">
+            <p class="text-sm text-orange-300 font-medium">
+              ⏳ Venter på kundegodkjenning
+            </p>
+            <p class="text-xs text-orange-500 mt-0.5">
+              Kunden har fått tilsendt designet og må godkjenne det før produksjon starter.
+            </p>
+          </div>
+          <!-- Admin force-advance -->
+          <div class="flex items-center gap-3 flex-wrap">
+            <button
+              :disabled="forceApprovalBusy"
+              class="border border-gray-500 text-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-700 disabled:opacity-50"
+              @click="forceAdvanceFromApproval"
+            >
+              {{ forceApprovalBusy ? 'Behandler…' : 'Admin: tving til produksjon →' }}
+            </button>
+            <span class="text-xs text-gray-500">Hopper over kundegodkjenning</span>
+            <span v-if="forceApprovalSuccess" class="text-green-400 text-sm">✓ {{ forceApprovalSuccess }}</span>
+            <span v-if="forceApprovalError" class="text-red-400 text-sm">{{ forceApprovalError }}</span>
+          </div>
+        </template>
+
+        <!-- InProduction: Merk som sendt + fraktinfo -->
+        <template v-else-if="currentState === 'InProduction'">
+          <p class="text-sm text-gray-400 mb-4">
+            Fyll inn fraktinfo og lagre for å sende ordren. Status settes til <strong>Sendt</strong> og kunden varsles.
+            {{ order.shipmentTracking ? 'Eksisterende fraktinfo oppdateres.' : '' }}
+          </p>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1">Transportør <span class="text-red-400">*</span></label>
+              <input v-model="shipForm.carrier" type="text" placeholder="Bring, PostNord…"
+                class="w-full bg-gray-900 border border-gray-600 text-gray-100 placeholder:text-gray-500 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1">Sporingsnummer <span class="text-red-400">*</span></label>
+              <input v-model="shipForm.trackingNumber" type="text" placeholder="370799000000000000"
+                class="w-full bg-gray-900 border border-gray-600 text-gray-100 placeholder:text-gray-500 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div class="sm:col-span-2">
+              <label class="block text-sm font-medium text-gray-300 mb-1">Sporings-URL (valgfritt)</label>
+              <input v-model="shipForm.trackingUrl" type="url" placeholder="https://sporing.bring.no/…"
+                class="w-full bg-gray-900 border border-gray-600 text-gray-100 placeholder:text-gray-500 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1">Sendedato</label>
+              <input v-model="shipForm.shippedAt" type="date"
+                class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1">Estimert ankomst</label>
+              <input v-model="shipForm.estimatedArrival" type="date"
+                class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+          <div class="flex items-center gap-3 mt-4 flex-wrap">
+            <button
+              :disabled="shipSaving"
+              class="bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-green-600 disabled:opacity-50"
+              @click="saveShipping"
+            >
+              {{ shipSaving ? 'Lagrer…' : '🚚 Merk som sendt' }}
+            </button>
+            <span v-if="shipSuccess" class="text-green-400 text-sm">✓ {{ shipSuccess }}</span>
+            <span v-if="shipError" class="text-red-400 text-sm">{{ shipError }}</span>
+          </div>
+        </template>
+
+        <!-- Shipped: Merk som levert -->
+        <template v-else-if="currentState === 'Shipped'">
+          <div class="flex items-center gap-3 flex-wrap">
+            <button
+              :disabled="markDeliveredBusy"
+              class="bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              @click="markDelivered"
+            >
+              {{ markDeliveredBusy ? 'Behandler…' : '✅ Merk som levert' }}
+            </button>
+            <span v-if="markDeliveredSuccess" class="text-green-400 text-sm">✓ {{ markDeliveredSuccess }}</span>
+            <span v-if="markDeliveredError" class="text-red-400 text-sm">{{ markDeliveredError }}</span>
+          </div>
+        </template>
+
+        <!-- Draft / PendingPayment / DesignReady / Delivered / Cancelled: informational -->
+        <template v-else>
+          <p v-if="currentState === 'Draft'" class="text-sm text-gray-400">
+            Ordren er i utkast-tilstand. Venter på betaling.
+          </p>
+          <p v-else-if="currentState === 'DesignReady'" class="text-sm text-gray-400">
+            Design er klart. Venter på kundegodkjenning.
+          </p>
+          <p v-else-if="currentState === 'Delivered'" class="text-sm text-green-400 font-medium">
+            ✓ Bestillingen er levert til kunden.
+          </p>
+          <p v-else-if="currentState === 'Cancelled'" class="text-sm text-red-400">
+            Ordren er kansellert.
+          </p>
+          <p v-else class="text-sm text-gray-400">Ingen handlinger tilgjengelig for nåværende tilstand.</p>
+        </template>
+      </div>
+
+      <!-- ── Type-specific sub-content ────────────────────────────────────── -->
+
+      <!-- AI banner: generated image -->
+      <div v-if="isAiBanner" class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-5">
+        <h2 class="text-base font-semibold text-gray-100 mb-3">AI-generert bilde</h2>
+        <div v-if="order.aiBanner?.previewUrl">
+          <img
+            :src="order.aiBanner.previewUrl"
+            alt="AI-generert forhåndsvisning"
+            class="w-full max-w-xl rounded-xl border border-gray-600 shadow-sm"
+          />
+          <div class="mt-3 flex items-center gap-4 text-sm">
+            <a
+              :href="order.aiBanner.previewUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-blue-400 hover:underline"
+            >
+              Se full størrelse ↗
+            </a>
+            <RouterLink
+              v-if="designRequestId"
+              :to="`/admin/design-requests/${designRequestId}`"
+              class="text-blue-400 hover:underline"
+            >
+              Åpne design-bestilling ↗
+            </RouterLink>
+          </div>
+          <div v-if="order.aiBanner.personName" class="mt-2 text-sm text-gray-400">
+            Person: <span class="text-gray-300">{{ order.aiBanner.personName }}</span>
+          </div>
+          <div v-if="order.aiBanner.themeDescription" class="mt-1 text-sm text-gray-400">
+            Tema: <span class="text-gray-300">{{ order.aiBanner.themeDescription }}</span>
+          </div>
+        </div>
+        <div v-else class="text-sm text-gray-500">
+          Ingen AI-generert bilde ennå.
+          <RouterLink
+            v-if="designRequestId"
+            :to="`/admin/design-requests/${designRequestId}`"
+            class="text-blue-400 hover:underline ml-1"
+          >
+            Se design-bestilling ↗
+          </RouterLink>
+        </div>
+      </div>
+
+      <!-- Manual design: uploaded design + link to design request -->
+      <div v-if="isManualDesign" class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-5">
+        <h2 class="text-base font-semibold text-gray-100 mb-3">Manuelt design</h2>
+        <div v-if="order.manualDesign?.previewUrl" class="mb-4">
+          <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Nåværende design</div>
+          <img
+            :src="order.manualDesign.previewUrl"
+            alt="Designforslag"
+            class="w-full max-w-xl rounded-xl border border-gray-600 shadow-sm"
+          />
+          <a
+            :href="order.manualDesign.previewUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="mt-2 block text-sm text-blue-400 hover:underline"
+          >
+            Se full størrelse ↗
+          </a>
+        </div>
+        <div v-else class="text-sm text-gray-500 mb-3">
+          Ingen design lastet opp ennå.
+        </div>
+        <div v-if="order.manualDesign?.designerNotes" class="text-sm text-gray-400 mb-3">
+          Designernotat: <span class="text-gray-300 italic">{{ order.manualDesign.designerNotes }}</span>
+        </div>
+        <RouterLink
+          v-if="designRequestId"
+          :to="`/admin/design-requests/${designRequestId}`"
+          class="text-sm text-blue-400 hover:underline"
+        >
+          Åpne full design-bestilling (revisjonshistorikk, opplasting) ↗
+        </RouterLink>
+      </div>
+
+      <!-- Custom banner: uploaded design preview (if any) -->
+      <div v-if="isCustomBanner && order.customBanner?.previewUrl" class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-5">
+        <h2 class="text-base font-semibold text-gray-100 mb-3">Opplastet design</h2>
+        <img
+          :src="order.customBanner.previewUrl"
+          alt="Kundens opplastede design"
+          class="w-full max-w-xl rounded-xl border border-gray-600 shadow-sm"
+        />
+        <a
+          :href="order.customBanner.previewUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="mt-2 block text-sm text-blue-400 hover:underline"
+        >
+          Se full størrelse ↗
+        </a>
+        <div v-if="order.customBanner.bannerSizeName" class="mt-2 text-sm text-gray-400">
+          Størrelse: <span class="text-gray-300">{{ order.customBanner.bannerSizeName }}</span>
+          <span v-if="order.customBanner.materialName"> · {{ order.customBanner.materialName }}</span>
         </div>
       </div>
 
@@ -281,32 +759,46 @@ const deliveryLabel = computed(() => {
         </div>
       </div>
 
-      <!-- ── Status updater ────────────────────────────────────────────── -->
-      <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-5">
-        <h2 class="text-base font-semibold text-gray-100 mb-3">Oppdater ordrestatus</h2>
-        <div class="flex items-center gap-3 flex-wrap">
-          <select
-            v-model="newStatus"
-            class="bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option v-for="s in ORDER_STATUSES" :key="s.value" :value="s.value">
-              {{ s.label }}
-            </option>
-          </select>
-          <button
-            :disabled="statusSaving || newStatus === order.status"
-            class="bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-            @click="saveStatus"
-          >
-            {{ statusSaving ? 'Lagrer…' : 'Lagre status' }}
-          </button>
-          <span v-if="statusSuccess" class="text-green-400 text-sm">✓ {{ statusSuccess }}</span>
-          <span v-if="statusError" class="text-red-400 text-sm">{{ statusError }}</span>
+      <!-- ── Shipping tracking (when exists) ──────────────────────────────── -->
+      <div v-if="order.shipmentTracking" class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-5">
+        <h2 class="text-base font-semibold text-gray-100 mb-3">Fraktinformasjon</h2>
+        <div class="grid sm:grid-cols-3 gap-4 text-sm">
+          <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-0.5">Transportør</div>
+            <div class="font-medium text-gray-200">{{ order.shipmentTracking.carrier }}</div>
+          </div>
+          <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-0.5">Sporingsnummer</div>
+            <div class="font-medium text-gray-200">{{ order.shipmentTracking.trackingNumber }}</div>
+          </div>
+          <div v-if="order.shipmentTracking.trackingUrl">
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-0.5">Sporingslenke</div>
+            <a
+              :href="order.shipmentTracking.trackingUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-blue-400 hover:underline text-sm"
+            >
+              Spor pakken ↗
+            </a>
+          </div>
+          <div v-if="order.shipmentTracking.shippedAt">
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-0.5">Sendedato</div>
+            <div class="text-gray-300">{{ formatDate(order.shipmentTracking.shippedAt) }}</div>
+          </div>
+          <div v-if="order.shipmentTracking.estimatedArrival">
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-0.5">Estimert ankomst</div>
+            <div class="text-gray-300">{{ formatDate(order.shipmentTracking.estimatedArrival) }}</div>
+          </div>
+          <div v-if="order.shipmentTracking.deliveredAt">
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-0.5">Levert</div>
+            <div class="text-green-400">{{ formatDate(order.shipmentTracking.deliveredAt) }}</div>
+          </div>
         </div>
       </div>
 
       <!-- ── Production stage per item ─────────────────────────────────── -->
-      <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-5">
+      <div v-if="order.orderState === 'InProduction' || order.orderState === 'Shipped' || order.orderState === 'Delivered'" class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-5">
         <h2 class="text-base font-semibold text-gray-100 mb-4">Produksjonsstatus per vare</h2>
         <div v-for="item in order.items" :key="item.id" class="mb-5 last:mb-0">
           <div class="flex items-start justify-between mb-2">
@@ -369,55 +861,6 @@ const deliveryLabel = computed(() => {
         </div>
       </div>
 
-      <!-- ── Shipping form ───────────────────────────────────────────────── -->
-      <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-5">
-        <h2 class="text-base font-semibold text-gray-100 mb-1">Fraktinformasjon</h2>
-        <p class="text-xs text-gray-400 mb-4">
-          Lagring setter ordrestatusen til <strong>Sendt</strong>.
-          {{ order.shipmentTracking ? 'Eksisterende fraktinfo oppdateres.' : '' }}
-        </p>
-
-        <div class="grid sm:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-300 mb-1">Transportør <span class="text-red-400">*</span></label>
-            <input v-model="shipForm.carrier" type="text" placeholder="Bring, PostNord…"
-              class="w-full bg-gray-900 border border-gray-600 text-gray-100 placeholder:text-gray-500 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-300 mb-1">Sporingsnummer <span class="text-red-400">*</span></label>
-            <input v-model="shipForm.trackingNumber" type="text" placeholder="370799000000000000"
-              class="w-full bg-gray-900 border border-gray-600 text-gray-100 placeholder:text-gray-500 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
-          <div class="sm:col-span-2">
-            <label class="block text-sm font-medium text-gray-300 mb-1">Sporings-URL (valgfritt)</label>
-            <input v-model="shipForm.trackingUrl" type="url" placeholder="https://sporing.bring.no/…"
-              class="w-full bg-gray-900 border border-gray-600 text-gray-100 placeholder:text-gray-500 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-300 mb-1">Sendedato</label>
-            <input v-model="shipForm.shippedAt" type="date"
-              class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-300 mb-1">Estimert ankomst</label>
-            <input v-model="shipForm.estimatedArrival" type="date"
-              class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
-        </div>
-
-        <div class="flex items-center gap-3 mt-4">
-          <button
-            :disabled="shipSaving"
-            class="bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-green-600 disabled:opacity-50"
-            @click="saveShipping"
-          >
-            {{ shipSaving ? 'Lagrer…' : 'Lagre fraktinfo' }}
-          </button>
-          <span v-if="shipSuccess" class="text-green-400 text-sm">✓ {{ shipSuccess }}</span>
-          <span v-if="shipError" class="text-red-400 text-sm">{{ shipError }}</span>
-        </div>
-      </div>
-
       <!-- ── Items table + price breakdown ─────────────────────────────── -->
       <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden mb-5">
         <div class="px-5 py-4 border-b border-gray-700">
@@ -460,6 +903,34 @@ const deliveryLabel = computed(() => {
           </div>
         </dl>
       </div>
+
+      <!-- ── Advanced: legacy status updater (collapsed) ───────────────── -->
+      <details class="mb-5">
+        <summary class="cursor-pointer text-sm text-gray-500 hover:text-gray-300 bg-gray-800 border border-gray-700 rounded-xl px-5 py-3">
+          ⚙ Avansert: endre status direkte
+        </summary>
+        <div class="bg-gray-800 border border-gray-700 border-t-0 rounded-b-xl px-5 py-4">
+          <div class="flex items-center gap-3 flex-wrap">
+            <select
+              v-model="newStatus"
+              class="bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option v-for="s in ORDER_STATUSES" :key="s.value" :value="s.value">
+                {{ s.label }}
+              </option>
+            </select>
+            <button
+              :disabled="statusSaving || newStatus === order.status"
+              class="bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              @click="saveStatus"
+            >
+              {{ statusSaving ? 'Lagrer…' : 'Lagre status' }}
+            </button>
+            <span v-if="statusSuccess" class="text-green-400 text-sm">✓ {{ statusSuccess }}</span>
+            <span v-if="statusError" class="text-red-400 text-sm">{{ statusError }}</span>
+          </div>
+        </div>
+      </details>
 
       <RouterLink to="/admin/orders" class="text-sm text-blue-400 hover:underline">← Tilbake til ordrelisten</RouterLink>
     </template>
