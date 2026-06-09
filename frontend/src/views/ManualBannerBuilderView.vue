@@ -483,8 +483,8 @@ onBeforeUnmount(() => {
         Du vil motta en e-post når designforslaget er klart til godkjenning.
         Vi leverer innen <strong style="color:var(--text)">2–3 virkedager</strong>.
       </p>
-      <RouterLink to="/account/design-requests" class="btn btn-primary" style="font-size:16px;padding:13px 28px">
-        <i class="fa-solid fa-palette"></i> Se mine design-bestillinger
+      <RouterLink to="/account/orders" class="btn btn-primary" style="font-size:16px;padding:13px 28px">
+        <i class="fa-solid fa-box"></i> Se mine ordrer
       </RouterLink>
     </div>
 

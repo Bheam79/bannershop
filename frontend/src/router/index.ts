@@ -82,9 +82,7 @@ const router = createRouter({
     },
     {
       path: '/account/design-requests',
-      name: 'account-design-requests',
-      component: () => import('@/views/account/AccountDesignRequestsView.vue'),
-      meta: { requiresAuth: true },
+      redirect: '/account/orders',
     },
     {
       path: '/account/design-requests/:id',
