@@ -20,7 +20,7 @@ public class MockStripePaymentService : IStripePaymentService
             PaymentIntentId: $"pi_mock_{orderId}",
             ClientSecret: $"pi_mock_{orderId}_secret_dev"));
 
-    public Task<StripeIntentResult> CreateCreditPackPaymentIntentAsync(int userId, int creditCount, decimal amountNok, string idempotencyKey, CancellationToken ct = default)
+    public Task<StripeIntentResult> CreateCreditPackPaymentIntentAsync(int userId, int creditCount, decimal amountNok, string idempotencyKey, int? orderId = null, CancellationToken ct = default)
         => Task.FromResult(new StripeIntentResult(
             PaymentIntentId: $"pi_mock_pack_{userId}_{idempotencyKey[..8]}",
             ClientSecret: $"pi_mock_pack_{userId}_{idempotencyKey[..8]}_secret_dev"));

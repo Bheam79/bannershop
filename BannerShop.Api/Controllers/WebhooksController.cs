@@ -84,7 +84,9 @@ public class WebhooksController : ControllerBase
         switch (evt.MetadataType)
         {
             case "ai_credit_pack":
-                // Credit pack purchase — grant credits idempotently (BANNERSH-69).
+                // Credit pack purchase — grant credits idempotently (BANNERSH-69) AND
+                // flip the synthetic CreditPack order to Paid (BANNERSH-139) so it shows
+                // up correctly in transaction reports.
                 if (evt.MetadataUserId is int uid && evt.MetadataCreditCount is int count)
                 {
                     await _aiCredits.GrantAsync(
@@ -103,6 +105,12 @@ public class WebhooksController : ControllerBase
                         "ai_credit_pack PI {Pi} missing userId or creditCount in metadata — cannot grant credits.",
                         evt.PaymentIntentId);
                 }
+
+                // Mark the linked Order paid (BANNERSH-139). Idempotent: MarkPaidAsync
+                // short-circuits when the order is already in a >= Paid status. Safe to
+                // call even for old credit-pack PIs that pre-date the Order row — the
+                // resolver simply logs an unknown-PI warning and returns.
+                await _orders.MarkPaidAsync(evt.PaymentIntentId, evt.OrderIdFromMetadata, ct);
                 break;
 
             case "ai_design_standalone":

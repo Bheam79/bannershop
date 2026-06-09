@@ -91,7 +91,7 @@ public class PagedResult<T>
 public class AdminOrderFilter
 {
     public OrderStatus? Status { get; init; }
-    /// <summary>Filter by order fulfilment type (CustomBanner / AiBanner / ManualDesign).</summary>
+    /// <summary>Filter by order fulfilment type (CustomBanner / AiBanner / ManualDesign / CreditPack).</summary>
     public OrderType? OrderType { get; init; }
     public DateTime? FromUtc { get; init; }
     public DateTime? ToUtc { get; init; }
@@ -99,4 +99,12 @@ public class AdminOrderFilter
     public string? Search { get; init; }
     public int Page { get; init; } = 1;
     public int PageSize { get; init; } = 20;
+
+    /// <summary>
+    /// BANNERSH-139: when <c>false</c> (default), <see cref="Core.Enums.OrderType.CreditPack"/>
+    /// orders are excluded from the list so the production team isn't distracted by AI
+    /// credit-pack purchases when looking for banners to print. Setting <see cref="OrderType"/>
+    /// to <c>CreditPack</c> explicitly overrides this filter (the type filter wins).
+    /// </summary>
+    public bool IncludeCreditPacks { get; init; } = false;
 }

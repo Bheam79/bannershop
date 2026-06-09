@@ -13,6 +13,9 @@ const filters = reactive({
   fromDate: '',
   toDate: '',
   search: '',
+  // BANNERSH-139: include AI credit-pack purchases in the list. Defaults to false
+  // so the production team isn't distracted by them.
+  includeCreditPacks: false,
 })
 
 // ── Table state ───────────────────────────────────────────────────────────────
@@ -36,6 +39,7 @@ async function load(p = 1) {
       search: filters.search || undefined,
       page: p,
       pageSize: PAGE_SIZE,
+      includeCreditPacks: filters.includeCreditPacks || undefined,
     })
     orders.value = result.items
     page.value = result.page
@@ -58,6 +62,7 @@ function clearFilters() {
   filters.fromDate = ''
   filters.toDate = ''
   filters.search = ''
+  filters.includeCreditPacks = false
   load(1)
 }
 
@@ -99,11 +104,15 @@ const ORDER_TYPE_LABELS: Record<string, string> = {
   CustomBanner: 'Tilpasset',
   AiBanner: 'AI',
   ManualDesign: 'Designer',
+  // BANNERSH-139: AI credit-pack purchases. Norwegian "AI-kjøp" — gold tone to
+  // visually distinguish them from production orders.
+  CreditPack: 'AI-kjøp',
 }
 const ORDER_TYPE_CLASSES: Record<string, string> = {
   CustomBanner: 'bg-blue-900/50 text-blue-300',
   AiBanner: 'bg-cyan-900/50 text-cyan-300',
   ManualDesign: 'bg-indigo-900/50 text-indigo-300',
+  CreditPack: 'bg-yellow-900/50 text-yellow-300',
 }
 function orderTypeLabel(t: string | undefined) { return t ? (ORDER_TYPE_LABELS[t] ?? t) : '—' }
 function orderTypeClass(t: string | undefined) { return t ? (ORDER_TYPE_CLASSES[t] ?? 'bg-gray-700 text-gray-300') : 'bg-gray-700 text-gray-300' }
@@ -175,7 +184,7 @@ const ALL_ORDER_TYPES = Object.keys(ORDER_TYPE_LABELS)
           />
         </div>
       </div>
-      <div class="flex gap-2 mt-3">
+      <div class="flex flex-wrap gap-2 mt-3 items-center">
         <button
           class="bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-600"
           @click="applyFilters"
@@ -188,6 +197,19 @@ const ALL_ORDER_TYPES = Object.keys(ORDER_TYPE_LABELS)
         >
           Nullstill
         </button>
+        <!-- BANNERSH-139: opt-in toggle to reveal credit-pack purchases -->
+        <label
+          class="ml-auto inline-flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none"
+          title="Vis også AI kreditt-pakke kjøp i listen"
+        >
+          <input
+            type="checkbox"
+            v-model="filters.includeCreditPacks"
+            class="accent-yellow-500 w-4 h-4"
+            @change="applyFilters"
+          />
+          Inkluder AI-kjøp
+        </label>
       </div>
     </div>
 

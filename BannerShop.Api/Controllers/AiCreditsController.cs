@@ -2,6 +2,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using BannerShop.Api.Services.AiCredits;
 using BannerShop.Api.Services.Orders.Stripe;
+using BannerShop.Core.Entities;
+using BannerShop.Core.Enums;
 using BannerShop.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -108,15 +110,55 @@ public class AiCreditsController : ControllerBase
         // A client-side idempotency key prevents duplicate PIs if the request is retried.
         var idempotencyKey = Guid.NewGuid().ToString("N");
 
+        // BANNERSH-139: create a synthetic Order row so credit-pack revenue shows up in
+        // transaction reports. The order is hidden from the admin "Ordrer" list by default
+        // (filtered out by OrderType=CreditPack unless explicitly requested).
+        var order = new Order
+        {
+            UserId       = userId,
+            OrderType    = OrderType.CreditPack,
+            OrderState   = OrderState.Draft,
+            Status       = OrderStatus.Draft,
+            DeliveryType = DeliveryType.Pickup, // credit packs have no physical delivery
+            TotalNok     = priceNok,
+            CreatedAt    = DateTime.UtcNow,
+            UpdatedAt    = DateTime.UtcNow,
+            Items        = new List<OrderItem>
+            {
+                new OrderItem
+                {
+                    BannerSizeId   = null,
+                    HeightCm       = 0,
+                    Quantity       = 1,
+                    AreaSqm        = 0m,
+                    UnitPriceNok   = priceNok,
+                    EyeletOption   = EyeletOption.None,
+                    EyeletCount    = 0,
+                    EyeletFeeNok   = 0m,
+                    LineTotalNok   = priceNok,
+                    Notes          = $"AI generation pack — {creditCount} credits"
+                }
+            }
+        };
+        _db.Orders.Add(order);
+        await _db.SaveChangesAsync(ct);
+
         var intent = await _stripe.CreateCreditPackPaymentIntentAsync(
-            userId, creditCount, priceNok, idempotencyKey, ct);
+            userId, creditCount, priceNok, idempotencyKey, order.Id, ct);
+
+        // Persist the PI id on the Order so the webhook can resolve it back.
+        order.StripePaymentIntentId = intent.PaymentIntentId;
+        order.Status = OrderStatus.PendingPayment;
+        order.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
 
         return Ok(new
         {
             clientSecret = intent.ClientSecret,
             creditCount  = creditCount,
             priceNok     = priceNok,
-            pack         = pack
+            pack         = pack,
+            orderId      = order.Id
         });
     }
 

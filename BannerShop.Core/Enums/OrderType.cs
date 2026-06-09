@@ -13,5 +13,13 @@ public enum OrderType : byte
     AiBanner = 1,
 
     /// <summary>Design is delegated to a human designer (495 kr design fee).</summary>
-    ManualDesign = 2
+    ManualDesign = 2,
+
+    /// <summary>
+    /// AI generation credit pack purchase (BANNERSH-139). These orders track revenue
+    /// for transaction reports but are hidden by default in the admin orders list so
+    /// the production team isn't distracted by them when looking at what to print.
+    /// Items collection holds a single synthetic line describing the pack.
+    /// </summary>
+    CreditPack = 3
 }

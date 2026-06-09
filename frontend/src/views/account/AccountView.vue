@@ -80,18 +80,23 @@ const hasAnyItems = computed(
 const activeItems = computed<UnifiedActiveItem[]>(() => {
   const orderItems: UnifiedActiveItem[] = recentOrders.value
     .filter(o => ACTIVE_ORDER_STATUSES.has(o.status))
-    .map(o => ({
-      id: o.id,
-      kind: 'order' as const,
-      typeLabel: 'Eget',
-      typeBadgeClass: 'badge-type-order',
-      statusLabel: statusLabel(o.status),
-      statusClass: statusClass(o.status),
-      date: o.createdAt,
-      priceNok: o.totalNok,
-      detailPath: `/account/orders/${o.id}`,
-      isAwaitingApproval: false,
-    }))
+    .map(o => {
+      // BANNERSH-139: AI credit-pack orders surface here too so the user has a
+      // visible receipt for the transaction.
+      const isCreditPack = o.orderType === 'CreditPack'
+      return {
+        id: o.id,
+        kind: 'order' as const,
+        typeLabel: isCreditPack ? 'AI-pakke' : 'Eget',
+        typeBadgeClass: isCreditPack ? 'badge-type-creditpack' : 'badge-type-order',
+        statusLabel: statusLabel(o.status),
+        statusClass: statusClass(o.status),
+        date: o.createdAt,
+        priceNok: o.totalNok,
+        detailPath: `/account/orders/${o.id}`,
+        isAwaitingApproval: false,
+      }
+    })
   const drItems: UnifiedActiveItem[] = designRequests.value
     .filter(dr => ACTIVE_DR_STATUSES.has(dr.status))
     .map(dr => ({
@@ -890,9 +895,10 @@ async function changePassword() {
   text-transform: uppercase;
   flex-shrink: 0;
 }
-.badge-type-order    { background: rgba(138,128,115,.18); color: var(--muted);  border: 1px solid rgba(138,128,115,.3); }
-.badge-type-ai       { background: rgba(34,200,230,.12);  color: #7ddce8;       border: 1px solid rgba(34,200,230,.28); }
-.badge-type-designer { background: rgba(130,100,220,.15); color: #c9a8f5;       border: 1px solid rgba(130,100,220,.3); }
+.badge-type-order      { background: rgba(138,128,115,.18); color: var(--muted);  border: 1px solid rgba(138,128,115,.3); }
+.badge-type-ai         { background: rgba(34,200,230,.12);  color: #7ddce8;       border: 1px solid rgba(34,200,230,.28); }
+.badge-type-designer   { background: rgba(130,100,220,.15); color: #c9a8f5;       border: 1px solid rgba(130,100,220,.3); }
+.badge-type-creditpack { background: rgba(231,185,78,.15);  color: #e7d08a;       border: 1px solid rgba(231,185,78,.35); }
 
 /* ── Approve action ─────────────────────────────────────────── */
 .approve-action {

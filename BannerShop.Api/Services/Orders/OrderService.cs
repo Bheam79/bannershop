@@ -365,6 +365,11 @@ public class OrderService : IOrderService
             query = query.Where(o => o.Status == s);
         if (filter.OrderType is { } t)
             query = query.Where(o => o.OrderType == t);
+        else if (!filter.IncludeCreditPacks)
+            // BANNERSH-139: hide credit-pack orders from the default admin list so the
+            // production team isn't distracted by them. The opt-in flag (or an explicit
+            // OrderType=CreditPack filter) bypasses this.
+            query = query.Where(o => o.OrderType != OrderType.CreditPack);
         if (filter.FromUtc is { } from)
             query = query.Where(o => o.CreatedAt >= from);
         if (filter.ToUtc is { } to)
@@ -568,21 +573,26 @@ public class OrderService : IOrderService
         order.OrderState = OrderState.Paid;
         order.UpdatedAt = DateTime.UtcNow;
 
-        // Seed initial Queued production rows for each item
-        var items = await _db.OrderItems
-            .Where(i => i.OrderId == order.Id)
-            .Include(i => i.ProductionStatuses)
-            .ToListAsync(ct);
-        foreach (var item in items)
+        // Seed initial Queued production rows for each item — only for orders that
+        // actually go to production. CreditPack orders (BANNERSH-139) carry no banner
+        // items and never enter production, so skip this entirely.
+        if (order.OrderType != OrderType.CreditPack)
         {
-            if (!item.ProductionStatuses.Any())
+            var items = await _db.OrderItems
+                .Where(i => i.OrderId == order.Id)
+                .Include(i => i.ProductionStatuses)
+                .ToListAsync(ct);
+            foreach (var item in items)
             {
-                item.ProductionStatuses.Add(new ProductionStatus
+                if (!item.ProductionStatuses.Any())
                 {
-                    Stage = ProductionStage.Queued,
-                    UpdatedAt = DateTime.UtcNow,
-                    Notes = "Auto-created on payment received"
-                });
+                    item.ProductionStatuses.Add(new ProductionStatus
+                    {
+                        Stage = ProductionStage.Queued,
+                        UpdatedAt = DateTime.UtcNow,
+                        Notes = "Auto-created on payment received"
+                    });
+                }
             }
         }
 
@@ -623,10 +633,15 @@ public class OrderService : IOrderService
 
         // Fire-and-forget order-confirmation email — failures must never bubble
         // up to the Stripe webhook caller, which would otherwise retry the
-        // whole MarkPaid flow on every send error.
-        var full = await LoadFullOrderAsync(order.Id, ct);
-        if (full is not null)
-            await TrySendOrderConfirmationAsync(full, ct);
+        // whole MarkPaid flow on every send error. CreditPack orders don't get
+        // the banner-shaped confirmation email (BANNERSH-139) — credits-granted
+        // is its own success signal in the wizard UI.
+        if (order.OrderType != OrderType.CreditPack)
+        {
+            var full = await LoadFullOrderAsync(order.Id, ct);
+            if (full is not null)
+                await TrySendOrderConfirmationAsync(full, ct);
+        }
     }
 
     public async Task MarkPaymentFailedAsync(string paymentIntentId, int? orderIdHint, string? failureMessage, CancellationToken ct = default)

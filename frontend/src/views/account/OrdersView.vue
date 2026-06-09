@@ -91,21 +91,27 @@ async function load() {
       listDesignRequests(),
     ])
 
-    const orderItems: UnifiedItem[] = ordersResult.items.map(o => ({
-      id: o.id,
-      displayId: `O-${o.id}`,
-      kind: 'order' as const,
-      typeLabel: 'Eget',
-      typeBadgeClass: 'badge-type-order',
-      status: o.status,
-      statusLabel: ORDER_STATUS_LABELS[o.status] ?? o.status,
-      statusClass: ORDER_STATUS_CLASSES[o.status] ?? 'badge-draft',
-      date: o.createdAt,
-      priceNok: o.totalNok,
-      previewUrl: null,
-      detailPath: `/account/orders/${o.id}`,
-      isAwaitingApproval: false,
-    }))
+    const orderItems: UnifiedItem[] = ordersResult.items.map(o => {
+      // BANNERSH-139: AI credit-pack purchases are tracked as Orders with
+      // OrderType=CreditPack. Surface them under the user's "Mine ordrer" list
+      // with a clear "AI-pakke" label so the receipt is visible.
+      const isCreditPack = o.orderType === 'CreditPack'
+      return {
+        id: o.id,
+        displayId: isCreditPack ? `AI-pakke-${o.id}` : `O-${o.id}`,
+        kind: 'order' as const,
+        typeLabel: isCreditPack ? 'AI-pakke' : 'Eget',
+        typeBadgeClass: isCreditPack ? 'badge-type-creditpack' : 'badge-type-order',
+        status: o.status,
+        statusLabel: ORDER_STATUS_LABELS[o.status] ?? o.status,
+        statusClass: ORDER_STATUS_CLASSES[o.status] ?? 'badge-draft',
+        date: o.createdAt,
+        priceNok: o.totalNok,
+        previewUrl: null,
+        detailPath: `/account/orders/${o.id}`,
+        isAwaitingApproval: false,
+      }
+    })
 
     const drItems: UnifiedItem[] = drList.map(dr => ({
       id: dr.id,
@@ -460,9 +466,10 @@ function formatDate(iso: string): string {
   text-transform: uppercase;
   white-space: nowrap;
 }
-.badge-type-order    { background: rgba(138,128,115,.18); color: var(--muted);  border: 1px solid rgba(138,128,115,.3); }
-.badge-type-ai       { background: rgba(34,200,230,.12);  color: #7ddce8;       border: 1px solid rgba(34,200,230,.28); }
-.badge-type-designer { background: rgba(130,100,220,.15); color: #c9a8f5;       border: 1px solid rgba(130,100,220,.3); }
+.badge-type-order      { background: rgba(138,128,115,.18); color: var(--muted);  border: 1px solid rgba(138,128,115,.3); }
+.badge-type-ai         { background: rgba(34,200,230,.12);  color: #7ddce8;       border: 1px solid rgba(34,200,230,.28); }
+.badge-type-designer   { background: rgba(130,100,220,.15); color: #c9a8f5;       border: 1px solid rgba(130,100,220,.3); }
+.badge-type-creditpack { background: rgba(231,185,78,.15);  color: #e7d08a;       border: 1px solid rgba(231,185,78,.35); }
 
 /* ── Status cell ────────────────────────────────────────────── */
 .status-cell {

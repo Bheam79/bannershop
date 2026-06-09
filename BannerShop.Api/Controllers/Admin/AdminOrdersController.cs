@@ -17,6 +17,12 @@ public class AdminOrdersController : ControllerBase
     public AdminOrdersController(IOrderService orders) => _orders = orders;
 
     // ── GET /api/admin/orders ────────────────────────────────────────────────
+    /// <summary>
+    /// Admin orders list. By default (BANNERSH-139), credit-pack purchases are hidden
+    /// so the production team only sees orders they need to print. Pass
+    /// <paramref name="includeCreditPacks"/>=true to see them too (used by the
+    /// transaction-reports view), or filter by <c>orderType=CreditPack</c> directly.
+    /// </summary>
     [HttpGet]
     public async Task<IActionResult> List(
         [FromQuery] OrderStatus? status = null,
@@ -26,6 +32,7 @@ public class AdminOrdersController : ControllerBase
         [FromQuery] string? search = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
+        [FromQuery] bool includeCreditPacks = false,
         CancellationToken ct = default)
     {
         var paged = await _orders.ListAllAsync(new AdminOrderFilter
@@ -36,7 +43,8 @@ public class AdminOrdersController : ControllerBase
             ToUtc = toUtc,
             Search = search,
             Page = page,
-            PageSize = pageSize
+            PageSize = pageSize,
+            IncludeCreditPacks = includeCreditPacks
         }, ct);
         return Ok(paged);
     }

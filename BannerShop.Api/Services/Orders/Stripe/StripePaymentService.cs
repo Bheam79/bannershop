@@ -40,20 +40,25 @@ public class StripePaymentService : IStripePaymentService
     }
 
     public async Task<StripeIntentResult> CreateCreditPackPaymentIntentAsync(
-        int userId, int creditCount, decimal amountNok, string idempotencyKey, CancellationToken ct = default)
+        int userId, int creditCount, decimal amountNok, string idempotencyKey,
+        int? orderId = null, CancellationToken ct = default)
     {
         var service = new PaymentIntentService();
+        var metadata = new Dictionary<string, string>
+        {
+            ["type"]            = "ai_credit_pack",
+            ["userId"]          = userId.ToString(CultureInfo.InvariantCulture),
+            ["creditCount"]     = creditCount.ToString(CultureInfo.InvariantCulture),
+            ["idempotencyKey"]  = idempotencyKey
+        };
+        if (orderId is int oid)
+            metadata["orderId"] = oid.ToString(CultureInfo.InvariantCulture);
+
         var intent = await service.CreateAsync(new PaymentIntentCreateOptions
         {
             Amount = ToMinorUnits(amountNok),
             Currency = _options.Currency,
-            Metadata = new Dictionary<string, string>
-            {
-                ["type"]            = "ai_credit_pack",
-                ["userId"]          = userId.ToString(CultureInfo.InvariantCulture),
-                ["creditCount"]     = creditCount.ToString(CultureInfo.InvariantCulture),
-                ["idempotencyKey"]  = idempotencyKey
-            },
+            Metadata = metadata,
             AutomaticPaymentMethods = new PaymentIntentAutomaticPaymentMethodsOptions { Enabled = true }
         }, cancellationToken: ct);
 

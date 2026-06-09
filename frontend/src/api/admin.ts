@@ -126,18 +126,24 @@ export async function uploadDesignRequestPreview(
 
 export interface AdminOrderFilter {
   status?: string
-  /** Filter by order type: CustomBanner | AiBanner | ManualDesign */
+  /** Filter by order type: CustomBanner | AiBanner | ManualDesign | CreditPack */
   orderType?: string
   fromUtc?: string
   toUtc?: string
   search?: string
   page?: number
   pageSize?: number
+  /**
+   * BANNERSH-139: include AI credit-pack purchases in the result set. Defaults to false
+   * on the server so the production team isn't distracted by them. Setting
+   * <c>orderType</c>=<c>CreditPack</c> explicitly overrides this.
+   */
+  includeCreditPacks?: boolean
 }
 
 export async function listAdminOrders(filter: AdminOrderFilter = {}): Promise<OrdersPage> {
   // Strip undefined/empty values
-  const params: Record<string, string | number> = {}
+  const params: Record<string, string | number | boolean> = {}
   if (filter.status) params.status = filter.status
   if (filter.orderType) params.orderType = filter.orderType
   if (filter.fromUtc) params.fromUtc = filter.fromUtc
@@ -145,6 +151,7 @@ export async function listAdminOrders(filter: AdminOrderFilter = {}): Promise<Or
   if (filter.search) params.search = filter.search
   if (filter.page) params.page = filter.page
   if (filter.pageSize) params.pageSize = filter.pageSize
+  if (filter.includeCreditPacks) params.includeCreditPacks = true
   const { data } = await apiClient.get<OrdersPage>('/admin/orders', { params })
   return data
 }

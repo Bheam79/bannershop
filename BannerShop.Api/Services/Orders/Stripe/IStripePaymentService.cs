@@ -21,13 +21,15 @@ public interface IStripePaymentService
     /// <summary>
     /// Create a PaymentIntent for an AI credit pack purchase.
     /// Metadata includes <c>type=ai_credit_pack</c>, <c>userId</c>, <c>creditCount</c>,
-    /// and an <c>idempotencyKey</c> (caller-supplied GUID) for deduplication.
+    /// <c>orderId</c> (BANNERSH-139 — links the PI to the synthetic Order row), and
+    /// an <c>idempotencyKey</c> (caller-supplied GUID) for deduplication.
     /// </summary>
     Task<StripeIntentResult> CreateCreditPackPaymentIntentAsync(
         int userId,
         int creditCount,
         decimal amountNok,
         string idempotencyKey,
+        int? orderId = null,
         CancellationToken ct = default);
 
     /// <summary>

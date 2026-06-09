@@ -39,6 +39,16 @@ public static class OrderStateHelper
     };
 
     /// <summary>
+    /// Credit-pack orders (BANNERSH-139) only track revenue — no production, no shipping.
+    /// They go Draft → Paid and stop there; admin never has anything else to do with them.
+    /// </summary>
+    private static readonly IReadOnlyList<OrderState> CreditPackSequence = new[]
+    {
+        OrderState.Draft,
+        OrderState.Paid
+    };
+
+    /// <summary>
     /// Returns the ordered list of <see cref="OrderState"/> values that are valid for
     /// the given <paramref name="orderType"/>, from initial to terminal.
     /// </summary>
@@ -47,6 +57,7 @@ public static class OrderStateHelper
         OrderType.CustomBanner  => CustomBannerSequence,
         OrderType.AiBanner      => AiBannerSequence,
         OrderType.ManualDesign  => ManualDesignSequence,
+        OrderType.CreditPack    => CreditPackSequence,
         _                       => CustomBannerSequence
     };
 
