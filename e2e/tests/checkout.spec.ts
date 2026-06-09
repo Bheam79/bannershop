@@ -46,6 +46,9 @@ async function addFirstSizeToCart(page: Page) {
       heightCm: size.heightCm,
       quantity: 1,
       unitPriceNok: size.calculatedPrice ?? size.fixedPrice ?? 699,
+      // CartItem requires these fields — omitting them produces NaN totals.
+      eyeletOption: 'None',
+      eyeletFeeNok: 0,
     },
   )
 
@@ -104,8 +107,10 @@ test.describe('Checkout flow', () => {
     const totalEl = page.locator('dd.summary-total-price').filter({ hasText: 'kr' })
     const standardTotal = await totalEl.innerText()
 
-    // Switch to Express
-    const expressBtn = page.locator('button').filter({ hasText: /^Ekspress/ })
+    // Switch to Express — use the data-delivery attribute we added so
+    // the locator is unambiguous regardless of icon glyphs / layout text.
+    const expressBtn = page.locator('[data-delivery="express"]')
+    await expressBtn.waitFor({ state: 'visible', timeout: 5_000 })
     await expressBtn.click()
     await page.waitForTimeout(300)
 

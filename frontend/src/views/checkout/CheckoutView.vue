@@ -292,6 +292,7 @@ function formatNok(n: number): string {
             <!-- Standard -->
             <button
               type="button"
+              data-delivery="standard"
               class="delivery-btn"
               :class="{ 'delivery-btn--active': deliveryType === 'Standard' }"
               @click="deliveryType = 'Standard'"
@@ -323,6 +324,7 @@ function formatNok(n: number): string {
             <!-- Express -->
             <button
               type="button"
+              data-delivery="express"
               class="delivery-btn"
               :class="{ 'delivery-btn--active': deliveryType === 'Express' }"
               @click="deliveryType = 'Express'"
@@ -358,6 +360,7 @@ function formatNok(n: number): string {
             <!-- Pickup -->
             <button
               type="button"
+              data-delivery="pickup"
               class="delivery-btn delivery-btn--pickup"
               :class="{ 'delivery-btn--active': deliveryType === 'Pickup' }"
               @click="deliveryType = 'Pickup'"
