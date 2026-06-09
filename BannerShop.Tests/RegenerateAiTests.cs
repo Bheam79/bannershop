@@ -392,8 +392,6 @@ public class RegenerateAiTests
     }
 
     [Theory]
-    [InlineData(DesignRequestStatus.Approved)]
-    [InlineData(DesignRequestStatus.Final)]
     [InlineData(DesignRequestStatus.Pending)]
     public async Task RegenerateAsync_rejects_non_regeneratable_statuses(DesignRequestStatus status)
     {
@@ -409,5 +407,38 @@ public class RegenerateAiTests
 
         result.Success.Should().BeFalse();
         result.StatusCode.Should().Be(400);
+    }
+
+    [Theory]
+    [InlineData(DesignRequestStatus.Approved)]
+    [InlineData(DesignRequestStatus.Final)]
+    public async Task RegenerateAsync_from_approved_or_final_creates_copy_and_returns_success(DesignRequestStatus status)
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+
+        var req = MakeAiRequest(status: status);
+        db.DesignRequests.Add(req);
+        await db.SaveChangesAsync();
+        var originalId = req.Id;
+
+        var (svc, queue, _) = MakeService(db, hasCredits: true);
+        var result = await svc.RegenerateAsync(req.Id, 1, new RegenerateAiRequestDto(), CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+        result.StatusCode.Should().Be(202);
+        result.NewDesignRequestId.Should().HaveValue();
+        result.NewDesignRequestId.Should().NotBe(originalId);
+
+        // Original record must be untouched.
+        db.DesignRequests.Find(originalId)!.Status.Should().Be(status);
+
+        // New copy must be InProgress.
+        var copy = db.DesignRequests.Find(result.NewDesignRequestId!.Value);
+        copy.Should().NotBeNull();
+        copy!.Status.Should().Be(DesignRequestStatus.InProgress);
+
+        // Background job must be enqueued for the NEW id.
+        queue.Verify(q => q.EnqueueAsync(result.NewDesignRequestId!.Value, It.IsAny<CancellationToken>()), Times.Once);
     }
 }
