@@ -28,5 +28,8 @@ public enum OrderState : byte
     Shipped = 5,
 
     /// <summary>Package confirmed delivered to customer.</summary>
-    Delivered = 6
+    Delivered = 6,
+
+    /// <summary>Order was cancelled before production started.</summary>
+    Cancelled = 7
 }

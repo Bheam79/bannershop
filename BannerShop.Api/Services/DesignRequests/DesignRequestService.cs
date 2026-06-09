@@ -150,9 +150,10 @@ public sealed class DesignRequestService : IDesignRequestService
     }
 
     /// <summary>
-    /// Persists the <see cref="DesignRequest"/> row, sets the status to
-    /// <c>InProgress</c>, and enqueues the AI pipeline job. Used by both the
-    /// anonymous and authenticated branches of <see cref="CreateAiRequestAsync"/>.
+    /// Persists the <see cref="DesignRequest"/> row (and, for authenticated callers, a
+    /// linked <see cref="Order"/> row), sets the status to <c>InProgress</c>, and enqueues
+    /// the AI pipeline job. Used by both the anonymous and authenticated branches of
+    /// <see cref="CreateAiRequestAsync"/>.
     /// </summary>
     private async Task<DesignRequest> PersistAndEnqueueAsync(
         int? userId,
@@ -163,6 +164,28 @@ public sealed class DesignRequestService : IDesignRequestService
         CreateAiDesignRequestDto req,
         CancellationToken ct)
     {
+        var now = DateTime.UtcNow;
+
+        // Authenticated AI requests get an Order row so the request has a canonical
+        // identity for order tracking. Anonymous free-tier requests are left unlinked
+        // (no UserId → no Order).
+        Order? order = null;
+        if (userId.HasValue)
+        {
+            order = new Order
+            {
+                UserId = userId.Value,
+                OrderType = OrderType.AiBanner,
+                // Credits were consumed before this call, so the request is already "paid".
+                OrderState = OrderState.Paid,
+                Status = OrderStatus.Paid,
+                TotalNok = 0m,   // free-first: the print cost comes via the activation fee
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+            _db.Orders.Add(order);
+        }
+
         var request = new DesignRequest
         {
             UserId = userId,
@@ -180,16 +203,18 @@ public sealed class DesignRequestService : IDesignRequestService
             Status = DesignRequestStatus.InProgress,
             PriceNok = 0m,                          // free-first: no upfront price
             RegenerationsRemaining = regenerationsRemaining,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            CreatedAt = now,
+            UpdatedAt = now
         };
+        if (order is not null) request.Order = order;
+
         _db.DesignRequests.Add(request);
-        await _db.SaveChangesAsync(ct);
+        await _db.SaveChangesAsync(ct);  // Order + DesignRequest saved atomically
 
         await _queue.EnqueueAsync(request.Id, ct);
         _log.LogInformation(
-            "CreateAiRequestAsync: enqueued DesignRequest {Id} (user={UserId}, ip={Ip}, template={TemplateId}).",
-            request.Id, userId, ipAddress, template.Id);
+            "CreateAiRequestAsync: enqueued DesignRequest {Id} (user={UserId}, ip={Ip}, template={TemplateId}, orderId={OrderId}).",
+            request.Id, userId, ipAddress, template.Id, order?.Id);
 
         return request;
     }
@@ -248,6 +273,21 @@ public sealed class DesignRequestService : IDesignRequestService
         var (bannerPriceNok, bannerSizeId, customBannerWidthCm) =
             await ResolveBannerProductionCostAsync(req.AspectRatio, ct);
         var totalNok = ManualPriceNok + bannerPriceNok;
+        var now = DateTime.UtcNow;
+
+        // Create the Order row atomically with the DesignRequest — Order starts as Draft
+        // (no payment yet). MarkPaidAndEnqueueAsync flips it to Paid on webhook.
+        var order = new Order
+        {
+            UserId = userId,
+            OrderType = OrderType.ManualDesign,
+            OrderState = OrderState.Draft,
+            Status = OrderStatus.Draft,
+            TotalNok = totalNok,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        _db.Orders.Add(order);
 
         var request = new DesignRequest
         {
@@ -267,11 +307,12 @@ public sealed class DesignRequestService : IDesignRequestService
             BannerSizeId = bannerSizeId,
             CustomBannerWidthCm = customBannerWidthCm,
             RegenerationsRemaining = 0,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            Order = order,   // sets OrderId FK atomically
+            CreatedAt = now,
+            UpdatedAt = now
         };
         _db.DesignRequests.Add(request);
-        await _db.SaveChangesAsync(ct);
+        await _db.SaveChangesAsync(ct);  // Order + DesignRequest saved in one transaction
 
         var intent = await _stripe.CreatePaymentIntentAsync(
             orderId: -request.Id,
@@ -634,6 +675,19 @@ public sealed class DesignRequestService : IDesignRequestService
         // so the designer dashboard can pick it up.
         request.Status = DesignRequestStatus.InProgress;
         request.UpdatedAt = DateTime.UtcNow;
+
+        // Also advance the linked Order to Paid (BANNERSH-108).
+        if (request.OrderId.HasValue)
+        {
+            var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == request.OrderId.Value, ct);
+            if (order is not null)
+            {
+                order.OrderState = OrderState.Paid;
+                order.Status = OrderStatus.Paid;
+                order.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
         await _db.SaveChangesAsync(ct);
 
         _log.LogInformation(

@@ -53,9 +53,18 @@ public static class OrderStateHelper
     /// <summary>
     /// Returns <c>true</c> when <paramref name="next"/> is the immediate successor of
     /// <paramref name="current"/> in the sequence for <paramref name="orderType"/>.
+    /// <see cref="OrderState.Cancelled"/> is always a valid next state from any non-terminal state.
     /// </summary>
     public static bool IsValidTransition(OrderType orderType, OrderState current, OrderState next)
     {
+        // Cancellation is always allowed from any non-terminal (non-Delivered, non-Cancelled) state.
+        if (next == OrderState.Cancelled
+            && current != OrderState.Delivered
+            && current != OrderState.Cancelled)
+        {
+            return true;
+        }
+
         var seq = ValidSequence(orderType);
         for (var i = 0; i < seq.Count - 1; i++)
         {
