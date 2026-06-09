@@ -74,10 +74,16 @@ public record RegenerateResult(
     int StatusCode = 200,
     int GenerationId = 0,
     int CreditsRemaining = 0,
-    object? PaywallMetadata = null)
+    object? PaywallMetadata = null,
+    /// <summary>
+    /// Set when regeneration from an Approved/Final request created a fresh DesignRequest
+    /// rather than mutating the existing one.  The frontend should switch its active
+    /// design-request id to this value so polling targets the new entry.
+    /// </summary>
+    int? NewDesignRequestId = null)
 {
-    public static RegenerateResult Ok(int generationId, int creditsRemaining)
-        => new(true, null, 202, generationId, creditsRemaining);
+    public static RegenerateResult Ok(int generationId, int creditsRemaining, int? newDesignRequestId = null)
+        => new(true, null, 202, generationId, creditsRemaining, null, newDesignRequestId);
 
     public static RegenerateResult Fail(string error, int statusCode = 400)
         => new(false, error, statusCode);

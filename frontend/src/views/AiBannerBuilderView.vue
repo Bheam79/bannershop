@@ -885,10 +885,17 @@ async function regenerate() {
       integrity,
     )
     creditsRemaining.value = resp.creditsRemaining
+    // When regenerating from an Approved/Final request the backend creates a fresh
+    // DesignRequest (to preserve the approved record).  Switch our active id to the
+    // new entry so all subsequent polling and URL tracking point at the right row.
+    if (resp.newDesignRequestId) {
+      designRequestId.value = resp.newDesignRequestId
+      localStorage.setItem('ai_banner_draft_id', String(resp.newDesignRequestId))
+    }
     genPhase.value = 'generating'
     currentDesignRequest.value = null
     editExpanded.value = false
-    startPolling(designRequestId.value)
+    startPolling(designRequestId.value!)
   } catch (e: unknown) {
     const ex = e as {
       response?: {

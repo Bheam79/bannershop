@@ -267,6 +267,14 @@ public class RegenerateAiResponseDto
 {
     public int GenerationId { get; set; }
     public int CreditsRemaining { get; set; }
+
+    /// <summary>
+    /// Set when regeneration from an Approved/Final request created a fresh DesignRequest
+    /// rather than mutating the existing one.  The frontend should switch its active
+    /// design-request id to this value so polling targets the new entry.
+    /// Null when the original request was mutated in place.
+    /// </summary>
+    public int? NewDesignRequestId { get; set; }
 }
 
 /// <summary>Snapshot of a single revision comment.</summary>

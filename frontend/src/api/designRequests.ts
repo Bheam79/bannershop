@@ -61,6 +61,12 @@ export interface AiPaywallData {
 export interface RegenerateAiResult {
   generationId: number
   creditsRemaining: number
+  /**
+   * Set when regeneration from an Approved/Final request created a fresh DesignRequest
+   * instead of mutating the existing one.  The frontend should switch its active
+   * design-request id to this value so polling targets the new entry.
+   */
+  newDesignRequestId?: number
 }
 
 /** 402 body from POST /api/design-requests/{id}/regenerate. */

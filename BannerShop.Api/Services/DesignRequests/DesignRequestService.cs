@@ -549,10 +549,13 @@ public sealed class DesignRequestService : IDesignRequestService
         if (r.Mode != DesignRequestMode.Ai)
             return RegenerateResult.Fail("Regenerate is only available for AI design requests.");
 
-        // Allow regenerate from AwaitingApproval (most common), InProgress (retry after failure), or Failed.
-        if (r.Status is not (DesignRequestStatus.AwaitingApproval
-                          or DesignRequestStatus.InProgress
-                          or DesignRequestStatus.Failed))
+        // Allow regenerate from AwaitingApproval / InProgress / Failed (mutate in place)
+        // OR from Approved / Final (copy to a new DesignRequest so the original record is
+        // preserved for re-ordering / audit).  Any other status is rejected.
+        bool isCopy = r.Status is DesignRequestStatus.Approved or DesignRequestStatus.Final;
+        if (!isCopy && r.Status is not (DesignRequestStatus.AwaitingApproval
+                                     or DesignRequestStatus.InProgress
+                                     or DesignRequestStatus.Failed))
         {
             return RegenerateResult.Fail($"Cannot regenerate from status {r.Status}.");
         }
@@ -568,21 +571,14 @@ public sealed class DesignRequestService : IDesignRequestService
             });
         }
 
-        // Apply mutable input overrides.
-        if (!string.IsNullOrWhiteSpace(req.TextContent))
-            r.TextContent = req.TextContent.Trim();
-        if (!string.IsNullOrWhiteSpace(req.ThemeDescription))
-            r.ThemeDescription = req.ThemeDescription.Trim();
-        // BANNERSH-84: allow editing person name + age + uploaded photo as part of regenerate.
-        if (!string.IsNullOrWhiteSpace(req.PersonName))
-            r.PersonName = req.PersonName.Trim();
-        if (req.PersonAge is int newAge)
-            r.PersonAge = newAge < 0 ? null : newAge;
+        // Resolve optional photo-override (shared logic for both paths).
+        string? overridePhotoPath = null;
+        bool clearPhoto = false;
         if (req.UploadedPhotoBannerDesignId is int newPhotoId)
         {
             if (newPhotoId < 0)
             {
-                r.UploadedPhotoPath = null;
+                clearPhoto = true;
             }
             else
             {
@@ -590,33 +586,86 @@ public sealed class DesignRequestService : IDesignRequestService
                     .FirstOrDefaultAsync(d => d.Id == newPhotoId && d.UserId == callerUserId, ct);
                 if (photo is null)
                     return RegenerateResult.Fail("Uploaded photo not found.", 400);
-                r.UploadedPhotoPath = photo.StoragePath;
+                overridePhotoPath = photo.StoragePath;
             }
+        }
+
+        int? newDesignRequestId = null;
+        DesignRequest target;
+
+        if (isCopy)
+        {
+            // Create a fresh DesignRequest that is a copy of the approved/final one, so
+            // the original record (with its order history) is not disturbed.
+            target = new DesignRequest
+            {
+                UserId       = r.UserId,
+                BannerTemplateId = r.BannerTemplateId,
+                Mode         = r.Mode,
+                Language     = r.Language,
+                PersonName   = !string.IsNullOrWhiteSpace(req.PersonName) ? req.PersonName.Trim() : r.PersonName,
+                PersonAge    = req.PersonAge.HasValue ? (req.PersonAge < 0 ? null : req.PersonAge) : r.PersonAge,
+                TextContent  = !string.IsNullOrWhiteSpace(req.TextContent) ? req.TextContent.Trim() : r.TextContent,
+                ThemeDescription = !string.IsNullOrWhiteSpace(req.ThemeDescription) ? req.ThemeDescription.Trim() : r.ThemeDescription,
+                UploadedPhotoPath = clearPhoto ? null : (overridePhotoPath ?? r.UploadedPhotoPath),
+                AspectRatio  = r.AspectRatio,
+                Status       = DesignRequestStatus.InProgress,
+                PriceNok     = 0,   // free-first AI — no Stripe charge upfront
+                CreatedAt    = DateTime.UtcNow,
+                UpdatedAt    = DateTime.UtcNow,
+            };
+            _db.DesignRequests.Add(target);
+            await _db.SaveChangesAsync(ct);   // materialise to get new Id
+            newDesignRequestId = target.Id;
+        }
+        else
+        {
+            target = r;
+
+            // Apply mutable input overrides.
+            if (!string.IsNullOrWhiteSpace(req.TextContent))
+                target.TextContent = req.TextContent.Trim();
+            if (!string.IsNullOrWhiteSpace(req.ThemeDescription))
+                target.ThemeDescription = req.ThemeDescription.Trim();
+            // BANNERSH-84: allow editing person name + age + uploaded photo as part of regenerate.
+            if (!string.IsNullOrWhiteSpace(req.PersonName))
+                target.PersonName = req.PersonName.Trim();
+            if (req.PersonAge is int editedAge)
+                target.PersonAge = editedAge < 0 ? null : editedAge;
+            if (clearPhoto)
+                target.UploadedPhotoPath = null;
+            else if (overridePhotoPath is not null)
+                target.UploadedPhotoPath = overridePhotoPath;
+
+            // Reset status so the pipeline's guard doesn't skip.
+            target.Status = DesignRequestStatus.InProgress;
+            target.UpdatedAt = DateTime.UtcNow;
         }
 
         // Pre-create a BannerGeneration row so we can return the ID immediately.
         var generation = new BannerGeneration
         {
-            DesignRequestId = r.Id,
+            DesignRequestId = target.Id,
             Status = BannerGenerationStatus.Pending,
             IsActive = false,   // pipeline sets it active when it starts
             CreatedAt = DateTime.UtcNow
         };
         _db.BannerGenerations.Add(generation);
 
-        // Reset status so the pipeline's guard doesn't skip.
-        r.Status = DesignRequestStatus.InProgress;
-        r.UpdatedAt = DateTime.UtcNow;
+        if (!isCopy)
+            target.UpdatedAt = DateTime.UtcNow;   // touch timestamp for in-place path
+
         await _db.SaveChangesAsync(ct);
 
         // Enqueue for the background processor.
-        await _queue.EnqueueAsync(r.Id, ct);
+        await _queue.EnqueueAsync(target.Id, ct);
 
         var creditsRemaining = await _credits.GetBalanceAsync(callerUserId, ct);
-        _log.LogInformation("RegenerateAsync: enqueued generation {GenId} for DesignRequest {Id} (credits left: {Credits})",
-            generation.Id, r.Id, creditsRemaining);
+        _log.LogInformation(
+            "RegenerateAsync: enqueued generation {GenId} for DesignRequest {Id} (copy={IsCopy}, credits left: {Credits})",
+            generation.Id, target.Id, isCopy, creditsRemaining);
 
-        return RegenerateResult.Ok(generation.Id, creditsRemaining);
+        return RegenerateResult.Ok(generation.Id, creditsRemaining, newDesignRequestId);
     }
 
     /// <inheritdoc />

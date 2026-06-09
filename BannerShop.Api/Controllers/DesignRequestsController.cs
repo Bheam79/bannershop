@@ -170,7 +170,8 @@ public class DesignRequestsController : ControllerBase
             202 => Accepted(new RegenerateAiResponseDto
             {
                 GenerationId = result.GenerationId,
-                CreditsRemaining = result.CreditsRemaining
+                CreditsRemaining = result.CreditsRemaining,
+                NewDesignRequestId = result.NewDesignRequestId
             }),
             402 => StatusCode(402, new
             {
