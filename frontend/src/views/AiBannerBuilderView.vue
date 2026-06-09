@@ -382,6 +382,22 @@ watch(selectedQuality, (q) => {
   }
 })
 
+// BANNERSH-167: when the quality picker becomes visible (genPhase → ready) and
+// the currently-selected option is marked "Kommer snart", auto-switch to the
+// first option that IS available so the default is always a valid choice.
+// Also fires when comingSoon flags update (sizes load asynchronously).
+watch(
+  [() => genPhase.value, () => option1State.value.comingSoon, () => option2State.value.comingSoon],
+  () => {
+    if (genPhase.value !== 'ready') return
+    if (selectedQuality.value === 'high' && option1State.value.comingSoon) {
+      selectedQuality.value = option2State.value.comingSoon ? 'custom' : 'good'
+    } else if (selectedQuality.value === 'good' && option2State.value.comingSoon) {
+      selectedQuality.value = option1State.value.comingSoon ? 'custom' : 'high'
+    }
+  },
+)
+
 // BANNERSH-162: handler attached to the preview <img>'s @load — captures the
 // generated image's natural dimensions so the printed-banner sizing math has a
 // real ratio (rather than the placeholder 360x150 sent at generation time).
@@ -1677,15 +1693,19 @@ onBeforeUnmount(() => {
               <button
                 type="button"
                 class="quality-btn"
-                :class="{ 'quality-btn-active': selectedQuality === 'high' }"
-                @click="selectedQuality = 'high'"
+                :class="{ 'quality-btn-active': selectedQuality === 'high', 'quality-btn-disabled': option1State.comingSoon }"
+                :disabled="option1State.comingSoon"
+                @click="!option1State.comingSoon && (selectedQuality = 'high')"
               >
                 <span v-if="option1State.comingSoon" class="coming-soon-pill">Kommer snart</span>
                 <div class="quality-btn-title">Høykvalitet</div>
                 <div class="quality-btn-sub">3 års fargegaranti</div>
-                <div class="quality-btn-dims">ca. {{ highOptionWidthCm }} × 150 cm</div>
+                <div class="quality-btn-dims">
+                  <template v-if="aiImageNaturalRatio">ca. {{ highOptionWidthCm }} × 150 cm</template>
+                  <i v-else class="fa-solid fa-circle-notch fa-spin" style="font-size:10px;color:var(--faint)"></i>
+                </div>
                 <div class="quality-btn-price">
-                  <template v-if="option1State.loading">
+                  <template v-if="option1State.loading || !aiImageNaturalRatio">
                     <i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i>
                   </template>
                   <template v-else-if="option1State.price !== null">
@@ -1699,15 +1719,19 @@ onBeforeUnmount(() => {
               <button
                 type="button"
                 class="quality-btn"
-                :class="{ 'quality-btn-active': selectedQuality === 'good' }"
-                @click="selectedQuality = 'good'"
+                :class="{ 'quality-btn-active': selectedQuality === 'good', 'quality-btn-disabled': option2State.comingSoon }"
+                :disabled="option2State.comingSoon"
+                @click="!option2State.comingSoon && (selectedQuality = 'good')"
               >
                 <span v-if="option2State.comingSoon" class="coming-soon-pill">Kommer snart</span>
                 <div class="quality-btn-title">God kvalitet</div>
                 <div class="quality-btn-sub">3 måneders fargegaranti</div>
-                <div class="quality-btn-dims">ca. {{ goodOptionWidthCm }} × 180 cm</div>
+                <div class="quality-btn-dims">
+                  <template v-if="aiImageNaturalRatio">ca. {{ goodOptionWidthCm }} × 180 cm</template>
+                  <i v-else class="fa-solid fa-circle-notch fa-spin" style="font-size:10px;color:var(--faint)"></i>
+                </div>
                 <div class="quality-btn-price">
-                  <template v-if="option2State.loading">
+                  <template v-if="option2State.loading || !aiImageNaturalRatio">
                     <i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i>
                   </template>
                   <template v-else-if="option2State.price !== null">
@@ -1841,7 +1865,9 @@ onBeforeUnmount(() => {
             {{ approving ? 'Behandler…' : 'Gå videre' }}
           </button>
 
-          <!-- "Bestill på nytt" — Approved / Final -->
+          <!-- "Bestill" / "Bestill på nytt" — Approved / Final -->
+          <!-- Approved = approved but never ordered (first purchase).
+               Final    = already ordered at least once (re-order). -->
           <button
             v-if="genPhase === 'ready' && currentDesignRequest?.finalBannerDesignId && (currentDesignRequest?.status === 'Approved' || currentDesignRequest?.status === 'Final')"
             type="button"
@@ -1852,7 +1878,7 @@ onBeforeUnmount(() => {
           >
             <i v-if="reordering" class="fa-solid fa-circle-notch fa-spin"></i>
             <i v-else class="fa-solid fa-cart-shopping"></i>
-            {{ reordering ? 'Legger i handlekurv…' : 'Bestill på nytt' }}
+            {{ reordering ? 'Legger i handlekurv…' : currentDesignRequest?.status === 'Final' ? 'Bestill på nytt' : 'Bestill' }}
           </button>
 
           <!-- Generate (idle) / Regenerate (ready/error) button -->
@@ -2105,7 +2131,7 @@ onBeforeUnmount(() => {
             >
               <i v-if="reordering" class="fa-solid fa-circle-notch fa-spin"></i>
               <i v-else class="fa-solid fa-cart-shopping"></i>
-              {{ reordering ? 'Legger i handlekurv…' : 'Bestill på nytt' }}
+              {{ reordering ? 'Legger i handlekurv…' : currentDesignRequest.status === 'Final' ? 'Bestill på nytt' : 'Bestill' }}
             </button>
             <button
               type="button"
@@ -2947,7 +2973,13 @@ onBeforeUnmount(() => {
   transition: border-color .15s, background .15s, box-shadow .15s;
   text-align: left;
 }
-.quality-btn:hover { border-color: var(--line-soft); color: var(--text); }
+.quality-btn:hover:not(:disabled) { border-color: var(--line-soft); color: var(--text); }
+.quality-btn:disabled,
+.quality-btn-disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 .quality-btn-active {
   border-color: var(--accent);
   background: rgba(255,106,61,.08);
