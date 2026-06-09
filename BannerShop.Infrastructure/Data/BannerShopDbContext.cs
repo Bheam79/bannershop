@@ -82,7 +82,13 @@ public class BannerShopDbContext : DbContext
                 // to redeploy appsettings.Local.json to change it. Add a DB-backed row so it can
                 // be flipped between low/medium/high/auto at runtime, with appsettings as the
                 // fallback when this row is blank.
-                new SystemSetting { Id = 3, Key = "openai_image_quality", Value = "", Label = "OpenAI Image Quality (blank = use config default; allowed: low, medium, high, auto)", IsSensitive = false }
+                new SystemSetting { Id = 3, Key = "openai_image_quality", Value = "", Label = "OpenAI Image Quality (blank = use config default; allowed: low, medium, high, auto)", IsSensitive = false },
+                // BANNERSH-160 / BANNERSH-161: Stripe keys are now DB-only (no appsettings fallback).
+                // The admin enters them via the settings panel; on first boot the rows are seeded
+                // empty and payment endpoints return a configured-error until they are set.
+                new SystemSetting { Id = 4, Key = "stripe_secret_key",      Value = "", Label = "Stripe Secret Key (sk_live_… / sk_test_… / rk_live_… / rk_test_…)", IsSensitive = true },
+                new SystemSetting { Id = 5, Key = "stripe_publishable_key", Value = "", Label = "Stripe Publishable Key (pk_live_… / pk_test_…)",                  IsSensitive = false },
+                new SystemSetting { Id = 6, Key = "stripe_webhook_secret",  Value = "", Label = "Stripe Webhook Secret (whsec_…)",                                  IsSensitive = true }
             );
         });
 

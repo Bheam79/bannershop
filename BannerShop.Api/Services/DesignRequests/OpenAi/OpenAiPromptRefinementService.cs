@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using BannerShop.Api.Services.SystemSettings;
 using BannerShop.Core.Enums;
 using Microsoft.Extensions.Options;
 
@@ -36,22 +37,25 @@ public sealed class OpenAiPromptRefinementService : IPromptRefinementService
 
     private readonly HttpClient _http;
     private readonly IOptionsMonitor<OpenAiOptions> _optsMonitor;
+    private readonly ISystemSettingsService _settings;
     private readonly ILogger<OpenAiPromptRefinementService> _log;
 
     public OpenAiPromptRefinementService(
         HttpClient http,
         IOptionsMonitor<OpenAiOptions> optsMonitor,
+        ISystemSettingsService settings,
         ILogger<OpenAiPromptRefinementService> log)
     {
         _http = http;
         _optsMonitor = optsMonitor;
+        _settings = settings;
         _log = log;
 
         var opts = optsMonitor.CurrentValue;
         if (_http.BaseAddress is null)
             _http.BaseAddress = new Uri(opts.BaseUrl);
-        // Authorization header is set per-request (see RefineAsync) so that a key
-        // added to appsettings.Local.json after startup is picked up immediately.
+        // Authorization header is set per-request (see RefineAsync) so a key
+        // updated in the admin settings panel takes effect immediately.
         if (!string.IsNullOrWhiteSpace(opts.OrgId))
             _http.DefaultRequestHeaders.TryAddWithoutValidation("OpenAI-Organization", opts.OrgId);
         // HttpClient.Timeout is global — keep it generous; per-call cancellation
@@ -63,10 +67,20 @@ public sealed class OpenAiPromptRefinementService : IPromptRefinementService
     {
         var opts = _optsMonitor.CurrentValue;
 
-        // Set Authorization per-call so a key updated in appsettings.Local.json
-        // takes effect without a service restart.
+        // BANNERSH-161: API key is read EXCLUSIVELY from the DB
+        // (system_settings.openai_api_key). If it is not configured, the
+        // refinement step is skipped and the base prompt is returned — same
+        // safety-net behaviour as any other refiner failure.
+        var apiKey = await _settings.GetValueAsync("openai_api_key", ct);
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            _log.LogDebug(
+                "Prompt refinement skipped: DB 'openai_api_key' is not set. Returning base prompt.");
+            return input.BasePrompt;
+        }
+
         _http.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", opts.ApiKey);
+            new AuthenticationHeaderValue("Bearer", apiKey);
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(5, opts.ChatTimeoutSeconds)));

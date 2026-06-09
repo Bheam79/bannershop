@@ -3,12 +3,15 @@ namespace BannerShop.Api.Services.DesignRequests.OpenAi;
 /// <summary>
 /// Configuration bound from the "OpenAi" appsettings section.
 /// See BANNERSH-18 §7 for the locked-in defaults.
+///
+/// BANNERSH-161: The API key is NO LONGER read from appsettings — it must be
+/// entered via the admin settings panel (system_settings row 'openai_api_key').
+/// Non-secret tuning knobs (model, quality, base URL, etc.) stay here.
 /// </summary>
 public class OpenAiOptions
 {
     public const string SectionName = "OpenAi";
 
-    public string ApiKey { get; set; } = string.Empty;
     public string ImageModel { get; set; } = "gpt-image-2";
     public string ImageQuality { get; set; } = "high";
 

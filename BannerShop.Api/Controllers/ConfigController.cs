@@ -1,8 +1,6 @@
-using BannerShop.Api.Services.Orders.Stripe;
 using BannerShop.Api.Services.SystemSettings;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 
 namespace BannerShop.Api.Controllers;
 
@@ -17,27 +15,26 @@ namespace BannerShop.Api.Controllers;
 public class ConfigController : ControllerBase
 {
     private readonly ISystemSettingsService _settings;
-    private readonly StripeOptions _stripeOptions;
 
-    public ConfigController(ISystemSettingsService settings, IOptions<StripeOptions> stripeOptions)
+    public ConfigController(ISystemSettingsService settings)
     {
         _settings = settings;
-        _stripeOptions = stripeOptions.Value;
     }
 
     // ── GET /api/config/stripe ───────────────────────────────────────────────
     /// <summary>
     /// Returns the Stripe publishable key so the frontend can load Stripe.js at
-    /// runtime without baking the key into the build. DB setting wins over appsettings.
-    /// Returns an empty string if neither is set (payment UI will show "not configured").
+    /// runtime without baking the key into the build.
+    ///
+    /// BANNERSH-161: read EXCLUSIVELY from the database
+    /// (system_settings.stripe_publishable_key) — no appsettings fallback.
+    /// Returns an empty string when the row is not yet configured; the payment
+    /// UI then shows "not configured" instead of attempting to load Stripe.js.
     /// </summary>
     [HttpGet("stripe")]
     public async Task<IActionResult> GetStripeConfig(CancellationToken ct)
     {
-        // DB setting (admin panel) wins over appsettings.
         var dbPk = await _settings.GetValueAsync("stripe_publishable_key", ct);
-        var publishableKey = !string.IsNullOrWhiteSpace(dbPk) ? dbPk : _stripeOptions.PublishableKey;
-
-        return Ok(new { publishableKey = publishableKey ?? string.Empty });
+        return Ok(new { publishableKey = dbPk ?? string.Empty });
     }
 }

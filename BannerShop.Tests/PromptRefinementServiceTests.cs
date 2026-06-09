@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using BannerShop.Api.Services.DesignRequests;
 using BannerShop.Api.Services.DesignRequests.OpenAi;
+using BannerShop.Api.Services.SystemSettings;
 using BannerShop.Core.Enums;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -162,17 +163,37 @@ public class PromptRefinementServiceTests
             HasPortrait: true,
             BasePrompt: basePrompt);
 
-    private static OpenAiPromptRefinementService CreateOpenAiService(StubHandler handler)
+    private static OpenAiPromptRefinementService CreateOpenAiService(StubHandler handler, string? apiKey = "sk-test-key")
     {
         var http = new HttpClient(handler) { BaseAddress = new Uri("https://api.openai.test") };
         var monitor = new SimpleOptionsMonitor<OpenAiOptions>(new OpenAiOptions
         {
-            ApiKey = "sk-test-key",
             ChatModel = "gpt-4o-mini",
             BaseUrl = "https://api.openai.test",
             ChatTimeoutSeconds = 5
         });
-        return new OpenAiPromptRefinementService(http, monitor, NullLogger<OpenAiPromptRefinementService>.Instance);
+        // BANNERSH-161: API key now comes from ISystemSettingsService, not OpenAiOptions.
+        var settings = new StubSettings(apiKey);
+        return new OpenAiPromptRefinementService(http, monitor, settings, NullLogger<OpenAiPromptRefinementService>.Instance);
+    }
+
+    /// <summary>
+    /// Minimal <see cref="ISystemSettingsService"/> that returns a single
+    /// canned value for "openai_api_key".
+    /// </summary>
+    private sealed class StubSettings : ISystemSettingsService
+    {
+        private readonly string? _apiKey;
+        public StubSettings(string? apiKey) => _apiKey = apiKey;
+
+        public Task<string?> GetValueAsync(string key, CancellationToken ct = default)
+            => Task.FromResult(key == "openai_api_key" ? _apiKey : null);
+
+        public Task SetValueAsync(string key, string value, CancellationToken ct = default)
+            => Task.CompletedTask;
+
+        public Task<IReadOnlyList<SystemSettingDto>> GetAllAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<SystemSettingDto>>(Array.Empty<SystemSettingDto>());
     }
 
     /// <summary>

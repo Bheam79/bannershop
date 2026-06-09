@@ -17,18 +17,15 @@ namespace BannerShop.Api.Services.DesignRequests.OpenAi;
 ///
 /// Per BANNERSH-18: model "gpt-image-2", quality "high".
 ///
-/// BANNERSH-98: The API key is resolved at call time (not at startup):
-///   1. Database system settings ("openai_api_key") — set via the admin panel.
-///   2. Fallback to OpenAi:ApiKey in appsettings.
-/// If neither yields a non-placeholder key, a solid-colour placeholder PNG is
-/// returned instead of calling the OpenAI API, mirroring MockAiImageService.
-/// This means the service can always be registered regardless of whether the
-/// key was available at startup.
+/// BANNERSH-161: The API key is read EXCLUSIVELY from the database
+/// (system_settings.openai_api_key) — there is no appsettings fallback any
+/// more. If the row is blank or a placeholder, a solid-colour placeholder PNG
+/// is returned instead of calling the OpenAI API (mirroring MockAiImageService),
+/// so the service can always be registered even before the admin enters a key.
 ///
-/// BANNERSH-127: ImageModel + ImageQuality follow the same DB-first resolution
-/// as ApiKey (system_settings 'openai_image_model' / 'openai_image_quality'),
-/// so an admin can flip "high" → "low" via the settings panel without redeploy.
-/// A blank DB value falls through to the appsettings.json default.
+/// BANNERSH-127: ImageModel + ImageQuality keep the DB-first / appsettings-fallback
+/// resolution — they are non-secret tuning knobs (low/medium/high/auto and the
+/// model id) and remain settable via either appsettings or the admin panel.
 /// </summary>
 public sealed class OpenAiImageService : IAiImageService
 {
@@ -59,14 +56,13 @@ public sealed class OpenAiImageService : IAiImageService
             _http.DefaultRequestHeaders.TryAddWithoutValidation("OpenAI-Organization", opts.OrgId);
         _http.Timeout = TimeSpan.FromSeconds(opts.TimeoutSeconds);
 
-        // BANNERSH-98: per-task spec — make it loud and obvious that the real
-        // OpenAI-backed service is wired into DI (operator was unsure whether
-        // the mock or the real implementation was active).
+        // BANNERSH-98 / BANNERSH-161: confirm at startup that the real
+        // OpenAI-backed service is wired into DI. The API key itself lives in
+        // the database (system_settings.openai_api_key) and is resolved per-call.
         _log.LogInformation(
             "OpenAiImageService constructed. BaseUrl={BaseUrl} ImageModel={Model} ImageQuality={Quality} " +
-            "ConfigApiKey={ConfigKeyStatus} TimeoutSeconds={Timeout}",
-            opts.BaseUrl, opts.ImageModel, opts.ImageQuality,
-            DescribeKey(opts.ApiKey), opts.TimeoutSeconds);
+            "TimeoutSeconds={Timeout} (API key is read from db:openai_api_key per request)",
+            opts.BaseUrl, opts.ImageModel, opts.ImageQuality, opts.TimeoutSeconds);
     }
 
     public async Task<AiImageResult> GenerateAsync(AiImageRequest request, CancellationToken ct)
@@ -78,18 +74,15 @@ public sealed class OpenAiImageService : IAiImageService
         var apiKeyOpt = await GetEffectiveApiKeyAsync(ct);
         if (apiKeyOpt is null)
         {
-            // BANNERSH-98: Loud Error-level log so it is impossible to miss in
+            // BANNERSH-161: appsettings fallback is gone; the key lives only in
+            // the DB. Loud Error-level log so it is impossible to miss in
             // journalctl when the operator wonders "why is it still drawing a
-            // solid colour?". Includes both source states so the diagnostic is
-            // self-contained.
-            var cfgKey = _optsMonitor.CurrentValue.ApiKey;
+            // solid colour?".
             _log.LogError(
                 "OpenAI API key NOT CONFIGURED — falling back to PLACEHOLDER image (solid-colour PNG). " +
-                "DB setting 'openai_api_key' = {DbKeyStatus}; appsettings 'OpenAi:ApiKey' = {ConfigKeyStatus}. " +
-                "Fix: put a valid sk-… key in appsettings.Local.json -> OpenAi:ApiKey, OR set it via " +
-                "/admin/settings. Then no service restart is required.",
-                DescribeKey(await _settings.GetValueAsync("openai_api_key", ct)),
-                DescribeKey(cfgKey));
+                "DB setting 'openai_api_key' = {DbKeyStatus}. " +
+                "Fix: enter the key via /admin/settings; no service restart is required.",
+                DescribeKey(await _settings.GetValueAsync("openai_api_key", ct)));
             return await GeneratePlaceholderAsync(request, ct);
         }
 
@@ -143,28 +136,16 @@ public sealed class OpenAiImageService : IAiImageService
     private readonly record struct ResolvedKey(string Key, string Source);
 
     /// <summary>
-    /// Returns the effective OpenAI API key, preferring the DB-stored value
-    /// (set via admin panel) over the appsettings.json value. Returns null if
-    /// no usable key is found.
-    ///
-    /// Uses <see cref="IOptionsMonitor{T}.CurrentValue"/> so that changes to
-    /// appsettings.Local.json (reloadOnChange: true) take effect without a
-    /// service restart.
+    /// Returns the effective OpenAI API key from the database, or null if not
+    /// configured. BANNERSH-161: appsettings is no longer consulted for this
+    /// key — set it via the admin settings panel.
     /// </summary>
     private async Task<ResolvedKey?> GetEffectiveApiKeyAsync(CancellationToken ct)
     {
-        // 1. Database setting (admin panel) — always checked first.
         var dbKey = await _settings.GetValueAsync("openai_api_key", ct);
         _log.LogDebug("OpenAI key probe: DB 'openai_api_key' -> {Status}", DescribeKey(dbKey));
         if (!string.IsNullOrWhiteSpace(dbKey) && !IsPlaceholderKey(dbKey))
             return new ResolvedKey(dbKey, "db:openai_api_key");
-
-        // 2. Config-file value — read CurrentValue so changes to
-        // appsettings.Local.json are picked up without a restart.
-        var cfgKey = _optsMonitor.CurrentValue.ApiKey;
-        _log.LogDebug("OpenAI key probe: appsettings 'OpenAi:ApiKey' -> {Status}", DescribeKey(cfgKey));
-        if (!string.IsNullOrWhiteSpace(cfgKey) && !IsPlaceholderKey(cfgKey))
-            return new ResolvedKey(cfgKey, "appsettings:OpenAi:ApiKey");
 
         return null;
     }

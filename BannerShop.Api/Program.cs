@@ -284,18 +284,13 @@ builder.Services.AddSwaggerGen(c =>
 // ─── Build ────────────────────────────────────────────────────────────────────
 var app = builder.Build();
 
-// ─── BANNERSH-98 / BANNERSH-127: loud OpenAI-key state log at startup ────────
-// Operators were unsure whether appsettings.Local.json was being picked up at
-// all. We dump the resolved working directory, which appsettings files are on
-// disk next to the dll, and the resolved OpenAi:ApiKey state (masked) so the
-// answer is in journalctl from the first line of every boot.
-//
-// BANNERSH-127: also walk EACH configuration provider in the chain and print
-// what (if anything) each contributes for OpenAi:ApiKey / OpenAi:ImageQuality
-// so that "I changed the file but it didn't take effect" is immediately
-// diagnosable from the log — you can SEE which provider "won". Likewise probe
-// the DB system_settings row (which OpenAiImageService prefers over appsettings)
-// so a stale admin-panel value overriding the file is obvious.
+// ─── BANNERSH-98 / BANNERSH-127 / BANNERSH-161: loud secret-key state log ───
+// Keys (OpenAI + Stripe) are read EXCLUSIVELY from the database since
+// BANNERSH-161. At boot we dump the resolved working directory, the present
+// appsettings files (so operators can see what config IS being loaded for
+// non-secret tuning knobs), and the masked state of every key row in
+// system_settings. Whatever's wrong is then visible from journalctl on the
+// first lines of boot.
 {
     var startupLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup.OpenAi");
     var cwd = Directory.GetCurrentDirectory();
@@ -322,8 +317,6 @@ var app = builder.Build();
         .ToArray();
 
     var openAiCfg = app.Configuration.GetSection("OpenAi");
-    var rawKey = openAiCfg["ApiKey"];
-    string keyState = DescribeKeyState(rawKey);
 
     startupLog.LogInformation(
         "Boot config: Environment={Env} ContentRoot={ContentRoot} CWD={Cwd}",
@@ -331,75 +324,39 @@ var app = builder.Build();
     startupLog.LogInformation(
         "Boot config: appsettings files: {Files}", string.Join(" | ", fileStates));
     startupLog.LogInformation(
-        "Boot config: OpenAi:ApiKey={KeyState} ImageModel={Model} ImageQuality={Quality} BaseUrl={BaseUrl}",
-        keyState,
+        "Boot config: OpenAi ImageModel={Model} ImageQuality={Quality} BaseUrl={BaseUrl} " +
+        "(API key is read from db:openai_api_key, NOT appsettings)",
         openAiCfg["ImageModel"] ?? "(default)",
         openAiCfg["ImageQuality"] ?? "(default)",
         openAiCfg["BaseUrl"] ?? "(default)");
 
-    // BANNERSH-127: per-provider trace. Walk the configuration chain and print
-    // what (if anything) each provider contributes for OpenAi:ApiKey /
-    // OpenAi:ImageQuality. Providers are listed in load order — LATER providers
-    // win, so the last one with a value is what the app actually sees. If
-    // appsettings.Local.json appears in this list and contains the key but it
-    // is still being overridden, something is very wrong; if it does NOT appear
-    // here at all, the file isn't being loaded.
-    if (app.Configuration is IConfigurationRoot cfgRoot)
-    {
-        var providerDescriptions = new List<string>();
-        var index = 0;
-        foreach (var provider in cfgRoot.Providers)
-        {
-            index++;
-            var providerName = provider.GetType().Name;
-            // JsonConfigurationProvider exposes its Source.Path — surface it so
-            // we know which JSON file each Json* entry corresponds to.
-            var providerPath = provider switch
-            {
-                Microsoft.Extensions.Configuration.Json.JsonConfigurationProvider j => j.Source.Path,
-                Microsoft.Extensions.Configuration.FileConfigurationProvider f => f.Source.Path,
-                _ => null,
-            };
-
-            var providerKey = provider.TryGet("OpenAi:ApiKey", out var keyVal) ? keyVal : null;
-            var providerQuality = provider.TryGet("OpenAi:ImageQuality", out var qVal) ? qVal : null;
-
-            providerDescriptions.Add(
-                $"#{index} {providerName}{(providerPath is null ? "" : $"({providerPath})")} " +
-                $"ApiKey={(providerKey is null ? "<not contributing>" : DescribeKeyState(providerKey))} " +
-                $"ImageQuality={(providerQuality is null ? "<not contributing>" : $"\"{providerQuality}\"")}");
-        }
-        startupLog.LogInformation(
-            "Boot config: configuration providers (load order — last value wins):\n  {Providers}",
-            string.Join("\n  ", providerDescriptions));
-    }
-    else
-    {
-        startupLog.LogWarning(
-            "Boot config: app.Configuration is not IConfigurationRoot ({Type}); cannot enumerate providers.",
-            app.Configuration.GetType().FullName);
-    }
-
-    // BANNERSH-127: probe the DB system_settings rows for openai_api_key /
-    // openai_image_model / openai_image_quality. OpenAiImageService prefers
-    // these over appsettings — a stale value left from an admin-panel edit
-    // will silently override any change to appsettings.Local.json, which is
-    // exactly the "still not working" symptom this task reports.
+    // BANNERSH-161: probe the DB system_settings rows for every secret key
+    // (OpenAI + Stripe). These are the ONLY source the services consult — if
+    // any is "<unset>", the corresponding feature will return a placeholder /
+    // 500 until the admin enters it via the settings panel.
     try
     {
         using var scope = app.Services.CreateScope();
         var settings = scope.ServiceProvider
             .GetRequiredService<BannerShop.Api.Services.SystemSettings.ISystemSettingsService>();
-        var dbKey = await settings.GetValueAsync("openai_api_key");
+        var dbOpenAiKey = await settings.GetValueAsync("openai_api_key");
         var dbModel = await settings.GetValueAsync("openai_image_model");
         var dbQuality = await settings.GetValueAsync("openai_image_quality");
+        var dbStripeSecret = await settings.GetValueAsync("stripe_secret_key");
+        var dbStripePub = await settings.GetValueAsync("stripe_publishable_key");
+        var dbStripeWh = await settings.GetValueAsync("stripe_webhook_secret");
         startupLog.LogInformation(
             "Boot config: DB system_settings 'openai_api_key'={DbKeyState} " +
             "'openai_image_model'={DbModelState} 'openai_image_quality'={DbQualityState} " +
-            "(DB takes precedence over appsettings in OpenAiImageService — clear via admin panel if stale)",
-            DescribeKeyState(dbKey),
+            "'stripe_secret_key'={DbStripeSecret} 'stripe_publishable_key'={DbStripePub} " +
+            "'stripe_webhook_secret'={DbStripeWh} " +
+            "(BANNERSH-161: ALL keys are DB-only; set blanks via /admin/settings)",
+            DescribeKeyState(dbOpenAiKey),
             string.IsNullOrWhiteSpace(dbModel) ? "<unset>" : $"\"{dbModel}\"",
-            string.IsNullOrWhiteSpace(dbQuality) ? "<unset>" : $"\"{dbQuality}\"");
+            string.IsNullOrWhiteSpace(dbQuality) ? "<unset>" : $"\"{dbQuality}\"",
+            DescribeKeyState(dbStripeSecret),
+            DescribeKeyState(dbStripePub),
+            DescribeKeyState(dbStripeWh));
     }
     catch (Exception ex)
     {
@@ -434,7 +391,7 @@ var app = builder.Build();
     static string DescribeKeyState(string? key) => key switch
     {
         null => "missing",
-        "" => "empty",
+        "" => "<unset>",
         var k when string.IsNullOrWhiteSpace(k) => "whitespace",
         var k when k.StartsWith("sk-REPLACE", StringComparison.OrdinalIgnoreCase) => $"placeholder({Mask(k)})",
         var k when k.StartsWith("REPLACE_", StringComparison.OrdinalIgnoreCase) => $"placeholder({Mask(k)})",

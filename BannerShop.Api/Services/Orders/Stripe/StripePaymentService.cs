@@ -8,12 +8,12 @@ namespace BannerShop.Api.Services.Orders.Stripe;
 /// <summary>
 /// Live Stripe.net-backed implementation of <see cref="IStripePaymentService"/>.
 ///
-/// Keys are resolved at call time with DB-first precedence (same pattern as OpenAI):
-///   1. system_settings row (admin panel).
-///   2. Fallback to appsettings Stripe:SecretKey / Stripe:WebhookSecret.
-/// This means the admin can enter / update the key via the settings panel without
-/// redeploying or restarting the service, and restricted keys (rk_live_…/rk_test_…)
-/// are accepted in addition to standard secret keys (sk_live_…/sk_test_…).
+/// BANNERSH-161: keys are read EXCLUSIVELY from the database
+/// (system_settings rows 'stripe_secret_key' / 'stripe_webhook_secret') — there
+/// is no appsettings fallback any more. The admin enters / updates them via the
+/// settings panel; restricted keys (rk_live_…/rk_test_…) are accepted in
+/// addition to standard secret keys (sk_live_…/sk_test_…). When no key is set,
+/// payment endpoints throw rather than silently failing.
 /// </summary>
 public class StripePaymentService : IStripePaymentService
 {
@@ -123,7 +123,7 @@ public class StripePaymentService : IStripePaymentService
         {
             _logger.LogWarning(
                 "Stripe webhook secret NOT CONFIGURED — rejecting inbound webhook. " +
-                "Set 'stripe_webhook_secret' in the admin settings panel or 'Stripe:WebhookSecret' in appsettings.");
+                "Set 'stripe_webhook_secret' in the admin settings panel.");
             return null;
         }
 
@@ -184,15 +184,16 @@ public class StripePaymentService : IStripePaymentService
     // ── Key resolution ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Returns the effective Stripe secret key. DB system setting wins over appsettings.
+    /// Returns the effective Stripe secret key from the database.
     /// Restricted keys (rk_live_… / rk_test_…) are valid.
-    /// Throws <see cref="InvalidOperationException"/> if no key is found, so payment
-    /// endpoints return 500 rather than silently using an empty key.
+    /// Throws <see cref="InvalidOperationException"/> if the key is not configured,
+    /// so payment endpoints return 500 rather than silently using an empty key.
+    ///
+    /// BANNERSH-161: appsettings fallback removed — the admin enters the key via
+    /// the settings panel ('stripe_secret_key' row).
     /// </summary>
     private async Task<string> GetEffectiveSecretKeyAsync(CancellationToken ct)
     {
-        // 1. Database setting (admin panel) — checked first so the admin can update
-        //    the key via the settings panel without restarting the service.
         var dbKey = await _settings.GetValueAsync("stripe_secret_key", ct);
         if (!string.IsNullOrWhiteSpace(dbKey) && !IsPlaceholderKey(dbKey))
         {
@@ -200,37 +201,26 @@ public class StripePaymentService : IStripePaymentService
             return dbKey;
         }
 
-        // 2. Config-file value.
-        var cfgKey = _options.SecretKey;
-        if (!string.IsNullOrWhiteSpace(cfgKey) && !IsPlaceholderKey(cfgKey))
-        {
-            _logger.LogDebug("Stripe key resolved from appsettings:Stripe:SecretKey ({Mask})", MaskKey(cfgKey));
-            return cfgKey;
-        }
-
         _logger.LogError(
-            "Stripe secret key NOT CONFIGURED. " +
-            "DB setting 'stripe_secret_key' = {DbStatus}; appsettings 'Stripe:SecretKey' = {CfgStatus}. " +
+            "Stripe secret key NOT CONFIGURED. DB setting 'stripe_secret_key' = {DbStatus}. " +
             "Enter the key via the admin settings panel (supports sk_live_…, sk_test_…, rk_live_…, rk_test_…).",
-            DescribeKey(dbKey), DescribeKey(cfgKey));
+            DescribeKey(dbKey));
 
         throw new InvalidOperationException(
             "Stripe is not configured. Enter a secret key in the admin settings panel.");
     }
 
     /// <summary>
-    /// Returns the effective Stripe webhook secret. DB setting wins over appsettings.
-    /// Returns null if neither is set.
+    /// Returns the effective Stripe webhook secret from the database.
+    /// Returns null if not configured.
+    ///
+    /// BANNERSH-161: appsettings fallback removed.
     /// </summary>
     private async Task<string?> GetEffectiveWebhookSecretAsync(CancellationToken ct)
     {
         var dbSecret = await _settings.GetValueAsync("stripe_webhook_secret", ct);
         if (!string.IsNullOrWhiteSpace(dbSecret) && !IsPlaceholderKey(dbSecret))
             return dbSecret;
-
-        var cfgSecret = _options.WebhookSecret;
-        if (!string.IsNullOrWhiteSpace(cfgSecret) && !IsPlaceholderKey(cfgSecret))
-            return cfgSecret;
 
         return null;
     }
