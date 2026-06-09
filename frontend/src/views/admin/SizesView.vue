@@ -115,6 +115,10 @@ function formatPrice(s: BannerSize): string {
  * Compute how many panels the given size needs based on the material's
  * MaxBannerWidthCm. Mirrors PricingService.PanelsNeeded server-side.
  * Returns null when width or material data are unavailable.
+ *
+ * BANNERSH-125: uses the minimum of width and height, since the banner is
+ * oriented on the material roll so its smaller dimension runs along the roll
+ * width (e.g. 300 × 150 cm on 160 cm material → height=150 fits, 1 panel).
  */
 function panelsNeeded(s: BannerSize): number | null {
   if (s.fixedPrice != null) return null // fixed-price: panels irrelevant
@@ -122,8 +126,12 @@ function panelsNeeded(s: BannerSize): number | null {
   if (!mat) return null
   const maxWidth = mat.maxBannerWidthCm || mat.widthCm
   if (!maxWidth) return null
-  const w = s.isCustomWidth ? null : s.widthCm
-  if (!w) return null // custom without width — panels unknown
+  const rawW = s.isCustomWidth ? null : s.widthCm
+  if (!rawW) return null // custom without width — panels unknown
+  // Use the minimum dimension: the banner is oriented so its smaller side runs
+  // along the material roll width. Only if even the smaller side exceeds the
+  // roll width do we need multiple panels.
+  const w = Math.min(rawW, s.heightCm)
   if (w <= maxWidth) return 1
   const overlap = 5 // matches banner_panel_overlap_cm default
   const safeOverlap = Math.max(0, Math.min(overlap, maxWidth - 1))

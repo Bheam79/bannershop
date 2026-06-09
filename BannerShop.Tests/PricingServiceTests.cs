@@ -233,46 +233,67 @@ public class PricingServiceTests
     // ── BANNERSH-88: multi-panel multiplier ──────────────────────────────────
 
     [Fact]
-    public async Task CalculatePrice_BannerWiderThanMaxButWithin2x_DoublesThePrice()
+    public async Task CalculatePrice_BannerMinDimExceedsMax_DoublesThePrice()
     {
-        // Material max 160 cm, overlap 5 cm → 2 panels fit widths up to 2·160 − 5 = 315 cm.
-        // 300×150 = 4.5 sqm × 180 = 810 NOK base; ×2 panels = 1620 NOK.
+        // BANNERSH-125: panels are based on the MINIMUM dimension (the side that runs
+        // along the material roll width). Both 200 cm and 300 cm exceed max=160 cm, so
+        // min(200, 300) = 200 → 2 panels needed.
+        // 200×300 = 6.0 sqm × 180 = 1080 NOK base; ×2 panels = 2160 NOK.
+        var (service, _) = CreateSeeded();
+        var material = DbHelper.MakeMaterial(maxBannerWidthCm: 160);
+        var size = DbHelper.MakeStandardSize(1, 200, 300, material);
+
+        var price = await service.CalculatePriceAsync(size);
+
+        price.Should().Be(2160m);
+    }
+
+    [Fact]
+    public async Task CalculatePrice_BannerMinDimAtExact2xBoundary_DoublesThePrice()
+    {
+        // min dimension = 2·M − overlap = 2·160 − 5 = 315 cm → exactly 2 panels.
+        // Custom-width size with heightCm=315, customWidthCm=400.
+        // min(400, 315) = 315 → PanelsNeeded(315, 160, 5) = 2.
+        var (service, _) = CreateSeeded();
+        var material = DbHelper.MakeMaterial(maxBannerWidthCm: 160);
+        var size = DbHelper.MakeCustomWidthSize(1, 315, material);
+
+        var price = await service.CalculatePriceAsync(size, customWidthCm: 400);
+
+        // base = (400/100) × (315/100) × 180 = 4.0 × 3.15 × 180 = 2268; × 2 = 4536; + 150 surcharge (once) = 4686
+        price.Should().Be(4686m);
+    }
+
+    [Fact]
+    public async Task CalculatePrice_BannerMinDimJustOver2xBoundary_TriplesThePrice()
+    {
+        // min dimension 316 > 2·160 − 5 = 315 → 3 panels needed.
+        // Custom-width size with heightCm=316, customWidthCm=400.
+        // min(400, 316) = 316 → PanelsNeeded(316, 160, 5) = 3.
+        var (service, _) = CreateSeeded();
+        var material = DbHelper.MakeMaterial(maxBannerWidthCm: 160);
+        var size = DbHelper.MakeCustomWidthSize(1, 316, material);
+
+        var price = await service.CalculatePriceAsync(size, customWidthCm: 400);
+
+        // base = (400/100) × (316/100) × 180 = 4.0 × 3.16 × 180 = 2275.2; × 3 = 6825.6; + 150 surcharge (once) = 6975.6
+        price.Should().Be(6975.60m);
+    }
+
+    [Fact]
+    public async Task CalculatePrice_BannerLargeDimExceedsMaxButSmallDimFits_NoMultiplier()
+    {
+        // BANNERSH-125: regression test for the original bug. A 300×150 cm banner on a
+        // 160 cm material roll: widthCm=300 > 160, but heightCm=150 ≤ 160, so the banner
+        // is printed with the 150 cm side along the roll — only 1 panel needed.
         var (service, _) = CreateSeeded();
         var material = DbHelper.MakeMaterial(maxBannerWidthCm: 160);
         var size = DbHelper.MakeStandardSize(1, 300, 150, material);
 
         var price = await service.CalculatePriceAsync(size);
 
-        price.Should().Be(1620m);
-    }
-
-    [Fact]
-    public async Task CalculatePrice_BannerExactlyAt2xBoundary_DoublesThePrice()
-    {
-        // width = 2·M − overlap = 2·160 − 5 = 315 cm → exactly 2 panels.
-        // 315×150 = 4.725 sqm × 180 = 850.5 NOK base price.
-        var (service, _) = CreateSeeded();
-        var material = DbHelper.MakeMaterial(maxBannerWidthCm: 160);
-        var size = DbHelper.MakeCustomWidthSize(1, 150, material);
-
-        var price = await service.CalculatePriceAsync(size, customWidthCm: 315);
-
-        // base = 4.725 × 180 = 850.5; × 2 panels = 1701; + 150 surcharge (once, not per panel) = 1851
-        price.Should().Be(1851m);
-    }
-
-    [Fact]
-    public async Task CalculatePrice_BannerJustOver2xBoundary_TriplesThePrice()
-    {
-        // width 316 > 2·160 − 5 = 315 → 3 panels needed.
-        var (service, _) = CreateSeeded();
-        var material = DbHelper.MakeMaterial(maxBannerWidthCm: 160);
-        var size = DbHelper.MakeCustomWidthSize(1, 150, material);
-
-        var price = await service.CalculatePriceAsync(size, customWidthCm: 316);
-
-        // base = (316/100) × (150/100) × 180 = 853.2; × 3 panels = 2559.6; + 150 surcharge (once) = 2709.6
-        price.Should().Be(2709.60m);
+        // 4.5 sqm × 180 = 810; ×1 panel = 810 (no multiplier)
+        price.Should().Be(810m);
     }
 
     [Fact]

@@ -62,19 +62,25 @@ public class PricingService : IPricingService
             basePrice = Math.Max(minimumPrice, areaSqm * basePricePerSqm);
         }
 
-        // BANNERSH-88: panel-count multiplier. If the banner is wider than the material
-        // can produce as a single piece (Material.MaxBannerWidthCm), the price scales by
-        // the number of panels needed:
-        //   1 panel  : width ≤ M
-        //   2 panels : M < width ≤ 2M − overlap
-        //   3 panels : 2M − overlap < width ≤ 3M − 2·overlap
-        //   n panels : (n−1)M − (n−2)·overlap < width ≤ nM − (n−1)·overlap
+        // BANNERSH-88: panel-count multiplier. If the banner cannot be produced as a
+        // single piece, the price scales by the number of panels needed:
+        //   1 panel  : dim ≤ M
+        //   2 panels : M < dim ≤ 2M − overlap
+        //   3 panels : 2M − overlap < dim ≤ 3M − 2·overlap
+        //   n panels : (n−1)M − (n−2)·overlap < dim ≤ nM − (n−1)·overlap
         // Each adjacent pair of panels overlaps by at least `panelOverlapCm` so the seam
         // is double-printed and can be welded/glued. The material navigation property may
         // be null when callers forget to .Include(s => s.Material) — in that case we skip
         // the multiplier rather than crash (single-panel pricing, same as before).
+        //
+        // BANNERSH-125: use the MINIMUM of the two banner dimensions, not just widthCm.
+        // Banners are oriented on the material roll so their smaller dimension runs along
+        // the roll width. A 300 × 150 cm banner on 160 cm roll material is printed with
+        // the 150 cm edge along the roll — no panel split needed. Using widthCm alone
+        // incorrectly applied ×2/×3 multipliers to landscape banners whose height fits.
         var maxWidthPerPanel = ResolveMaxBannerWidthCm(size.Material);
-        var panels = PanelsNeeded(widthCm, maxWidthPerPanel, panelOverlapCm);
+        var effectiveDim = widthCm > 0 ? Math.Min(widthCm, size.HeightCm) : 0;
+        var panels = PanelsNeeded(effectiveDim, maxWidthPerPanel, panelOverlapCm);
 
         // The custom-width surcharge is a one-time administrative fee for non-standard
         // widths — it does NOT scale with the number of panels. Add it after multiplying
