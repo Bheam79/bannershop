@@ -286,6 +286,22 @@ watch([creditsRemaining, hasUsedFreeGeneration], ([n, used]) => {
   if (n !== null) creditsStore.setBalance(n, used ?? undefined)
 })
 
+// BANNERSH-157: keep ?dr= URL query param in sync with the active design request
+// so that the URL is bookmarkable.  When a past banner is selected (or a new one
+// is generated) the param is written; when the user returns to idle it is removed.
+watch(designRequestId, (id) => {
+  const currentDr = route.query.dr as string | undefined
+  const newDr = id !== null ? String(id) : undefined
+  if (currentDr === newDr) return  // already correct, avoid no-op replace
+  const query = { ...route.query }
+  if (newDr !== undefined) {
+    query.dr = newDr
+  } else {
+    delete query.dr
+  }
+  void router.replace({ query })
+})
+
 // ── BANNERSH-83: free-generation eligibility ─────────────────────────────────
 // Logged-in users with no remaining free generation AND zero credits will be hit by
 // the backend's 402 paywall on the very next /design-requests/ai POST.  Detect that
@@ -1108,6 +1124,20 @@ onMounted(async () => {
       } catch {
         // Non-critical — just keep defaults and let the user fill in manually.
       }
+      return
+    }
+  }
+
+  // BANNERSH-157: restore a specific design request from the bookmarkable URL
+  // ?dr=<id>.  This param is written by the designRequestId watcher whenever a
+  // past banner is selected or a new one is generated, so F5 / sharing the URL
+  // always restores the same view.  Skip if ?category= is present (explicit
+  // intent to start fresh) or if ?copyFrom= already handled things above.
+  const drParam = (route.query.dr as string | undefined)?.trim()
+  if (drParam && !categoryParam) {
+    const drId = parseInt(drParam, 10)
+    if (!isNaN(drId) && drId > 0) {
+      await selectPastDesign({ id: drId } as DesignRequestListItem)
       return
     }
   }
