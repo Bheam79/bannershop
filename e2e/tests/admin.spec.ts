@@ -318,6 +318,11 @@ test.describe('Admin panel', () => {
 
     const order = await apiCreateOrder(userAuth.accessToken, { bannerSizeId: size.id })
 
+    // Fresh orders are PendingPayment; the 'Produksjonsstatus per vare' section
+    // only renders for InProduction/Shipped/Delivered. Advance via the admin
+    // status API before exercising the production-stage controls.
+    await apiAdvanceOrderToInProduction(adminAuth.accessToken, order.orderId)
+
     // Navigate to admin order detail
     await asAdmin(page)
     await page.goto(`/admin/orders/${order.orderId}`)
