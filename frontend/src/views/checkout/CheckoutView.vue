@@ -88,11 +88,17 @@ const total = computed(() => subtotal.value + shippingCost.value + expressFee.va
 // MVA (25%) is included in Norwegian prices. To extract:  total × 0.25 / 1.25 = total × 0.2
 const vatAmount = computed(() => total.value * 0.2)
 
+// Fixed production lead times shown to the customer.
+// Standard: 14 calendar days (2-week production — carrier transit is within this window).
+// Express: 3 calendar days.
+// These are independent of the Bring carrier estimate (which only covers transit days and
+// caused the bug where only 3 days were added, showing today+3 instead of today+14).
+const STANDARD_LEAD_DAYS = 14
+const EXPRESS_LEAD_DAYS = 3
+
 const estimatedDays = computed(() => {
-  if (!shippingEstimate.value) return null
-  return deliveryType.value === 'Express'
-    ? shippingEstimate.value.express.estimatedDays
-    : shippingEstimate.value.standard.estimatedDays
+  if (deliveryType.value === 'Pickup') return null
+  return deliveryType.value === 'Express' ? EXPRESS_LEAD_DAYS : STANDARD_LEAD_DAYS
 })
 
 const estimatedDeliveryText = computed(() => {
@@ -297,8 +303,8 @@ function formatNok(n: number): string {
                 <div class="delivery-btn__body">
                   <div class="delivery-btn__title">Standard</div>
                   <div class="delivery-btn__sub">Estimert levering: ca. 2 uker</div>
-                  <div v-if="shippingEstimate && deliveryType === 'Standard'" class="delivery-btn__eta">
-                    {{ estimatedDeliveryText }} ({{ shippingEstimate.standard.estimatedDays }} virkedager)
+                  <div v-if="deliveryType === 'Standard'" class="delivery-btn__eta">
+                    {{ estimatedDeliveryText }}
                   </div>
                   <div v-if="shippingEstimate" class="delivery-btn__price">
                     {{ formatNok(shippingEstimate.standard.costNok) }}
@@ -330,9 +336,9 @@ function formatNok(n: number): string {
                     Ekspress
                     <span class="badge-express">+500 kr gebyr</span>
                   </div>
-                  <div class="delivery-btn__sub">Estimert levering: ca. 3 dager</div>
-                  <div v-if="shippingEstimate && deliveryType === 'Express'" class="delivery-btn__eta">
-                    {{ estimatedDeliveryText }} ({{ shippingEstimate.express.estimatedDays }} virkedager)
+                  <div class="delivery-btn__sub">Estimert levering: 3–5 dager</div>
+                  <div v-if="deliveryType === 'Express'" class="delivery-btn__eta">
+                    {{ estimatedDeliveryText }}
                   </div>
                   <div v-if="shippingEstimate" class="delivery-btn__price delivery-btn__price--express">
                     {{ formatNok(shippingEstimate.express.costNok) }}
@@ -426,7 +432,7 @@ function formatNok(n: number): string {
             </div>
           </dl>
 
-          <div v-if="estimatedDeliveryText && shippingEstimate && deliveryType !== 'Pickup'" class="alert-delivery">
+          <div v-if="estimatedDeliveryText && deliveryType !== 'Pickup'" class="alert-delivery">
             <i class="fa-solid fa-truck"></i>
             <div>
               <div class="alert-delivery__label">Estimert levering</div>
