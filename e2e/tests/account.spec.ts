@@ -158,7 +158,7 @@ test.describe('Customer account', () => {
     await expect(statusEl).toBeVisible()
 
     // Price breakdown should be visible
-    await expect(page.locator('text=Totalt inkl. MVA')).toBeVisible()
+    await expect(page.locator('text=Totalt inkl. MVA').first()).toBeVisible()
   })
 
   test('shipped order shows tracking info', async ({ page }) => {
