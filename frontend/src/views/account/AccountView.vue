@@ -9,6 +9,8 @@ import apiClient from '@/api/client'
 import type { User } from '@/types'
 import { listOrders } from '@/api/orders'
 import type { OrderListItem } from '@/api/orders'
+import { listDesignRequests } from '@/api/designRequests'
+import type { DesignRequestListItem } from '@/api/designRequests'
 import {
   getAiCreditsBalance,
   getCreditPackInfo,
@@ -21,22 +23,102 @@ const auth = useAuthStore()
 const creditsStore = useAiCreditsStore()
 const router = useRouter()
 
-// ── Active orders summary ─────────────────────────────────────────────────────
+// ── Unified active items summary ──────────────────────────────────────────────
+interface UnifiedActiveItem {
+  id: number
+  kind: 'order' | 'design'
+  typeLabel: string
+  typeBadgeClass: string
+  statusLabel: string
+  statusClass: string
+  date: string
+  priceNok: number
+  detailPath: string
+  isAwaitingApproval: boolean
+}
+
 const recentOrders = ref<OrderListItem[]>([])
+const designRequests = ref<DesignRequestListItem[]>([])
 const ordersLoading = ref(true)
 
-const ACTIVE_STATUSES = new Set([
+const ACTIVE_ORDER_STATUSES = new Set([
   'PendingPayment', 'Paid', 'InProduction', 'ReadyToShip', 'Shipped',
 ])
+const ACTIVE_DR_STATUSES = new Set([
+  'Pending', 'InProgress', 'AwaitingApproval', 'Approved', 'RevisionRequested', 'Revised',
+])
 
-const activeOrders = computed(() =>
-  recentOrders.value.filter(o => ACTIVE_STATUSES.has(o.status))
+const DR_STATUS_LABELS: Record<string, string> = {
+  Pending:           'Venter',
+  InProgress:        'Under arbeid',
+  AwaitingApproval:  'Til godkjenning',
+  Approved:          'Design klar',
+  RevisionRequested: 'Revisjon',
+  Revised:           'Revidert',
+  Final:             'Levert',
+  Failed:            'Feilet',
+  Cancelled:         'Kansellert',
+}
+const DR_STATUS_CLASSES: Record<string, string> = {
+  Pending:           'badge-pending',
+  InProgress:        'badge-inprogress',
+  AwaitingApproval:  'badge-awaiting',
+  Approved:          'badge-approved',
+  RevisionRequested: 'badge-revision',
+  Revised:           'badge-revised',
+  Final:             'badge-approved',
+  Failed:            'badge-cancelled',
+  Cancelled:         'badge-cancelled',
+}
+function drStatusLabel(s: string) { return DR_STATUS_LABELS[s] ?? s }
+function drStatusClass(s: string) { return DR_STATUS_CLASSES[s] ?? 'badge-draft' }
+
+const hasAnyItems = computed(
+  () => recentOrders.value.length > 0 || designRequests.value.length > 0,
 )
+
+const activeItems = computed<UnifiedActiveItem[]>(() => {
+  const orderItems: UnifiedActiveItem[] = recentOrders.value
+    .filter(o => ACTIVE_ORDER_STATUSES.has(o.status))
+    .map(o => ({
+      id: o.id,
+      kind: 'order' as const,
+      typeLabel: 'Eget',
+      typeBadgeClass: 'badge-type-order',
+      statusLabel: statusLabel(o.status),
+      statusClass: statusClass(o.status),
+      date: o.createdAt,
+      priceNok: o.totalNok,
+      detailPath: `/account/orders/${o.id}`,
+      isAwaitingApproval: false,
+    }))
+  const drItems: UnifiedActiveItem[] = designRequests.value
+    .filter(dr => ACTIVE_DR_STATUSES.has(dr.status))
+    .map(dr => ({
+      id: dr.id,
+      kind: 'design' as const,
+      typeLabel: dr.mode === 'Ai' ? 'AI' : 'Designer',
+      typeBadgeClass: dr.mode === 'Ai' ? 'badge-type-ai' : 'badge-type-designer',
+      statusLabel: drStatusLabel(dr.status),
+      statusClass: drStatusClass(dr.status),
+      date: dr.createdAt,
+      priceNok: dr.priceNok,
+      detailPath: `/account/design-requests/${dr.id}`,
+      isAwaitingApproval: dr.status === 'AwaitingApproval',
+    }))
+  return [...orderItems, ...drItems]
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 5)
+})
 
 onMounted(async () => {
   try {
-    const result = await listOrders(1, 5)
-    recentOrders.value = result.items
+    const [ordersResult, drList] = await Promise.all([
+      listOrders(1, 20),
+      listDesignRequests(),
+    ])
+    recentOrders.value = ordersResult.items
+    designRequests.value = drList
   } catch {
     // non-critical — ignore
   } finally {
@@ -329,15 +411,15 @@ async function changePassword() {
       <p class="account-email">{{ auth.user?.email }}</p>
     </div>
 
-    <!-- Active orders summary -->
+    <!-- Unified orders summary (Mine ordrer) -->
     <div class="panel">
       <div class="section-header">
         <h2 class="section-title">
           <i class="fa-solid fa-box"></i>
-          Aktive ordrer
+          Mine ordrer
         </h2>
         <RouterLink to="/account/orders" class="link-more">
-          Se alle ordrer
+          Se alle
           <i class="fa-solid fa-arrow-right"></i>
         </RouterLink>
       </div>
@@ -346,57 +428,52 @@ async function changePassword() {
         <i class="fa-solid fa-circle-notch fa-spin spinner-icon"></i>
       </div>
 
-      <div v-else-if="activeOrders.length === 0 && recentOrders.length === 0" class="empty-msg">
+      <div v-else-if="!hasAnyItems" class="empty-msg">
         Ingen ordrer ennå.
         <RouterLink to="/" class="link-inline">Handle nå</RouterLink>
       </div>
 
-      <div v-else-if="activeOrders.length === 0" class="empty-msg">
+      <div v-else-if="activeItems.length === 0" class="empty-msg">
         Ingen aktive ordrer for øyeblikket.
-        <RouterLink to="/account/orders" class="link-inline">Se ordrehistorikk</RouterLink>
+        <RouterLink to="/account/orders" class="link-inline">Se alle ordrer</RouterLink>
       </div>
 
       <ul v-else class="order-mini-list">
         <li
-          v-for="order in activeOrders"
-          :key="order.id"
+          v-for="item in activeItems"
+          :key="`${item.kind}-${item.id}`"
           class="order-mini-row"
-          @click="router.push(`/account/orders/${order.id}`)"
+          @click="router.push(item.detailPath)"
         >
-          <div>
-            <div class="order-mini-id">#{{ order.id }}</div>
-            <div class="order-mini-date">{{ formatDate(order.createdAt) }}</div>
+          <div class="order-mini-left">
+            <div class="order-mini-id-row">
+              <span class="type-chip" :class="item.typeBadgeClass">{{ item.typeLabel }}</span>
+              <span class="order-mini-id">#{{ item.id }}</span>
+            </div>
+            <div class="order-mini-date">{{ formatDate(item.date) }}</div>
           </div>
           <div class="order-mini-right">
-            <span class="badge" :class="statusClass(order.status)">
-              {{ statusLabel(order.status) }}
+            <span class="badge" :class="item.statusClass">
+              {{ item.statusLabel }}
             </span>
-            <span class="order-mini-total">{{ formatNok(order.totalNok) }}</span>
+            <RouterLink
+              v-if="item.isAwaitingApproval"
+              :to="item.detailPath"
+              class="approve-action"
+              @click.stop
+            >
+              Godkjenn
+              <i class="fa-solid fa-arrow-right fa-xs"></i>
+            </RouterLink>
+            <span class="order-mini-total">{{ formatNok(item.priceNok) }}</span>
           </div>
         </li>
       </ul>
 
-      <div v-if="activeOrders.length > 0" class="more-link-row">
+      <div v-if="activeItems.length > 0" class="more-link-row">
         <RouterLink to="/account/orders" class="link-faint">
           Se alle ordrer
           <i class="fa-solid fa-arrow-right fa-xs"></i>
-        </RouterLink>
-      </div>
-    </div>
-
-    <!-- Design requests quick link -->
-    <div class="panel design-link-panel">
-      <div class="design-link-inner">
-        <div>
-          <h2 class="section-title">
-            <i class="fa-solid fa-paintbrush"></i>
-            Mine design-bestillinger
-          </h2>
-          <p class="design-link-sub">AI-banner (95 kr) og manuelt design (495 kr)</p>
-        </div>
-        <RouterLink to="/account/design-requests" class="link-more">
-          Se alle
-          <i class="fa-solid fa-arrow-right"></i>
         </RouterLink>
       </div>
     </div>
@@ -781,10 +858,48 @@ async function changePassword() {
   transition: background 0.12s;
 }
 .order-mini-row:hover { background: var(--surface-2); }
+.order-mini-left { display: flex; flex-direction: column; gap: 2px; }
+.order-mini-id-row { display: flex; align-items: center; gap: 5px; }
 .order-mini-id { font-size: 0.875rem; font-weight: 600; color: var(--accent); }
 .order-mini-date { font-size: 0.75rem; color: var(--faint); margin-top: 1px; }
-.order-mini-right { display: flex; align-items: center; gap: 0.625rem; }
+.order-mini-right { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; justify-content: flex-end; }
 .order-mini-total { font-size: 0.875rem; font-weight: 700; color: var(--text); }
+
+/* ── Type chip ──────────────────────────────────────────────── */
+.type-chip {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.badge-type-order    { background: rgba(138,128,115,.18); color: var(--muted);  border: 1px solid rgba(138,128,115,.3); }
+.badge-type-ai       { background: rgba(34,200,230,.12);  color: #7ddce8;       border: 1px solid rgba(34,200,230,.28); }
+.badge-type-designer { background: rgba(130,100,220,.15); color: #c9a8f5;       border: 1px solid rgba(130,100,220,.3); }
+
+/* ── Approve action ─────────────────────────────────────────── */
+.approve-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #7de0a8;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+.approve-action:hover { color: #4ec984; }
+
+/* ── Extended status badge classes (design requests) ────────── */
+.badge-inprogress { background: rgba(255,106,61,.13);  color: var(--accent-2); border: 1px solid rgba(255,106,61,.3); }
+.badge-awaiting   { background: rgba(160,110,220,.15); color: #c9a8f5;         border: 1px solid rgba(160,110,220,.3); }
+.badge-approved   { background: rgba(60,180,100,.13);  color: #7de0a8;         border: 1px solid rgba(60,180,100,.28); }
+.badge-revision   { background: rgba(255,140,60,.15);  color: #ffb07a;         border: 1px solid rgba(255,140,60,.3); }
+.badge-revised    { background: rgba(34,200,230,.12);  color: #7ddce8;         border: 1px solid rgba(34,200,230,.28); }
 
 .more-link-row {
   margin-top: 0.625rem;

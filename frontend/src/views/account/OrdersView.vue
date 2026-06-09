@@ -2,65 +2,52 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { listOrders } from '@/api/orders'
-import type { OrderListItem } from '@/api/orders'
+import { listDesignRequests } from '@/api/designRequests'
 
 const router = useRouter()
 
-const orders = ref<OrderListItem[]>([])
+// ── Unified item type ─────────────────────────────────────────────────────────
+interface UnifiedItem {
+  id: number
+  kind: 'order' | 'design'
+  typeLabel: string           // 'Eget' | 'AI' | 'Designer'
+  typeBadgeClass: string
+  status: string
+  statusLabel: string
+  statusClass: string
+  date: string
+  priceNok: number
+  previewUrl: string | null
+  detailPath: string
+  isAwaitingApproval: boolean
+}
+
+const allItems = ref<UnifiedItem[]>([])
 const page = ref(1)
-const totalPages = ref(1)
-const totalCount = ref(0)
+const PAGE_SIZE = 20
 const loading = ref(true)
 const error = ref<string | null>(null)
 
-const PAGE_SIZE = 20
+const totalPages = computed(() => Math.ceil(allItems.value.length / PAGE_SIZE))
+const pagedItems = computed(() =>
+  allItems.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE),
+)
+const totalCount = computed(() => allItems.value.length)
+const hasPrev = computed(() => page.value > 1)
+const hasNext = computed(() => page.value < totalPages.value)
 
-async function load(p = 1) {
-  loading.value = true
-  error.value = null
-  try {
-    const result = await listOrders(p, PAGE_SIZE)
-    orders.value = result.items
-    page.value = result.page
-    totalPages.value = result.totalPages
-    totalCount.value = result.totalCount
-  } catch {
-    error.value = 'Kunne ikke laste ordrer. Prøv igjen.'
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(() => load(1))
-
-function goToOrder(id: number) {
-  router.push(`/account/orders/${id}`)
-}
-
-function formatNok(n: number): string {
-  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('nb-NO', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
-}
-
-// ── Status helpers ────────────────────────────────────────────────────────────
-const STATUS_LABELS: Record<string, string> = {
-  Draft: 'Utkast',
+// ── Status maps ───────────────────────────────────────────────────────────────
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  Draft:          'Utkast',
   PendingPayment: 'Venter betaling',
-  Paid: 'Betalt',
-  InProduction: 'Under produksjon',
-  ReadyToShip: 'Klar til frakt',
-  Shipped: 'Sendt',
-  Delivered: 'Levert',
-  Cancelled: 'Kansellert',
+  Paid:           'Betalt',
+  InProduction:   'I produksjon',
+  ReadyToShip:    'Klar til frakt',
+  Shipped:        'Sendt',
+  Delivered:      'Levert',
+  Cancelled:      'Kansellert',
 }
-const STATUS_CLASSES: Record<string, string> = {
+const ORDER_STATUS_CLASSES: Record<string, string> = {
   Draft:          'badge-draft',
   PendingPayment: 'badge-pending',
   Paid:           'badge-paid',
@@ -70,17 +57,94 @@ const STATUS_CLASSES: Record<string, string> = {
   Delivered:      'badge-shipped',
   Cancelled:      'badge-cancelled',
 }
-
-function statusLabel(s: string) { return STATUS_LABELS[s] ?? s }
-function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'badge-draft' }
-function deliveryLabel(d: string) {
-  if (d === 'Express') return 'Ekspress'
-  if (d === 'Pickup') return 'Henting'
-  return 'Standard'
+const DR_STATUS_LABELS: Record<string, string> = {
+  Pending:           'Venter',
+  InProgress:        'Under arbeid',
+  AwaitingApproval:  'Til godkjenning',
+  Approved:          'Design klar',
+  RevisionRequested: 'Revisjon',
+  Revised:           'Revidert',
+  Final:             'Levert',
+  Failed:            'Feilet',
+  Cancelled:         'Kansellert',
+}
+const DR_STATUS_CLASSES: Record<string, string> = {
+  Pending:           'badge-pending',
+  InProgress:        'badge-inprogress',
+  AwaitingApproval:  'badge-awaiting',
+  Approved:          'badge-approved',
+  RevisionRequested: 'badge-revision',
+  Revised:           'badge-revised',
+  Final:             'badge-approved',
+  Failed:            'badge-cancelled',
+  Cancelled:         'badge-cancelled',
 }
 
-const hasPrev = computed(() => page.value > 1)
-const hasNext = computed(() => page.value < totalPages.value)
+async function load() {
+  loading.value = true
+  error.value = null
+  page.value = 1
+  try {
+    const [ordersResult, drList] = await Promise.all([
+      listOrders(1, 100),
+      listDesignRequests(),
+    ])
+
+    const orderItems: UnifiedItem[] = ordersResult.items.map(o => ({
+      id: o.id,
+      kind: 'order' as const,
+      typeLabel: 'Eget',
+      typeBadgeClass: 'badge-type-order',
+      status: o.status,
+      statusLabel: ORDER_STATUS_LABELS[o.status] ?? o.status,
+      statusClass: ORDER_STATUS_CLASSES[o.status] ?? 'badge-draft',
+      date: o.createdAt,
+      priceNok: o.totalNok,
+      previewUrl: null,
+      detailPath: `/account/orders/${o.id}`,
+      isAwaitingApproval: false,
+    }))
+
+    const drItems: UnifiedItem[] = drList.map(dr => ({
+      id: dr.id,
+      kind: 'design' as const,
+      typeLabel: dr.mode === 'Ai' ? 'AI' : 'Designer',
+      typeBadgeClass: dr.mode === 'Ai' ? 'badge-type-ai' : 'badge-type-designer',
+      status: dr.status,
+      statusLabel: DR_STATUS_LABELS[dr.status] ?? dr.status,
+      statusClass: DR_STATUS_CLASSES[dr.status] ?? 'badge-draft',
+      date: dr.createdAt,
+      priceNok: dr.priceNok,
+      previewUrl: dr.previewUrl,
+      detailPath: `/account/design-requests/${dr.id}`,
+      isAwaitingApproval: dr.status === 'AwaitingApproval',
+    }))
+
+    allItems.value = [...orderItems, ...drItems].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    )
+  } catch {
+    error.value = 'Kunne ikke laste ordrer. Prøv igjen.'
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => load())
+
+function goToItem(item: UnifiedItem) {
+  router.push(item.detailPath)
+}
+
+function formatNok(n: number): string {
+  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('nb-NO', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  })
+}
 </script>
 
 <template>
@@ -111,12 +175,12 @@ const hasNext = computed(() => page.value < totalPages.value)
       <i class="fa-solid fa-circle-exclamation"></i>
       <div>
         {{ error }}
-        <button class="retry-btn" @click="load(page)">Prøv igjen</button>
+        <button class="retry-btn" @click="load()">Prøv igjen</button>
       </div>
     </div>
 
     <!-- Empty -->
-    <div v-else-if="orders.length === 0" class="empty-state">
+    <div v-else-if="allItems.length === 0" class="empty-state">
       <i class="fa-solid fa-box empty-icon"></i>
       <p class="empty-title">Ingen ordrer ennå</p>
       <p class="empty-sub">Dine bestillinger vil vises her.</p>
@@ -125,38 +189,66 @@ const hasNext = computed(() => page.value < totalPages.value)
       </RouterLink>
     </div>
 
-    <!-- Table -->
+    <!-- Unified table -->
     <template v-else>
       <div class="orders-panel">
         <!-- Desktop table -->
         <table class="orders-table">
           <thead class="table-head">
             <tr>
+              <th class="th th--thumb"></th>
               <th class="th">Ordre #</th>
-              <th class="th">Dato</th>
+              <th class="th">Type</th>
               <th class="th">Status</th>
-              <th class="th">Levering</th>
-              <th class="th">Varer</th>
+              <th class="th">Dato</th>
               <th class="th th--right">Totalt</th>
             </tr>
           </thead>
           <tbody>
             <tr
-              v-for="order in orders"
-              :key="order.id"
+              v-for="item in pagedItems"
+              :key="`${item.kind}-${item.id}`"
               class="order-row"
-              @click="goToOrder(order.id)"
+              @click="goToItem(item)"
             >
-              <td class="td td--id">#{{ order.id }}</td>
-              <td class="td td--muted">{{ formatDate(order.createdAt) }}</td>
+              <!-- Thumbnail -->
+              <td class="td td--thumb">
+                <div class="thumb-cell">
+                  <img
+                    v-if="item.previewUrl"
+                    :src="item.previewUrl"
+                    alt=""
+                    class="thumb-img"
+                  />
+                  <div v-else class="thumb-placeholder">
+                    <i class="fa-solid fa-image"></i>
+                  </div>
+                </div>
+              </td>
+              <td class="td td--id">#{{ item.id }}</td>
               <td class="td">
-                <span class="badge" :class="statusClass(order.status)">
-                  {{ statusLabel(order.status) }}
+                <span class="type-chip" :class="item.typeBadgeClass">
+                  {{ item.typeLabel }}
                 </span>
               </td>
-              <td class="td td--muted">{{ deliveryLabel(order.deliveryType) }}</td>
-              <td class="td td--muted">{{ order.itemCount }} stk</td>
-              <td class="td td--right td--bold">{{ formatNok(order.totalNok) }}</td>
+              <td class="td">
+                <div class="status-cell">
+                  <span class="badge" :class="item.statusClass">
+                    {{ item.statusLabel }}
+                  </span>
+                  <RouterLink
+                    v-if="item.isAwaitingApproval"
+                    :to="item.detailPath"
+                    class="approve-link"
+                    @click.stop
+                  >
+                    Godkjenn design
+                    <i class="fa-solid fa-arrow-right fa-xs"></i>
+                  </RouterLink>
+                </div>
+              </td>
+              <td class="td td--muted">{{ formatDate(item.date) }}</td>
+              <td class="td td--right td--bold">{{ formatNok(item.priceNok) }}</td>
             </tr>
           </tbody>
         </table>
@@ -164,21 +256,45 @@ const hasNext = computed(() => page.value < totalPages.value)
         <!-- Mobile card list -->
         <ul class="mobile-list">
           <li
-            v-for="order in orders"
-            :key="order.id"
+            v-for="item in pagedItems"
+            :key="`${item.kind}-${item.id}`"
             class="mobile-row"
-            @click="goToOrder(order.id)"
+            @click="goToItem(item)"
           >
-            <div class="mobile-row__left">
-              <div class="mobile-row__id">#{{ order.id }}</div>
-              <div class="mobile-row__sub">{{ formatDate(order.createdAt) }} · {{ deliveryLabel(order.deliveryType) }}</div>
-              <span class="badge" :class="statusClass(order.status)">
-                {{ statusLabel(order.status) }}
-              </span>
+            <!-- Preview thumbnail -->
+            <div class="mobile-thumb">
+              <img
+                v-if="item.previewUrl"
+                :src="item.previewUrl"
+                alt=""
+                class="mobile-thumb__img"
+              />
+              <div v-else class="mobile-thumb__placeholder">
+                <i class="fa-solid fa-image"></i>
+              </div>
             </div>
-            <div class="mobile-row__right">
-              <div class="mobile-row__total">{{ formatNok(order.totalNok) }}</div>
-              <div class="mobile-row__items">{{ order.itemCount }} vare{{ order.itemCount !== 1 ? 'r' : '' }}</div>
+
+            <div class="mobile-row__body">
+              <div class="mobile-row__top">
+                <span class="type-chip" :class="item.typeBadgeClass">{{ item.typeLabel }}</span>
+                <span class="mobile-row__id">#{{ item.id }}</span>
+              </div>
+              <div class="mobile-row__sub">{{ formatDate(item.date) }}</div>
+              <div class="mobile-row__badges">
+                <span class="badge" :class="item.statusClass">{{ item.statusLabel }}</span>
+                <RouterLink
+                  v-if="item.isAwaitingApproval"
+                  :to="item.detailPath"
+                  class="approve-link"
+                  @click.stop
+                >
+                  Godkjenn design →
+                </RouterLink>
+              </div>
+            </div>
+
+            <div class="mobile-row__price">
+              {{ formatNok(item.priceNok) }}
             </div>
           </li>
         </ul>
@@ -189,7 +305,7 @@ const hasNext = computed(() => page.value < totalPages.value)
         <button
           :disabled="!hasPrev"
           class="btn btn-ghost pager-btn"
-          @click="load(page - 1)"
+          @click="page--"
         >
           <i class="fa-solid fa-arrow-left"></i>
           Forrige
@@ -198,7 +314,7 @@ const hasNext = computed(() => page.value < totalPages.value)
         <button
           :disabled="!hasNext"
           class="btn btn-ghost pager-btn"
-          @click="load(page + 1)"
+          @click="page++"
         >
           Neste
           <i class="fa-solid fa-arrow-right"></i>
@@ -304,6 +420,69 @@ const hasNext = computed(() => page.value < totalPages.value)
   overflow: hidden;
 }
 
+/* ── Thumbnail ──────────────────────────────────────────────── */
+.thumb-cell {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.thumb-placeholder {
+  width: 100%;
+  height: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+  font-size: 0.875rem;
+}
+
+/* ── Type chip ──────────────────────────────────────────────── */
+.type-chip {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.badge-type-order    { background: rgba(138,128,115,.18); color: var(--muted);  border: 1px solid rgba(138,128,115,.3); }
+.badge-type-ai       { background: rgba(34,200,230,.12);  color: #7ddce8;       border: 1px solid rgba(34,200,230,.28); }
+.badge-type-designer { background: rgba(130,100,220,.15); color: #c9a8f5;       border: 1px solid rgba(130,100,220,.3); }
+
+/* ── Status cell ────────────────────────────────────────────── */
+.status-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── Approve link ───────────────────────────────────────────── */
+.approve-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #7de0a8;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+.approve-link:hover { color: #4ec984; }
+
 /* Desktop table */
 .orders-table {
   width: 100%;
@@ -316,7 +495,7 @@ const hasNext = computed(() => page.value < totalPages.value)
 .table-head { background: var(--surface-2); border-bottom: 1px solid var(--line-soft); }
 .th {
   text-align: left;
-  padding: 10px 18px;
+  padding: 10px 14px;
   font-size: 0.75rem;
   font-weight: 700;
   color: var(--muted);
@@ -324,6 +503,7 @@ const hasNext = computed(() => page.value < totalPages.value)
   letter-spacing: 0.04em;
 }
 .th--right { text-align: right; }
+.th--thumb { width: 60px; }
 
 .order-row {
   border-bottom: 1px solid var(--line-soft);
@@ -333,11 +513,12 @@ const hasNext = computed(() => page.value < totalPages.value)
 .order-row:last-child { border-bottom: none; }
 .order-row:hover { background: var(--surface-2); }
 
-.td { padding: 14px 18px; color: var(--text); vertical-align: middle; }
+.td { padding: 12px 14px; color: var(--text); vertical-align: middle; }
 .td--id { font-weight: 700; color: var(--accent); }
 .td--muted { color: var(--muted); }
 .td--right { text-align: right; }
 .td--bold { font-weight: 700; }
+.td--thumb { padding: 8px 10px 8px 14px; }
 
 /* Mobile list */
 .mobile-list {
@@ -352,20 +533,49 @@ const hasNext = computed(() => page.value < totalPages.value)
 .mobile-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 1rem;
+  gap: 12px;
+  padding: 0.875rem 1rem;
   border-bottom: 1px solid var(--line-soft);
   cursor: pointer;
   transition: background 0.12s;
 }
 .mobile-row:last-child { border-bottom: none; }
 .mobile-row:hover { background: var(--surface-2); }
-.mobile-row__left { display: flex; flex-direction: column; gap: 4px; }
-.mobile-row__id { font-size: 0.9375rem; font-weight: 700; color: var(--accent); }
+
+.mobile-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.mobile-thumb__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.mobile-thumb__placeholder {
+  width: 100%;
+  height: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+  font-size: 0.9rem;
+}
+
+.mobile-row__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.mobile-row__top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mobile-row__id { font-size: 0.875rem; font-weight: 700; color: var(--accent); }
 .mobile-row__sub { font-size: 0.75rem; color: var(--faint); }
-.mobile-row__right { text-align: right; flex-shrink: 0; margin-left: 1rem; }
-.mobile-row__total { font-size: 0.9375rem; font-weight: 700; color: var(--text); }
-.mobile-row__items { font-size: 0.75rem; color: var(--faint); margin-top: 2px; }
+.mobile-row__badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mobile-row__price { font-size: 0.9375rem; font-weight: 700; color: var(--text); flex-shrink: 0; }
 
 /* ── Pagination ─────────────────────────────────────────────── */
 .pagination {
@@ -389,10 +599,17 @@ const hasNext = computed(() => page.value < totalPages.value)
   letter-spacing: 0.01em;
   white-space: nowrap;
 }
-.badge-draft    { background: rgba(138,128,115,.18); color: var(--muted);     border: 1px solid rgba(138,128,115,.3); }
-.badge-pending  { background: rgba(231,185,78,.15);  color: #e7d08a;          border: 1px solid rgba(231,185,78,.3); }
-.badge-paid     { background: rgba(255,106,61,.13);  color: var(--accent-2);  border: 1px solid rgba(255,106,61,.3); }
-.badge-ready    { background: rgba(160,110,220,.15); color: #c9a8f5;          border: 1px solid rgba(160,110,220,.3); }
-.badge-shipped  { background: rgba(60,180,100,.13);  color: #7de0a8;          border: 1px solid rgba(60,180,100,.28); }
-.badge-cancelled{ background: rgba(220,60,60,.12);   color: #f4a57a;          border: 1px solid rgba(220,60,60,.28); }
+/* Order statuses */
+.badge-draft     { background: rgba(138,128,115,.18); color: var(--muted);     border: 1px solid rgba(138,128,115,.3); }
+.badge-pending   { background: rgba(231,185,78,.15);  color: #e7d08a;          border: 1px solid rgba(231,185,78,.3); }
+.badge-paid      { background: rgba(255,106,61,.13);  color: var(--accent-2);  border: 1px solid rgba(255,106,61,.3); }
+.badge-ready     { background: rgba(160,110,220,.15); color: #c9a8f5;          border: 1px solid rgba(160,110,220,.3); }
+.badge-shipped   { background: rgba(60,180,100,.13);  color: #7de0a8;          border: 1px solid rgba(60,180,100,.28); }
+.badge-cancelled { background: rgba(220,60,60,.12);   color: #f4a57a;          border: 1px solid rgba(220,60,60,.28); }
+/* Design request statuses */
+.badge-inprogress { background: rgba(255,106,61,.13);  color: var(--accent-2); border: 1px solid rgba(255,106,61,.3); }
+.badge-awaiting   { background: rgba(160,110,220,.15); color: #c9a8f5;         border: 1px solid rgba(160,110,220,.3); }
+.badge-approved   { background: rgba(60,180,100,.13);  color: #7de0a8;         border: 1px solid rgba(60,180,100,.28); }
+.badge-revision   { background: rgba(255,140,60,.15);  color: #ffb07a;         border: 1px solid rgba(255,140,60,.3); }
+.badge-revised    { background: rgba(34,200,230,.12);  color: #7ddce8;         border: 1px solid rgba(34,200,230,.28); }
 </style>

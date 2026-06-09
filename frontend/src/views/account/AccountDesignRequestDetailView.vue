@@ -356,12 +356,12 @@ function formatGenTime(iso: string | null | undefined): string {
   <div class="detail-wrap">
     <!-- Breadcrumb -->
     <div class="breadcrumb">
-      <RouterLink to="/account/design-requests" class="breadcrumb-link">
+      <RouterLink to="/account/orders" class="breadcrumb-link">
         <i class="fa-solid fa-arrow-left"></i>
-        Mine design-bestillinger
+        Mine ordrer
       </RouterLink>
       <span class="breadcrumb-sep">›</span>
-      <span class="breadcrumb-current">Bestilling #{{ requestId }}</span>
+      <span class="breadcrumb-current">Design #{{ requestId }}</span>
     </div>
 
     <!-- Loading -->
@@ -823,9 +823,9 @@ function formatGenTime(iso: string | null | undefined): string {
         </dl>
       </div>
 
-      <RouterLink to="/account/design-requests" class="back-link">
+      <RouterLink to="/account/orders" class="back-link">
         <i class="fa-solid fa-arrow-left"></i>
-        Tilbake til oversikten
+        Tilbake til Mine ordrer
       </RouterLink>
     </template>
   </div>
