@@ -374,6 +374,11 @@ const deliveryLabel = computed(() => {
   if (order.value?.deliveryType === 'Pickup') return 'Henting'
   return 'Standard'
 })
+
+const packingLabel = computed(() => {
+  if (order.value?.packingMode === 'Folded') return 'Brettes (flatt)'
+  return 'Rulles (rørform)'
+})
 </script>
 
 <template>
@@ -453,10 +458,14 @@ const deliveryLabel = computed(() => {
           </div>
         </div>
 
-        <div class="grid sm:grid-cols-4 gap-4 mt-5 text-sm">
+        <div class="grid sm:grid-cols-5 gap-4 mt-5 text-sm">
           <div>
             <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-0.5">Leveringstype</div>
             <div class="font-medium text-gray-200">{{ deliveryLabel }}</div>
+          </div>
+          <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-0.5">Pakking</div>
+            <div class="font-medium text-gray-200">{{ packingLabel }}</div>
           </div>
           <div>
             <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-0.5">Estimert levering</div>

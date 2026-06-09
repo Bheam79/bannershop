@@ -201,6 +201,8 @@ public class OrderListItemDto
     public string OrderType { get; set; } = string.Empty;
     public string OrderState { get; set; } = string.Empty;
     public string DeliveryType { get; set; } = string.Empty;
+    /// <summary>How the banner is packed for shipping (Rolled / Folded). Recorded at order time (BANNERSH-149).</summary>
+    public string PackingMode { get; set; } = "Rolled";
     public decimal TotalNok { get; set; }
     public int ItemCount { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -229,6 +231,8 @@ public class OrderDetailDto
     /// <summary>Lifecycle state per the state-machine (BANNERSH-109).</summary>
     public string OrderState { get; set; } = string.Empty;
     public string DeliveryType { get; set; } = string.Empty;
+    /// <summary>How the banner is packed for shipping (Rolled / Folded). Recorded at order time (BANNERSH-149).</summary>
+    public string PackingMode { get; set; } = "Rolled";
     public decimal ShippingCostNok { get; set; }
     public decimal ExpressFeeNok { get; set; }
     public decimal AiActivationFeeNok { get; set; }

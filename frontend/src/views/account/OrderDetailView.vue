@@ -97,8 +97,12 @@ const deliveryLabel = computed(() => {
   if (order.value?.deliveryType === 'Express') return 'Ekspress'
   if (order.value?.deliveryType === 'Pickup') return 'Henting'
   return 'Standard'
-}
-)
+})
+
+const packingLabel = computed(() => {
+  if (order.value?.packingMode === 'Folded') return 'Brettes (flatt 50×60 cm)'
+  return 'Rulles (rørform)'
+})
 </script>
 
 <template>
@@ -141,6 +145,10 @@ const deliveryLabel = computed(() => {
           <div class="meta-cell">
             <div class="meta-label">Leveringstype</div>
             <div class="meta-value">{{ deliveryLabel }}</div>
+          </div>
+          <div class="meta-cell">
+            <div class="meta-label">Pakking</div>
+            <div class="meta-value">{{ packingLabel }}</div>
           </div>
           <div class="meta-cell">
             <div class="meta-label">Estimert levering</div>
@@ -421,10 +429,10 @@ const deliveryLabel = computed(() => {
 /* ── Meta grid ──────────────────────────────────────────────── */
 .meta-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 1rem;
 }
-@media (max-width: 540px) { .meta-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) { .meta-grid { grid-template-columns: 1fr 1fr; } }
 .meta-cell { }
 .meta-label {
   font-size: 0.7rem;

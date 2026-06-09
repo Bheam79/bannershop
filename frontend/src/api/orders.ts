@@ -130,6 +130,8 @@ export interface OrderDetailResponse {
   /** Lifecycle state per state-machine */
   orderState?: string
   deliveryType: string
+  /** How the banner is packed for shipping: "Rolled" or "Folded" (BANNERSH-149) */
+  packingMode?: string
   shippingCostNok: number
   expressFeeNok: number
   totalNok: number

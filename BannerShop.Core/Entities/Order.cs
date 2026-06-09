@@ -19,6 +19,14 @@ public class Order
     public OrderState OrderState { get; set; } = OrderState.Draft;
 
     public DeliveryType DeliveryType { get; set; } = DeliveryType.Standard;
+
+    /// <summary>
+    /// How the customer chose to pack the banner for shipping. Recorded at order-draft
+    /// time so the fulfilment team knows which packaging method the customer paid for
+    /// (BANNERSH-149). Defaults to <see cref="PackingMode.Rolled"/> (historical default).
+    /// </summary>
+    public PackingMode PackingMode { get; set; } = PackingMode.Rolled;
+
     public int? ShippingAddressId { get; set; }
     public decimal ShippingCostNok { get; set; }
     public decimal ExpressFeeNok { get; set; }
