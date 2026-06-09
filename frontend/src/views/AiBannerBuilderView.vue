@@ -6,7 +6,9 @@ import type { Stripe, StripeCardElement } from '@stripe/stripe-js'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
 import { uploadBannerFile, getBannerDesign } from '@/api/bannerBuilder'
-import { fetchSizes } from '@/api/shop'
+import { fetchSizes, fetchEyeletPriceNok } from '@/api/shop'
+import type { BannerSize, EyeletOption } from '@/types'
+import { countEyelets } from '@/types'
 import {
   fetchTemplates,
   createAiRequest,
@@ -61,7 +63,9 @@ const themeDescription = ref('')
 const aspectRatio = ref<'16:9' | '18:9'>('16:9')
 
 // ── Step 3: Generation state ──────────────────────────────────────────────────
-type GenPhase = 'idle' | 'submitting' | 'generating' | 'anon_pending' | 'ready' | 'error'
+// BANNERSH-133: `tilpass` is a post-approval phase where the customer picks an
+// eyelet (malje) finishing option before the banner goes into the cart.
+type GenPhase = 'idle' | 'submitting' | 'generating' | 'anon_pending' | 'ready' | 'tilpass' | 'error'
 const genPhase = ref<GenPhase>('idle')
 const currentDesignRequest = ref<DesignRequestDetail | null>(null)
 const designRequestId = ref<number | null>(null)
@@ -78,6 +82,26 @@ const editExpanded = ref(false)
 // ── Reorder (Approved / Final designs) ───────────────────────────────────────
 const reordering = ref(false)
 const reorderError = ref<string | null>(null)
+
+// ── BANNERSH-133: Tilpass (eyelet picker) state ──────────────────────────────
+const tilpassDesignWidthCm = ref<number>(0)
+const tilpassDesignHeightCm = ref<number>(0)
+const tilpassBannerSize = ref<BannerSize | null>(null)
+const tilpassBannerPriceNok = ref<number>(0)
+const tilpassEyeletOption = ref<EyeletOption>('None')
+const tilpassEyeletPriceNok = ref<number>(0)
+const tilpassLoading = ref(false)
+const tilpassError = ref<string | null>(null)
+
+const tilpassEyeletCount = computed(() =>
+  countEyelets(tilpassDesignWidthCm.value, tilpassDesignHeightCm.value, tilpassEyeletOption.value),
+)
+const tilpassEyeletFeeNok = computed(() =>
+  tilpassEyeletCount.value * tilpassEyeletPriceNok.value,
+)
+const tilpassTotalNok = computed(() =>
+  tilpassBannerPriceNok.value + tilpassEyeletFeeNok.value,
+)
 
 // ── Credits badge (auth users only) ──────────────────────────────────────────
 const creditsRemaining = ref<number | null>(null)
@@ -574,6 +598,10 @@ async function pollOnce(id: number) {
 }
 
 // ── Approve ───────────────────────────────────────────────────────────────────
+// BANNERSH-133: approval no longer jumps straight to /checkout — it transitions
+// the wizard into the `tilpass` phase so the customer can pick an eyelet (malje)
+// option (Ingen / 4 hjørner / Per meter) and see the running total before adding
+// the banner to the cart.
 async function approve() {
   if (!designRequestId.value || approving.value) return
   approveError.value = null
@@ -583,31 +611,16 @@ async function approve() {
     currentDesignRequest.value = approved
     localStorage.removeItem('ai_banner_draft_id')
 
-    // If the approval produced a BannerDesign (finalBannerDesignId), add it to the
-    // cart and navigate directly to checkout so the user can place their print order.
+    // Resolve pricing for the produced BannerDesign so the tilpass phase can render
+    // the running total. If the lookup fails we still hand the user off to the
+    // design-request detail page rather than throwing them onto a broken screen.
     if (approved.finalBannerDesignId) {
       try {
-        const design = await getBannerDesign(approved.finalBannerDesignId)
-        const sizes = await fetchSizes(design.computedWidthCm)
-        const pricingSize = sizes.find(
-          (s) => s.isCustomWidth && s.heightCm === design.selectedHeightCm,
-        )
-        if (pricingSize && pricingSize.calculatedPrice != null) {
-          cart.addItem({
-            bannerSizeId: pricingSize.id,
-            bannerSizeName: `AI banner ${design.computedWidthCm} × ${design.selectedHeightCm} cm`,
-            customWidthCm: design.computedWidthCm,
-            heightCm: design.selectedHeightCm,
-            quantity: 1,
-            unitPriceNok: pricingSize.calculatedPrice,
-            eyeletOption: 'None',
-            eyeletFeeNok: 0,
-            designId: approved.finalBannerDesignId,
-            notes: `AI banner design #${approved.finalBannerDesignId}`,
-          })
-          router.push('/checkout')
-          return
-        }
+        await loadTilpassPricing(approved.finalBannerDesignId)
+        genPhase.value = 'tilpass'
+        // Scroll to top so the new step is immediately visible.
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        return
       } catch {
         // Non-fatal: if pricing fails, fall through to the design-request detail page
       }
@@ -623,6 +636,63 @@ async function approve() {
   } finally {
     approving.value = false
   }
+}
+
+// ── Tilpass: load pricing + eyelet info ──────────────────────────────────────
+async function loadTilpassPricing(bannerDesignId: number) {
+  tilpassLoading.value = true
+  tilpassError.value = null
+  try {
+    const design = await getBannerDesign(bannerDesignId)
+    const sizes = await fetchSizes(design.computedWidthCm)
+    const pricingSize = sizes.find(
+      (s) => s.isCustomWidth && s.heightCm === design.selectedHeightCm,
+    )
+    if (!pricingSize || pricingSize.calculatedPrice == null) {
+      throw new Error('Pricing not available for this banner.')
+    }
+    tilpassDesignWidthCm.value = design.computedWidthCm
+    tilpassDesignHeightCm.value = design.selectedHeightCm
+    tilpassBannerSize.value = pricingSize
+    tilpassBannerPriceNok.value = pricingSize.calculatedPrice
+    // Reset eyelet selection to "Ingen" each time we (re-)enter the tilpass step.
+    tilpassEyeletOption.value = 'None'
+
+    // Best-effort eyelet price fetch — falls back to 0 (hidden in the UI).
+    try {
+      tilpassEyeletPriceNok.value = await fetchEyeletPriceNok()
+    } catch {
+      tilpassEyeletPriceNok.value = 0
+    }
+  } finally {
+    tilpassLoading.value = false
+  }
+}
+
+// ── Tilpass: add to cart + go to checkout ────────────────────────────────────
+function addTilpassToCartAndCheckout() {
+  const d = currentDesignRequest.value
+  const size = tilpassBannerSize.value
+  if (!d?.finalBannerDesignId || !size) return
+  cart.addItem({
+    bannerSizeId: size.id,
+    bannerSizeName: `AI banner ${tilpassDesignWidthCm.value} × ${tilpassDesignHeightCm.value} cm`,
+    customWidthCm: tilpassDesignWidthCm.value,
+    heightCm: tilpassDesignHeightCm.value,
+    quantity: 1,
+    unitPriceNok: tilpassBannerPriceNok.value,
+    eyeletOption: tilpassEyeletOption.value,
+    eyeletFeeNok: tilpassEyeletFeeNok.value,
+    designId: d.finalBannerDesignId,
+    notes: `AI banner design #${d.finalBannerDesignId}`,
+  })
+  router.push('/checkout')
+}
+
+// ── Tilpass: back to the ready phase ─────────────────────────────────────────
+function backFromTilpass() {
+  genPhase.value = 'ready'
+  tilpassError.value = null
 }
 
 // ── Reorder current Approved / Final design ───────────────────────────────────
@@ -1446,25 +1516,12 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Action buttons (AwaitingApproval) -->
-        <!-- BANNERSH-83: explicit "go back and refine" alongside approve and regenerate.
-             The old layout silently spent a credit on "Generer ny versjon"; users
-             reasonably expected the FREE flow to give them a chance to tweak inputs
-             without paying.  "Tilbake og endre detaljer" jumps back to step 2 with
-             current inputs preserved (no API call, no credit spend) so they can
-             refine before re-submitting. -->
+        <!-- BANNERSH-133: button flow re-ordered.
+             Row 1: Back (left) + Generer ny versjon (right) — both secondary actions.
+             Row 2: Green "Godkjenn og tilpass" (full width) — the primary call-to-action
+             that proceeds to the eyelet (malje) picker step. -->
         <div v-if="currentDesignRequest.status === 'AwaitingApproval'" style="display:grid;gap:14px">
           <div style="display:flex;gap:14px;flex-wrap:wrap">
-            <button
-              type="button"
-              class="btn"
-              style="flex:1;justify-content:center;padding:14px;font-size:15px;border-radius:12px;background:#3a9d7e;color:#fff;min-width:220px"
-              :disabled="approving"
-              @click="approve"
-            >
-              <i v-if="approving" class="fa-solid fa-circle-notch fa-spin"></i>
-              <i v-else class="fa-solid fa-circle-check"></i>
-              Godkjenn og bestill
-            </button>
             <button
               type="button"
               class="btn btn-ghost"
@@ -1472,21 +1529,32 @@ onBeforeUnmount(() => {
               @click="returnToWizardIdle"
             >
               <i class="fa-solid fa-arrow-left"></i>
-              Tilbake og endre detaljer
+              Tilbake
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost"
+              style="flex:1;justify-content:center;padding:14px;font-size:15px;border-radius:12px;min-width:220px"
+              :disabled="regenerating"
+              @click="regenerate"
+            >
+              <i v-if="regenerating" class="fa-solid fa-circle-notch fa-spin"></i>
+              <i v-else class="fa-solid fa-rotate"></i>
+              <template v-if="canGenerateForFree === true">Generer ny versjon (gratis)</template>
+              <template v-else-if="hasCreditsAvailable">Generer ny versjon (1 kreditt)</template>
+              <template v-else>Generer ny versjon (krever kreditter)</template>
             </button>
           </div>
           <button
             type="button"
-            class="btn btn-ghost"
-            style="justify-content:center;padding:11px;font-size:14px;border-radius:12px;opacity:.85"
-            :disabled="regenerating"
-            @click="regenerate"
+            class="btn"
+            style="width:100%;justify-content:center;padding:14px;font-size:16px;border-radius:12px;background:#3a9d7e;color:#fff"
+            :disabled="approving"
+            @click="approve"
           >
-            <i v-if="regenerating" class="fa-solid fa-circle-notch fa-spin"></i>
-            <i v-else class="fa-solid fa-rotate"></i>
-            <template v-if="canGenerateForFree === true">Generer ny versjon (gratis)</template>
-            <template v-else-if="hasCreditsAvailable">Generer ny versjon (1 kreditt)</template>
-            <template v-else>Generer ny versjon (krever kreditter)</template>
+            <i v-if="approving" class="fa-solid fa-circle-notch fa-spin"></i>
+            <i v-else class="fa-solid fa-circle-check"></i>
+            Godkjenn og tilpass
           </button>
         </div>
 
@@ -1614,6 +1682,146 @@ onBeforeUnmount(() => {
               {{ regenerating ? 'Genererer…' : 'Generer ny versjon' }}
             </button>
           </div>
+        </div>
+      </div>
+
+      <!-- ── Phase: tilpass (eyelet picker + add-to-cart) ───────────────── -->
+      <!-- BANNERSH-133: post-approval step where the customer picks an eyelet
+           option and sees the running total before sending the banner to the
+           cart. -->
+      <div v-else-if="genPhase === 'tilpass' && currentDesignRequest" style="display:grid;gap:24px">
+        <div style="text-align:center">
+          <h2 class="display" style="font-size:28px;color:var(--text);margin-bottom:8px">
+            <i class="fa-solid fa-sliders" style="color:var(--accent);margin-right:8px"></i>
+            Tilpass banneret
+          </h2>
+          <p style="color:var(--muted)">Velg om du vil ha maljer (øyebolter), og legg banneret i handlekurven.</p>
+        </div>
+
+        <!-- Preview -->
+        <div class="bb-panel" style="padding:0;overflow:hidden">
+          <img
+            v-if="currentDesignRequest.previewUrl"
+            :src="currentDesignRequest.previewUrl"
+            :alt="`AI-generert banner for ${currentDesignRequest.personName}`"
+            style="width:100%;height:auto;object-fit:contain;display:block"
+          />
+          <div v-else style="display:flex;align-items:center;justify-content:center;height:240px;color:var(--faint)">
+            Forhåndsvisning ikke tilgjengelig
+          </div>
+        </div>
+
+        <!-- Loading -->
+        <div v-if="tilpassLoading" style="text-align:center;padding:1.5rem;color:var(--muted)">
+          <i class="fa-solid fa-circle-notch fa-spin" style="margin-right:8px"></i>
+          Henter pris…
+        </div>
+
+        <template v-else-if="tilpassBannerSize">
+          <!-- Banner price summary -->
+          <div class="bb-panel" style="display:grid;gap:14px">
+            <div>
+              <div class="field-label">Størrelse</div>
+              <div class="display" style="font-size:22px;color:var(--text);margin-top:4px">
+                {{ tilpassDesignWidthCm }} × {{ tilpassDesignHeightCm }} cm
+              </div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:15px;padding-top:8px;border-top:1px solid var(--line-soft)">
+              <span style="color:var(--muted)">Bannerpris</span>
+              <span style="color:var(--text);font-weight:600">{{ formatNok(tilpassBannerPriceNok) }}</span>
+            </div>
+          </div>
+
+          <!-- Eyelet option picker -->
+          <div class="bb-panel" style="display:grid;gap:14px">
+            <div>
+              <div class="field-label" style="margin-bottom:4px">
+                Maljer (øyebolter)
+                <span style="font-size:11px;font-weight:400;color:var(--faint);margin-left:4px">tilvalg</span>
+              </div>
+              <p style="font-size:12.5px;color:var(--faint);margin:0">
+                Hem (søm) er ikke mulig på PVC-bannere — kun maljer tilbys.
+              </p>
+            </div>
+            <div style="display:grid;gap:10px">
+              <label
+                v-for="opt in ([
+                  { value: 'None',        label: 'Ingen maljer',         sub: 'Uten hull' },
+                  { value: 'FourCorners', label: '4 maljer (hjørner)',    sub: 'En i hvert hjørne' },
+                  { value: 'PerMeter',    label: 'Maljer per meter',      sub: `Ca. 1 per 100 cm – ${countEyelets(tilpassDesignWidthCm, tilpassDesignHeightCm, 'PerMeter')} stk totalt` },
+                ] as const)"
+                :key="opt.value"
+                class="eyelet-option"
+                :class="{ 'eyelet-option--active': tilpassEyeletOption === opt.value }"
+              >
+                <input
+                  type="radio"
+                  :value="opt.value"
+                  v-model="tilpassEyeletOption"
+                  style="display:none"
+                />
+                <div style="flex:1">
+                  <div style="font-weight:600;font-size:14.5px;color:var(--text)">{{ opt.label }}</div>
+                  <div style="font-size:12.5px;color:var(--faint)">{{ opt.sub }}</div>
+                </div>
+                <div
+                  v-if="opt.value !== 'None' && tilpassEyeletPriceNok > 0"
+                  style="font-size:13px;color:var(--accent);font-weight:700;white-space:nowrap"
+                >
+                  +{{ formatNok(countEyelets(tilpassDesignWidthCm, tilpassDesignHeightCm, opt.value) * tilpassEyeletPriceNok) }}
+                </div>
+                <div class="eyelet-radio">
+                  <div class="radio-outer" :class="{ 'radio-outer--active': tilpassEyeletOption === opt.value }">
+                    <div v-if="tilpassEyeletOption === opt.value" class="radio-inner"></div>
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Sum -->
+          <div class="bb-panel" style="display:grid;gap:10px">
+            <div style="display:flex;justify-content:space-between;font-size:14.5px">
+              <span style="color:var(--muted)">Bannerpris</span>
+              <span style="color:var(--text);font-weight:500">{{ formatNok(tilpassBannerPriceNok) }}</span>
+            </div>
+            <div v-if="tilpassEyeletFeeNok > 0" style="display:flex;justify-content:space-between;font-size:14.5px">
+              <span style="color:var(--muted)">Maljer ({{ tilpassEyeletCount }} stk)</span>
+              <span style="color:var(--text);font-weight:500">{{ formatNok(tilpassEyeletFeeNok) }}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:17px;padding-top:10px;border-top:1px solid var(--line-soft)">
+              <span style="font-weight:700;color:var(--text)">Sum</span>
+              <span style="font-weight:800;color:var(--accent)">{{ formatNok(tilpassTotalNok) }}</span>
+            </div>
+            <p style="font-size:12.5px;color:var(--faint);margin:0">
+              Frakt og eventuelt ekspressgebyr beregnes i kassen.
+            </p>
+          </div>
+
+          <!-- CTA row -->
+          <div style="display:grid;gap:14px">
+            <button
+              type="button"
+              class="btn"
+              style="width:100%;justify-content:center;padding:14px;font-size:16px;border-radius:12px;background:#3a9d7e;color:#fff"
+              @click="addTilpassToCartAndCheckout"
+            >
+              <i class="fa-solid fa-cart-shopping"></i>
+              Legg i handlekurven
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost"
+              style="justify-content:center;padding:12px;font-size:14.5px;border-radius:12px"
+              @click="backFromTilpass"
+            >
+              <i class="fa-solid fa-arrow-left" style="font-size:12px"></i> Tilbake
+            </button>
+          </div>
+        </template>
+
+        <div v-if="tilpassError" class="error-box">
+          <i class="fa-solid fa-circle-exclamation"></i> {{ tilpassError }}
         </div>
       </div>
 
@@ -2400,5 +2608,41 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   display: block;
+}
+
+/* ── BANNERSH-133: Eyelet (malje) option selector (mirrors BannerBuilderView) ── */
+.eyelet-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-2);
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.eyelet-option:hover { border-color: var(--muted); }
+.eyelet-option--active {
+  border-color: var(--accent) !important;
+  background: rgba(255, 106, 61, 0.07) !important;
+}
+.eyelet-radio { flex-shrink: 0; }
+.radio-outer {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s;
+}
+.radio-outer--active { border-color: var(--accent); }
+.radio-inner {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 </style>
