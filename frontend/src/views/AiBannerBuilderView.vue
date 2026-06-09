@@ -994,8 +994,15 @@ onMounted(async () => {
   // BANNERSH-124: skip draft resumption when the user arrived via a front-page
   // category card (?category=…) — that signifies explicit intent to start a new
   // banner, so we should NOT redirect them back to the previous draft.
+  //
+  // BANNERSH-142: only resume when the URL explicitly opts in via ?resume=1.
+  // Plain navigation to /banner-builder/ai (e.g. clicking "Lag ditt eget banner")
+  // must always land on a fresh, empty form — auto-redirecting users back to a
+  // previously generated banner was confusing.  The anon→login flow keeps the
+  // resumption behaviour by appending ?resume=1 to its post-auth redirect URL.
+  const resumeParam = (route.query.resume as string | undefined)?.trim()
   const draftIdStr = localStorage.getItem('ai_banner_draft_id')
-  if (draftIdStr && auth.isLoggedIn && !categoryParam) {
+  if (resumeParam === '1' && draftIdStr && auth.isLoggedIn && !categoryParam) {
     const draftId = parseInt(draftIdStr, 10)
     if (!isNaN(draftId) && draftId > 0) {
       step.value = 3
@@ -1093,9 +1100,9 @@ onBeforeUnmount(() => {
       <span>
         <strong>Opprett konto for å godkjenne og bestille.</strong>
         Banneret ditt genereres i bakgrunnen — logg inn for å se og godkjenne resultatet.
-        <RouterLink to="/register?redirect=/banner-builder/ai" style="color:var(--accent);font-weight:600">Registrer deg</RouterLink>
+        <RouterLink :to="`/register?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" style="color:var(--accent);font-weight:600">Registrer deg</RouterLink>
         eller
-        <RouterLink to="/login?redirect=/banner-builder/ai" style="color:var(--accent);font-weight:600">logg inn</RouterLink>.
+        <RouterLink :to="`/login?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" style="color:var(--accent);font-weight:600">logg inn</RouterLink>.
       </span>
     </div>
 
@@ -1456,10 +1463,10 @@ onBeforeUnmount(() => {
           AI-en jobber med designet ditt. Opprett en konto for å se og godkjenne resultatet — og for å bestille det ferdige banneret.
         </p>
         <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-          <RouterLink to="/register?redirect=/banner-builder/ai" class="btn btn-primary" style="padding:12px 24px">
+          <RouterLink :to="`/register?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" class="btn btn-primary" style="padding:12px 24px">
             <i class="fa-solid fa-user-plus"></i> Opprett konto
           </RouterLink>
-          <RouterLink to="/login?redirect=/banner-builder/ai" class="btn btn-ghost" style="padding:12px 24px">
+          <RouterLink :to="`/login?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" class="btn btn-ghost" style="padding:12px 24px">
             Logg inn
           </RouterLink>
         </div>
