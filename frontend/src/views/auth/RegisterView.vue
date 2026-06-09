@@ -52,6 +52,11 @@ async function handleSubmit() {
       <!-- Glow accent blob -->
       <div class="auth-glow"></div>
 
+      <!-- Signup bonus chip -->
+      <div class="bonus-chip">
+        🎁 Få <strong>5 gratis AI-kreditter</strong> ved registrering
+      </div>
+
       <h1 class="display" style="font-size:28px;margin-bottom:6px;color:var(--text)">Opprett konto</h1>
       <p style="color:var(--muted);font-size:15px;margin-bottom:28px">
         Har du allerede konto?
@@ -242,5 +247,24 @@ async function handleSubmit() {
 .error-box i {
   color: var(--accent);
   flex-shrink: 0;
+}
+
+/* ── Signup bonus chip ──────────────────────────────────────── */
+.bonus-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #e7c35a;
+  background: rgba(231,185,78,.12);
+  border: 1px solid rgba(231,185,78,.32);
+  border-radius: 999px;
+  padding: 6px 14px;
+  margin-bottom: 20px;
+}
+.bonus-chip strong {
+  font-weight: 700;
+  color: #f0d06a;
 }
 </style>

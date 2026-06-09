@@ -9,6 +9,19 @@ const router = useRouter()
 const auth = useAuthStore()
 const cart = useCartStore()
 
+/* ── Campaign strip ─────────────────────────────────────────── */
+const SESSION_KEY = 'bannershop_campaign_dismissed'
+const campaignDismissed = ref(false)
+
+onMounted(() => {
+  campaignDismissed.value = sessionStorage.getItem(SESSION_KEY) === '1'
+})
+
+function dismissCampaign() {
+  sessionStorage.setItem(SESSION_KEY, '1')
+  campaignDismissed.value = true
+}
+
 /* ── Category data ──────────────────────────────────────────── */
 interface Cat {
   id: string
@@ -121,6 +134,36 @@ async function handleLogout() {
         </div>
       </div>
     </header>
+
+    <!-- ══════════════ CAMPAIGN STRIP (guests only) ══════════ -->
+    <div
+      v-if="!auth.isLoggedIn && !campaignDismissed"
+      class="campaign-strip"
+    >
+      <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-top:0;padding-bottom:0">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <span class="campaign-pill">
+            ✨ Lag konto nå og få <strong>5 gratis AI banner kreditter</strong>
+          </span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+          <button
+            class="btn btn-primary"
+            style="font-size:14px;padding:8px 18px;white-space:nowrap"
+            @click="router.push('/register')"
+          >
+            Opprett konto
+          </button>
+          <button
+            class="campaign-close"
+            @click="dismissCampaign"
+            aria-label="Lukk kampanjebanner"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- ═══════════════════════ HERO ══════════════════════════ -->
     <section id="top" style="position:relative;padding:74px 0 30px;overflow:hidden">
@@ -428,6 +471,44 @@ async function handleLogout() {
 /* ── Nav link hover ─────────────────────────────────────────── */
 .nav-link:hover { color: var(--text) !important; }
 .foot-link:hover { color: var(--text) !important; }
+
+/* ── Campaign strip ─────────────────────────────────────────── */
+.campaign-strip {
+  background: linear-gradient(90deg, rgba(231,185,78,.14) 0%, rgba(231,185,78,.08) 100%);
+  border-bottom: 1px solid rgba(231,185,78,.35);
+  padding: 11px 0;
+}
+.campaign-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: #e7c35a;
+}
+.campaign-pill strong {
+  font-weight: 700;
+  color: #f0d06a;
+}
+.campaign-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid rgba(231,185,78,.3);
+  color: rgba(231,185,78,.7);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background .15s, color .15s;
+  padding: 0;
+}
+.campaign-close:hover {
+  background: rgba(231,185,78,.15);
+  color: #e7c35a;
+}
 
 /* ── Hero banner cards ──────────────────────────────────────── */
 .hero-banner-card {
