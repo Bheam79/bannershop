@@ -265,7 +265,7 @@ async function pay() {
     <header class="checkout-header">
       <h1 class="display checkout-title">Kasse</h1>
       <nav class="stepper">
-        <RouterLink to="/checkout" class="stepper-step stepper-link">1. Oversikt &amp; levering</RouterLink>
+        <RouterLink to="/checkout" class="stepper-step stepper-link">1. Handlekurv &amp; levering</RouterLink>
         <span class="stepper-sep">›</span>
         <span class="stepper-step active">2. Betaling</span>
         <span class="stepper-sep">›</span>
@@ -296,7 +296,7 @@ async function pay() {
                 Henting: Rigedalen 43, 4626 Kristiansand
               </div>
               <div style="color: var(--faint); font-size: 0.8125rem;">
-                Mandag–fredag kl. 09–15, eller etter avtale
+                Mandag–fredag kl. 09–15. Oppmøte KUN etter avtale.
               </div>
             </template>
           </address>

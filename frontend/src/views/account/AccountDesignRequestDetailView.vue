@@ -384,6 +384,7 @@ async function reorder() {
         eyeletOption: 'None',
         eyeletFeeNok: 0,
         designId: request.value.finalBannerDesignId,
+        previewUrl: design.previewUrl || undefined,
         notes: `AI banner design #${request.value.finalBannerDesignId}`,
       })
       void router.push('/checkout')

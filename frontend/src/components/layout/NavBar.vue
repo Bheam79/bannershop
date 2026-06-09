@@ -57,7 +57,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick, true
         </template>
 
         <RouterLink v-if="cart.itemCount > 0" to="/checkout" class="btn btn-primary" style="background:var(--gold);color:#1a0d06;box-shadow:none;font-size:14px;padding:9px 16px">
-          <i class="fa-solid fa-cart-shopping"></i> Kasse ({{ cart.itemCount }})
+          <i class="fa-solid fa-cart-shopping"></i> Handlekurv ({{ cart.itemCount }})
         </RouterLink>
 
         <!-- Hamburger menu (logged in) -->

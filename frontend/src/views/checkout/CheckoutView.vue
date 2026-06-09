@@ -5,18 +5,75 @@ import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore } from '@/stores/checkout'
 import { useAuthStore } from '@/stores/auth'
 import { calculateShipping } from '@/api/shop'
-import type { DeliveryType, ShippingEstimate } from '@/types'
+import { getBannerDesign } from '@/api/bannerBuilder'
+import type { DeliveryType, EyeletOption, ShippingEstimate } from '@/types'
+import { countEyelets } from '@/types'
 
 const router = useRouter()
 const cart = useCartStore()
 const checkout = useCheckoutStore()
 const auth = useAuthStore()
 
+// ── Thumbnails (BANNERSH-140) ────────────────────────────────────────────────
+// Maps `designId` → resolved preview URL. Items rendered twice share a single
+// lookup. The Map drops back to an in-flight Promise while a fetch is pending
+// so concurrent renders don't trigger duplicate API calls.
+const thumbCache = ref<Map<number, string>>(new Map())
+const thumbInflight = new Map<number, Promise<string | null>>()
+
+function thumbFor(designId: number | undefined): string | null {
+  if (designId == null) return null
+  return thumbCache.value.get(designId) ?? null
+}
+
+async function ensureThumb(designId: number | undefined): Promise<void> {
+  if (designId == null) return
+  if (thumbCache.value.has(designId)) return
+  if (thumbInflight.has(designId)) {
+    await thumbInflight.get(designId)
+    return
+  }
+  const p = (async () => {
+    try {
+      const design = await getBannerDesign(designId)
+      // The preview endpoint is [AllowAnonymous] so the URL can be used directly
+      // in an <img src>. Fall back to empty string if the backend ever returns null.
+      const url = design.previewUrl || ''
+      if (url) thumbCache.value.set(designId, url)
+      return url || null
+    } catch {
+      return null
+    } finally {
+      thumbInflight.delete(designId)
+    }
+  })()
+  thumbInflight.set(designId, p)
+  await p
+}
+
+function preloadThumbnails() {
+  for (const item of cart.items) {
+    if (item.previewUrl && item.designId != null && !thumbCache.value.has(item.designId)) {
+      thumbCache.value.set(item.designId, item.previewUrl)
+    }
+    if (item.designId != null && !thumbCache.value.has(item.designId)) {
+      void ensureThumb(item.designId)
+    }
+  }
+}
+
 // ── Redirect if cart is empty ────────────────────────────────────────────────
 onMounted(() => {
   if (cart.items.length === 0) {
     router.replace('/')
+    return
   }
+  preloadThumbnails()
+})
+
+// Refresh thumbnails if the cart changes (e.g. removed item, new design added).
+watch(() => cart.items.length, () => {
+  preloadThumbnails()
 })
 
 // Also redirect if the cart becomes empty after a removal during checkout.
@@ -173,15 +230,30 @@ function proceed() {
 function formatNok(n: number): string {
   return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
 }
+
+// Eyelet labels — kept consistent with BannerBuilderView / AiBannerBuilderView wording.
+function eyeletShortLabel(option: EyeletOption): string {
+  switch (option) {
+    case 'FourCorners': return '4 hjørner'
+    case 'PerMeter':    return 'Per meter'
+    default:            return 'Ingen'
+  }
+}
+
+function eyeletCountFor(item: import('@/types').CartItem): number {
+  // Compute width: prefer customWidthCm (set by the banner builder) when present.
+  const widthCm = item.customWidthCm ?? 0
+  return countEyelets(widthCm, item.heightCm, item.eyeletOption)
+}
 </script>
 
 <template>
   <div class="checkout-wrap">
     <!-- Header / stepper -->
     <header class="checkout-header">
-      <h1 class="display checkout-title">Kasse</h1>
+      <h1 class="display checkout-title">Handlekurv</h1>
       <nav class="stepper">
-        <span class="stepper-step active">1. Oversikt &amp; levering</span>
+        <span class="stepper-step active">1. Handlekurv &amp; levering</span>
         <span class="stepper-sep">›</span>
         <span class="stepper-step">2. Betaling</span>
         <span class="stepper-sep">›</span>
@@ -202,15 +274,43 @@ function formatNok(n: number): string {
               :key="idx"
               class="item-row"
             >
+              <!-- Thumbnail: design preview when we have a BannerDesign id,
+                   otherwise a neutral placeholder. -->
+              <div class="item-thumb" aria-hidden="true">
+                <img
+                  v-if="thumbFor(item.designId)"
+                  :src="thumbFor(item.designId)!"
+                  :alt="`Forhåndsvisning av ${item.bannerSizeName}`"
+                />
+                <i v-else class="fa-solid fa-image item-thumb-placeholder"></i>
+              </div>
+
               <div class="item-info">
                 <div class="item-name">{{ item.bannerSizeName }}</div>
+
+                <!-- Base banner line -->
                 <div class="item-sub">
-                  {{ item.quantity }} stk × {{ formatNok(item.unitPriceNok + item.eyeletFeeNok) }}
-                  <span v-if="item.eyeletOption !== 'None'" style="color:var(--faint)">
-                    (inkl. maljer)
+                  {{ item.quantity }} stk × {{ formatNok(item.unitPriceNok) }}
+                  <span style="color:var(--faint)">banner</span>
+                </div>
+
+                <!-- Eyelet sub-line: only when a paid option was picked -->
+                <div
+                  v-if="item.eyeletOption !== 'None' && item.eyeletFeeNok > 0"
+                  class="item-eyelet-row"
+                >
+                  <span class="item-eyelet-label">
+                    + Maljer
+                    <span class="item-eyelet-badge">
+                      {{ eyeletShortLabel(item.eyeletOption) }}<template v-if="eyeletCountFor(item) > 0">, {{ eyeletCountFor(item) }} stk</template>
+                    </span>
+                  </span>
+                  <span class="item-eyelet-price">
+                    +{{ formatNok(item.eyeletFeeNok * item.quantity) }}
                   </span>
                 </div>
               </div>
+
               <div class="item-price">
                 {{ formatNok((item.unitPriceNok + item.eyeletFeeNok) * item.quantity) }}
               </div>
@@ -400,7 +500,7 @@ function formatNok(n: number): string {
                     <span class="badge-pickup">Gratis</span>
                   </div>
                   <div class="delivery-btn__sub">Rigedalen 43, 4626 Kristiansand</div>
-                  <div class="delivery-btn__sub">Mandag–fredag kl. 09–15, eller etter avtale</div>
+                  <div class="delivery-btn__sub">Mandag–fredag kl. 09–15. Oppmøte KUN etter avtale.</div>
                   <div class="delivery-btn__price delivery-btn__price--pickup">0 kr</div>
                 </div>
                 <div class="delivery-btn__radio">
@@ -562,6 +662,65 @@ function formatNok(n: number): string {
 .item-name { font-weight: 600; color: var(--text); }
 .item-sub { font-size: 0.8125rem; color: var(--muted); margin-top: 0.125rem; }
 .item-price { font-weight: 700; color: var(--text); }
+
+/* ── Thumbnail (BANNERSH-140) ────────────────────────────────── */
+.item-thumb {
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.item-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #2a251e;
+}
+.item-thumb-placeholder {
+  color: var(--faint);
+  font-size: 18px;
+}
+
+/* ── Eyelet sub-line ─────────────────────────────────────────── */
+.item-eyelet-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.item-eyelet-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.item-eyelet-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: rgba(231, 185, 78, 0.14);
+  color: var(--gold);
+  border: 1px solid rgba(231, 185, 78, 0.3);
+  padding: 1px 7px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+.item-eyelet-price {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
 .item-remove {
   background: transparent;
   border: 1px solid var(--line);

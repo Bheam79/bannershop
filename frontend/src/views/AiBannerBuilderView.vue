@@ -692,6 +692,7 @@ function addTilpassToCartAndCheckout() {
     eyeletOption: tilpassEyeletOption.value,
     eyeletFeeNok: tilpassEyeletFeeNok.value,
     designId: d.finalBannerDesignId,
+    previewUrl: d.previewUrl ?? undefined,
     notes: `AI banner design #${d.finalBannerDesignId}`,
   })
   router.push('/checkout')
@@ -726,6 +727,7 @@ async function reorderCurrentDesign() {
         eyeletOption: 'None',
         eyeletFeeNok: 0,
         designId: d.finalBannerDesignId,
+        previewUrl: d.previewUrl ?? design.previewUrl ?? undefined,
         notes: `AI banner design #${d.finalBannerDesignId}`,
       })
       void router.push('/checkout')

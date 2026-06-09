@@ -187,4 +187,10 @@ export interface CartItem {
    * Set to the same value on both lines of a manual-design order (BANNERSH-136).
    */
   designRequestId?: number
+  /**
+   * Optional preview URL for the banner thumbnail (BANNERSH-140). Cached when the
+   * item is added to the cart so the checkout view can render a thumbnail without
+   * a round-trip. Falls back to `getBannerDesign(designId)` when missing.
+   */
+  previewUrl?: string
 }

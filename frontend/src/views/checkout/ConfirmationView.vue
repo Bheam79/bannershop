@@ -39,7 +39,7 @@ function formatDate(isoDate: string | null): string {
   <div class="confirm-wrap">
     <!-- Stepper -->
     <nav class="stepper">
-      <span class="stepper-step">1. Oversikt &amp; levering</span>
+      <span class="stepper-step">1. Handlekurv &amp; levering</span>
       <span class="stepper-sep">›</span>
       <span class="stepper-step">2. Betaling</span>
       <span class="stepper-sep">›</span>

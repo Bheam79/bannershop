@@ -136,6 +136,7 @@ function addToCartAndCheckout() {
     eyeletOption: eyeletOption.value,
     eyeletFeeNok: eyeletFeePerUnit.value,
     designId: design.value.designId,
+    previewUrl: design.value.previewUrl || undefined,
     notes: `Banner design #${design.value.designId} (lastet opp av kunde, rotasjon ${rotationDegrees.value}°)`,
   }
   cart.addItem(item)
@@ -427,7 +428,7 @@ onMounted(async () => {
             @click="addToCartAndCheckout"
           >
             <i class="fa-solid fa-cart-shopping"></i>
-            Legg i handlekurv og gå til kasse
+            Legg i handlekurven
           </button>
         </div>
       </section>
