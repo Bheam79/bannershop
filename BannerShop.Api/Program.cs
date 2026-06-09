@@ -378,11 +378,11 @@ var app = builder.Build();
             app.Configuration.GetType().FullName);
     }
 
-    // BANNERSH-127: probe the DB system_settings row for openai_api_key.
-    // OpenAiImageService prefers this over appsettings — a stale value left from
-    // an admin-panel edit will silently override any change to
-    // appsettings.Local.json, which is exactly the "still not working" symptom
-    // this task reports.
+    // BANNERSH-127: probe the DB system_settings rows for openai_api_key /
+    // openai_image_model / openai_image_quality. OpenAiImageService prefers
+    // these over appsettings — a stale value left from an admin-panel edit
+    // will silently override any change to appsettings.Local.json, which is
+    // exactly the "still not working" symptom this task reports.
     try
     {
         using var scope = app.Services.CreateScope();
@@ -390,11 +390,14 @@ var app = builder.Build();
             .GetRequiredService<BannerShop.Api.Services.SystemSettings.ISystemSettingsService>();
         var dbKey = await settings.GetValueAsync("openai_api_key");
         var dbModel = await settings.GetValueAsync("openai_image_model");
+        var dbQuality = await settings.GetValueAsync("openai_image_quality");
         startupLog.LogInformation(
-            "Boot config: DB system_settings 'openai_api_key'={DbKeyState} 'openai_image_model'={DbModelState} " +
+            "Boot config: DB system_settings 'openai_api_key'={DbKeyState} " +
+            "'openai_image_model'={DbModelState} 'openai_image_quality'={DbQualityState} " +
             "(DB takes precedence over appsettings in OpenAiImageService — clear via admin panel if stale)",
             DescribeKeyState(dbKey),
-            string.IsNullOrWhiteSpace(dbModel) ? "<unset>" : $"\"{dbModel}\"");
+            string.IsNullOrWhiteSpace(dbModel) ? "<unset>" : $"\"{dbModel}\"",
+            string.IsNullOrWhiteSpace(dbQuality) ? "<unset>" : $"\"{dbQuality}\"");
     }
     catch (Exception ex)
     {

@@ -77,7 +77,12 @@ public class BannerShopDbContext : DbContext
             e.Property(x => x.Label).HasMaxLength(200);
             e.HasData(
                 new SystemSetting { Id = 1, Key = "openai_api_key", Value = "", Label = "OpenAI API Key", IsSensitive = true },
-                new SystemSetting { Id = 2, Key = "openai_image_model", Value = "", Label = "OpenAI Image Model (blank = use config default)", IsSensitive = false }
+                new SystemSetting { Id = 2, Key = "openai_image_model", Value = "", Label = "OpenAI Image Model (blank = use config default)", IsSensitive = false },
+                // BANNERSH-127: ImageQuality wasn't editable via the admin panel — operators had
+                // to redeploy appsettings.Local.json to change it. Add a DB-backed row so it can
+                // be flipped between low/medium/high/auto at runtime, with appsettings as the
+                // fallback when this row is blank.
+                new SystemSetting { Id = 3, Key = "openai_image_quality", Value = "", Label = "OpenAI Image Quality (blank = use config default; allowed: low, medium, high, auto)", IsSensitive = false }
             );
         });
 

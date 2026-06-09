@@ -24,6 +24,11 @@ namespace BannerShop.Api.Services.DesignRequests.OpenAi;
 /// returned instead of calling the OpenAI API, mirroring MockAiImageService.
 /// This means the service can always be registered regardless of whether the
 /// key was available at startup.
+///
+/// BANNERSH-127: ImageModel + ImageQuality follow the same DB-first resolution
+/// as ApiKey (system_settings 'openai_image_model' / 'openai_image_quality'),
+/// so an admin can flip "high" → "low" via the settings panel without redeploy.
+/// A blank DB value falls through to the appsettings.json default.
 /// </summary>
 public sealed class OpenAiImageService : IAiImageService
 {
@@ -90,11 +95,18 @@ public sealed class OpenAiImageService : IAiImageService
 
         var apiKey = apiKeyOpt.Value;
         var liveOpts = _optsMonitor.CurrentValue;
+
+        // BANNERSH-127: resolve ImageModel + ImageQuality DB-first, same precedence
+        // as ApiKey. Captured once per request so we log exactly what we send and
+        // can surface the source in the log line.
+        var (model, modelSrc) = await ResolveModelAsync(liveOpts, ct);
+        var (quality, qualitySrc) = await ResolveQualityAsync(liveOpts, ct);
+
         _log.LogInformation(
             "OpenAI image generation: invoking real API. KeySource={Source} KeyPrefix={Prefix} " +
-            "Model={Model} Quality={Quality} HasPortrait={HasPortrait} AspectRatio={AspectRatio}",
+            "Model={Model} ({ModelSrc}) Quality={Quality} ({QualitySrc}) HasPortrait={HasPortrait} AspectRatio={AspectRatio}",
             apiKey.Source, MaskKey(apiKey.Key),
-            liveOpts.ImageModel, liveOpts.ImageQuality,
+            model, modelSrc, quality, qualitySrc,
             !string.IsNullOrWhiteSpace(request.ReferenceImagePath) && File.Exists(request.ReferenceImagePath),
             request.AspectRatio);
 
@@ -106,9 +118,9 @@ public sealed class OpenAiImageService : IAiImageService
         // ── Either /v1/images/edits (with portrait) or /v1/images/generations ──
         byte[] pngBytes;
         if (!string.IsNullOrWhiteSpace(request.ReferenceImagePath) && File.Exists(request.ReferenceImagePath))
-            pngBytes = await EditWithReferenceAsync(request.Prompt, request.ReferenceImagePath, size, ct);
+            pngBytes = await EditWithReferenceAsync(request.Prompt, request.ReferenceImagePath, model, quality, size, ct);
         else
-            pngBytes = await GenerateAsync(request.Prompt, size, ct);
+            pngBytes = await GenerateAsync(request.Prompt, model, quality, size, ct);
 
         // Persist to a temp file; caller copies to its final storage location.
         var tempPath = Path.Combine(Path.GetTempPath(), $"openai_{Guid.NewGuid():N}.png");
@@ -155,6 +167,31 @@ public sealed class OpenAiImageService : IAiImageService
             return new ResolvedKey(cfgKey, "appsettings:OpenAi:ApiKey");
 
         return null;
+    }
+
+    /// <summary>
+    /// Returns the effective image model + a label describing where it came
+    /// from (db / appsettings). Mirrors <see cref="GetEffectiveApiKeyAsync"/>.
+    /// </summary>
+    private async Task<(string Value, string Source)> ResolveModelAsync(OpenAiOptions liveOpts, CancellationToken ct)
+    {
+        var dbModel = await _settings.GetValueAsync("openai_image_model", ct);
+        if (!string.IsNullOrWhiteSpace(dbModel))
+            return (dbModel.Trim(), "db:openai_image_model");
+        return (liveOpts.ImageModel, "appsettings:OpenAi:ImageModel");
+    }
+
+    /// <summary>
+    /// Returns the effective image quality ("low" / "medium" / "high" / "auto")
+    /// + a label describing where it came from. Same DB-first precedence as the
+    /// model and the API key.
+    /// </summary>
+    private async Task<(string Value, string Source)> ResolveQualityAsync(OpenAiOptions liveOpts, CancellationToken ct)
+    {
+        var dbQuality = await _settings.GetValueAsync("openai_image_quality", ct);
+        if (!string.IsNullOrWhiteSpace(dbQuality))
+            return (dbQuality.Trim(), "db:openai_image_quality");
+        return (liveOpts.ImageQuality, "appsettings:OpenAi:ImageQuality");
     }
 
     private static bool IsPlaceholderKey(string key) =>
@@ -215,14 +252,13 @@ public sealed class OpenAiImageService : IAiImageService
 
     // ── Internals ────────────────────────────────────────────────────────────
 
-    private async Task<byte[]> GenerateAsync(string prompt, NativeSize size, CancellationToken ct)
+    private async Task<byte[]> GenerateAsync(string prompt, string model, string quality, NativeSize size, CancellationToken ct)
     {
-        var opts = _optsMonitor.CurrentValue;
         var payload = new
         {
-            model = opts.ImageModel,
+            model,
             prompt,
-            quality = opts.ImageQuality,
+            quality,
             size = size.AsApiString(),
             n = 1,
             response_format = "b64_json"
@@ -236,13 +272,12 @@ public sealed class OpenAiImageService : IAiImageService
         return ExtractFirstImageBytes(parsed);
     }
 
-    private async Task<byte[]> EditWithReferenceAsync(string prompt, string referenceAbsolutePath, NativeSize size, CancellationToken ct)
+    private async Task<byte[]> EditWithReferenceAsync(string prompt, string referenceAbsolutePath, string model, string quality, NativeSize size, CancellationToken ct)
     {
-        var opts = _optsMonitor.CurrentValue;
         using var content = new MultipartFormDataContent();
-        content.Add(new StringContent(opts.ImageModel), "model");
+        content.Add(new StringContent(model), "model");
         content.Add(new StringContent(prompt), "prompt");
-        content.Add(new StringContent(opts.ImageQuality), "quality");
+        content.Add(new StringContent(quality), "quality");
         content.Add(new StringContent(size.AsApiString()), "size");
         content.Add(new StringContent("1"), "n");
         content.Add(new StringContent("b64_json"), "response_format");

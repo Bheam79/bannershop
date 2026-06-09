@@ -169,6 +169,14 @@ onMounted(load)
         <li>
           <strong class="text-gray-300">openai_image_model</strong>: La stå tom for å bruke standard (<code class="bg-gray-800 px-1 rounded">gpt-image-2</code>).
         </li>
+        <li>
+          <strong class="text-gray-300">openai_image_quality</strong>: Bildekvalitet sendt til OpenAI.
+          Gyldige verdier: <code class="bg-gray-800 px-1 rounded">low</code>,
+          <code class="bg-gray-800 px-1 rounded">medium</code>,
+          <code class="bg-gray-800 px-1 rounded">high</code>,
+          <code class="bg-gray-800 px-1 rounded">auto</code>.
+          La stå tom for å bruke standardverdien fra appsettings (<code class="bg-gray-800 px-1 rounded">high</code>).
+        </li>
       </ul>
     </div>
   </div>
