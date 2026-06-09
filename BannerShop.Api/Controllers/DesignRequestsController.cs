@@ -40,7 +40,9 @@ public class DesignRequestsController : ControllerBase
         {
             DesignRequestId = result.DesignRequestId,
             ClientSecret = result.ClientSecret ?? string.Empty,
-            TotalNok = result.TotalNok
+            TotalNok = result.TotalNok,
+            DesignPriceNok = result.DesignPriceNok,
+            BannerPriceNok = result.BannerPriceNok
         });
     }
 

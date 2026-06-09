@@ -73,12 +73,27 @@ public class CreateAiDesignRequestDto
     public int? UploadedPhotoBannerDesignId { get; set; }
 }
 
-/// <summary>Response from POST /api/design-requests/ai (and /manual once that lands).</summary>
+/// <summary>Response from POST /api/design-requests/manual.</summary>
 public class CreateDesignRequestResponseDto
 {
     public int DesignRequestId { get; set; }
     public string ClientSecret { get; set; } = string.Empty;
+
+    /// <summary>Total amount the customer is being charged (design + banner production).</summary>
     public decimal TotalNok { get; set; }
+
+    /// <summary>
+    /// Design fee portion of <see cref="TotalNok"/> — fixed at 495 NOK for the manual flow
+    /// (BANNERSH-104 breakdown so the wizard's summary panel can render the line items).
+    /// </summary>
+    public decimal DesignPriceNok { get; set; }
+
+    /// <summary>
+    /// Physical-banner production cost portion of <see cref="TotalNok"/>. May be 0 if the
+    /// chosen aspect ratio has no matching BannerSize in the catalog (degraded mode —
+    /// customer pays only the design fee, same as pre-BANNERSH-104).
+    /// </summary>
+    public decimal BannerPriceNok { get; set; }
 }
 
 /// <summary>Response from POST /api/design-requests/ai (BANNERSH-67 free-first flow).</summary>

@@ -61,8 +61,38 @@ public class DesignRequest
     /// <summary>How many free AI re-runs the customer still has on this paid request.</summary>
     public int RegenerationsRemaining { get; set; } = 1;
 
-    /// <summary>Snapshotted price the customer paid (95 or 495 NOK).</summary>
+    /// <summary>
+    /// Snapshotted design fee paid by the customer (495 NOK for Manual; 95 NOK for legacy
+    /// pre-BANNERSH-67 AI rows; 0 NOK for current free-first AI rows).
+    /// </summary>
+    /// <remarks>
+    /// The total Stripe charge for a Manual request is
+    /// <c>PriceNok + <see cref="BannerPriceNok"/></c> — the banner production cost is
+    /// collected upfront alongside the design fee (BANNERSH-104).
+    /// </remarks>
     public decimal PriceNok { get; set; }
+
+    /// <summary>
+    /// Cost of producing the physical banner (NOK), based on the chosen aspect ratio's
+    /// dimensions resolved against the cheapest active <see cref="BannerSize"/>. Charged
+    /// alongside <see cref="PriceNok"/> on the Manual flow's Stripe PaymentIntent
+    /// (BANNERSH-104). Zero on AI requests and on Manual rows created before BANNERSH-104.
+    /// </summary>
+    public decimal BannerPriceNok { get; set; }
+
+    /// <summary>
+    /// FK to the <see cref="BannerSize"/> used to compute <see cref="BannerPriceNok"/>.
+    /// Null on legacy rows and on AI requests (which collect production cost via the
+    /// separate print order). Stored so admins can reconcile the snapshot price against
+    /// the current pricing parameters.
+    /// </summary>
+    public int? BannerSizeId { get; set; }
+
+    /// <summary>
+    /// Custom width in cm when <see cref="BannerSizeId"/> points at a custom-width size.
+    /// Null for fixed-width sizes and legacy rows.
+    /// </summary>
+    public int? CustomBannerWidthCm { get; set; }
 
     /// <summary>Stripe PaymentIntent id (one per request — DesignRequests are mini-orders).</summary>
     public string? StripePaymentIntentId { get; set; }

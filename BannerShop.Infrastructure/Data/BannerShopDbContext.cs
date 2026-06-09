@@ -269,6 +269,10 @@ public class BannerShopDbContext : DbContext
             e.Property(x => x.AspectRatio).HasMaxLength(10).IsRequired().HasDefaultValue("16:9");
             e.Property(x => x.Status).HasConversion<string>().HasMaxLength(30).IsRequired();
             e.Property(x => x.PriceNok).HasColumnType("decimal(10,2)");
+            // BANNERSH-104: snapshot of the physical-banner production cost, charged
+            // alongside the design fee on the Manual flow. Defaults to 0 on existing
+            // rows (legacy + AI requests, whose production cost is handled elsewhere).
+            e.Property(x => x.BannerPriceNok).HasColumnType("decimal(10,2)").HasDefaultValue(0m);
             e.Property(x => x.StripePaymentIntentId).HasMaxLength(200);
             e.Property(x => x.AiResultStoragePath).HasMaxLength(500);
             e.Property(x => x.DesignerPreviewPath).HasMaxLength(500);

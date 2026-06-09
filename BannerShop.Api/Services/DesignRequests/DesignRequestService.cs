@@ -24,6 +24,7 @@ public sealed class DesignRequestService : IDesignRequestService
     private readonly IImageProcessingService _images;
     private readonly IEmailService _email;
     private readonly IAiCreditService _credits;
+    private readonly IPricingService _pricing;
     private readonly ILogger<DesignRequestService> _log;
 
     public DesignRequestService(
@@ -34,6 +35,7 @@ public sealed class DesignRequestService : IDesignRequestService
         IImageProcessingService images,
         IEmailService email,
         IAiCreditService credits,
+        IPricingService pricing,
         ILogger<DesignRequestService> log)
     {
         _db = db;
@@ -43,6 +45,7 @@ public sealed class DesignRequestService : IDesignRequestService
         _images = images;
         _email = email;
         _credits = credits;
+        _pricing = pricing;
         _log = log;
     }
 
@@ -238,6 +241,14 @@ public sealed class DesignRequestService : IDesignRequestService
             uploadedPhotoPath = design.StoragePath;
         }
 
+        // BANNERSH-104: resolve the physical-banner production cost from the chosen
+        // aspect ratio and charge it alongside the design fee. Falls back to 0 if no
+        // BannerSize matches the aspect ratio's dimensions (degraded — the customer
+        // would only pay the design fee, same as the pre-104 behaviour).
+        var (bannerPriceNok, bannerSizeId, customBannerWidthCm) =
+            await ResolveBannerProductionCostAsync(req.AspectRatio, ct);
+        var totalNok = ManualPriceNok + bannerPriceNok;
+
         var request = new DesignRequest
         {
             UserId = userId,
@@ -252,6 +263,9 @@ public sealed class DesignRequestService : IDesignRequestService
             AspectRatio = req.AspectRatio,
             Status = DesignRequestStatus.Pending,
             PriceNok = ManualPriceNok,
+            BannerPriceNok = bannerPriceNok,
+            BannerSizeId = bannerSizeId,
+            CustomBannerWidthCm = customBannerWidthCm,
             RegenerationsRemaining = 0,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -262,13 +276,72 @@ public sealed class DesignRequestService : IDesignRequestService
         var intent = await _stripe.CreatePaymentIntentAsync(
             orderId: -request.Id,
             userId: userId,
-            amountNok: ManualPriceNok,
+            amountNok: totalNok,
             ct: ct);
 
         request.StripePaymentIntentId = intent.PaymentIntentId;
         await _db.SaveChangesAsync(ct);
 
-        return DesignRequestActionResult.Ok(request.Id, intent.ClientSecret, ManualPriceNok);
+        return DesignRequestActionResult.Ok(
+            request.Id,
+            intent.ClientSecret,
+            totalNok,
+            designPriceNok: ManualPriceNok,
+            bannerPriceNok: bannerPriceNok);
+    }
+
+    /// <summary>
+    /// Maps a manual-builder aspect ratio (16:9 / 18:9) to a concrete <see cref="BannerSize"/>
+    /// and returns its production cost. Prefers an exact fixed-width match; falls back to a
+    /// custom-width size with the same height; returns 0 / null when no matching size exists
+    /// (so the manual flow degrades to design-fee-only rather than crashing).
+    /// </summary>
+    private async Task<(decimal PriceNok, int? BannerSizeId, int? CustomWidthCm)> ResolveBannerProductionCostAsync(
+        string aspectRatio, CancellationToken ct)
+    {
+        // Keep these in sync with `aspectDimensions` in ManualBannerBuilderView.vue
+        // (the customer sees these numbers labelled "ca. X × Y cm" on step 2).
+        var (targetWidthCm, targetHeightCm) = aspectRatio switch
+        {
+            "18:9" => (300, 150),
+            "16:9" => (266, 150),
+            _      => (266, 150),
+        };
+
+        // Prefer an exact fixed-width match — avoids the custom-width surcharge.
+        var exact = await _db.BannerSizes
+            .Include(s => s.Material)
+            .Where(s => s.IsActive
+                     && !s.IsCustomWidth
+                     && s.WidthCm == targetWidthCm
+                     && s.HeightCm == targetHeightCm)
+            .OrderBy(s => s.SortOrder)
+            .FirstOrDefaultAsync(ct);
+        if (exact is not null)
+        {
+            var price = await _pricing.CalculatePriceAsync(exact);
+            return (decimal.Round(price, 2), exact.Id, null);
+        }
+
+        // Fall back to a custom-width size of the same height.
+        var custom = await _db.BannerSizes
+            .Include(s => s.Material)
+            .Where(s => s.IsActive && s.IsCustomWidth && s.HeightCm == targetHeightCm)
+            .OrderBy(s => s.SortOrder)
+            .FirstOrDefaultAsync(ct);
+        if (custom is not null)
+        {
+            var price = await _pricing.CalculatePriceAsync(custom, targetWidthCm);
+            return (decimal.Round(price, 2), custom.Id, targetWidthCm);
+        }
+
+        // No matching size — log so admins notice the catalog gap. The manual flow still
+        // works, the customer just only pays the design fee (same as pre-104 behaviour).
+        _log.LogWarning(
+            "ResolveBannerProductionCostAsync: no BannerSize matches aspectRatio={Ratio} ({W}×{H} cm). " +
+            "Falling back to design-fee-only pricing.",
+            aspectRatio, targetWidthCm, targetHeightCm);
+        return (0m, null, null);
     }
 
     public async Task<DesignRequestActionResult> RequestRevisionAsync(int id, int callerUserId, string comment, CancellationToken ct = default)

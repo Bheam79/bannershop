@@ -47,7 +47,11 @@ public class DesignRequestServiceTests
                .ReturnsAsync(5);
         configureCredits?.Invoke(credits);
 
-        var svc = new DesignRequestService(db, stripe.Object, queue.Object, MakeStorage(), images.Object, email.Object, credits.Object, NullLogger<DesignRequestService>.Instance);
+        // BANNERSH-104: PricingService is injected so CreateManualRequestAsync can compute
+        // the physical-banner cost. Tests that don't seed the catalog fall back to 0
+        // banner price (the service degrades gracefully — see ResolveBannerProductionCostAsync).
+        var pricing = new BannerShop.Api.Services.PricingService(db);
+        var svc = new DesignRequestService(db, stripe.Object, queue.Object, MakeStorage(), images.Object, email.Object, credits.Object, pricing, NullLogger<DesignRequestService>.Instance);
         return (svc, stripe, queue, credits);
     }
 
@@ -224,6 +228,64 @@ public class DesignRequestServiceTests
         result.Success.Should().BeFalse();
         result.StatusCode.Should().Be(400);
         result.Error.Should().Contain("IP");
+    }
+
+    // ── BANNERSH-104: Manual flow charges design fee + banner production cost ──
+
+    [Fact]
+    public async Task CreateManualRequestAsync_charges_design_fee_plus_banner_cost_when_catalog_seeded()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        DbHelper.SeedPricingParameters(db);
+        DbHelper.SeedCatalog(db);
+        var (svc, stripe, _, _) = MakeService(db);
+
+        var result = await svc.CreateManualRequestAsync(1, new CreateManualDesignRequestDto
+        {
+            TemplateId = 1, Language = "nb", PersonName = "Ola", TextContent = "Hi",
+            ThemeDescription = "x", AspectRatio = "18:9"
+        });
+
+        result.Success.Should().BeTrue();
+        result.DesignPriceNok.Should().Be(495m);
+        result.BannerPriceNok.Should().BeGreaterThan(0m);
+        result.TotalNok.Should().Be(result.DesignPriceNok + result.BannerPriceNok);
+
+        var saved = db.DesignRequests.Single();
+        saved.PriceNok.Should().Be(495m);
+        saved.BannerPriceNok.Should().Be(result.BannerPriceNok);
+        saved.BannerSizeId.Should().NotBeNull();
+
+        // The Stripe charge must match the breakdown — this is the regression we're
+        // guarding against (BANNERSH-104: previously only the 495 kr design fee was
+        // charged, leaving the physical-banner production cost uncollected).
+        stripe.Verify(s => s.CreatePaymentIntentAsync(
+            It.IsAny<int>(), 1, result.TotalNok, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateManualRequestAsync_falls_back_to_design_only_when_catalog_empty()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        // No catalog seeded — ResolveBannerProductionCostAsync should degrade to 0.
+        var (svc, stripe, _, _) = MakeService(db);
+
+        var result = await svc.CreateManualRequestAsync(1, new CreateManualDesignRequestDto
+        {
+            TemplateId = 1, Language = "nb", PersonName = "Ola", TextContent = "Hi",
+            ThemeDescription = "x", AspectRatio = "16:9"
+        });
+
+        result.Success.Should().BeTrue();
+        result.DesignPriceNok.Should().Be(495m);
+        result.BannerPriceNok.Should().Be(0m);
+        result.TotalNok.Should().Be(495m);
+        db.DesignRequests.Single().BannerSizeId.Should().BeNull();
+
+        stripe.Verify(s => s.CreatePaymentIntentAsync(
+            It.IsAny<int>(), 1, 495m, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ── MarkPaidAndEnqueueAsync: Manual mode (495 kr) still triggers, AI is dead-code ──

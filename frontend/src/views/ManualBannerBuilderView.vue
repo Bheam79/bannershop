@@ -10,6 +10,8 @@ import {
   createManualRequest,
   type BannerTemplateItem,
 } from '@/api/designRequests'
+import { fetchSizes, fetchPrice } from '@/api/shop'
+import type { BannerSize } from '@/types'
 
 // ── Router / auth ─────────────────────────────────────────────────────────────
 const router = useRouter()
@@ -59,6 +61,18 @@ type Phase = 'idle' | 'confirmed'
 const phase = ref<Phase>('idle')
 const completedRequestId = ref<number | null>(null)
 
+// ── BANNERSH-104: design fee + banner production cost breakdown ──────────────
+// The manual flow charges the customer for BOTH the designer's work AND the
+// printed banner upfront. The design fee is a fixed 495 NOK; the banner cost
+// is recalculated from /api/sizes whenever the aspect ratio changes so the
+// summary panel can show the customer the full total before they pay.
+const DESIGN_FEE_NOK = 495
+const sizes = ref<BannerSize[]>([])
+const sizesLoaded = ref(false)
+const bannerPriceNok = ref<number | null>(null)
+const bannerPriceLoading = ref(false)
+const bannerPriceError = ref<string | null>(null)
+
 // ── Computed helpers ──────────────────────────────────────────────────────────
 const selectedTemplate = computed(() =>
   templates.value.find((t) => t.id === selectedTemplateId.value) ?? null,
@@ -73,6 +87,66 @@ const templateName = computed(() => {
 const aspectDimensions = computed(() => {
   if (aspectRatio.value === '18:9') return { width: 300, height: 150 }
   return { width: 266, height: 150 }
+})
+
+// ── Banner cost resolution (BANNERSH-104) ───────────────────────────────────
+// Mirrors `ResolveBannerProductionCostAsync` on the backend: prefer an exact
+// fixed-width BannerSize match for the chosen aspect-ratio dimensions; fall
+// back to a custom-width size of the same height. Keep these two implementations
+// in sync — if the customer sees one number on the page they need to be charged
+// the same number, not a recomputed one.
+function pickBannerSize(
+  catalog: BannerSize[],
+  targetWidthCm: number,
+  targetHeightCm: number,
+): { size: BannerSize; customWidthCm?: number } | null {
+  const exact = catalog.find(
+    (s) =>
+      s.isActive &&
+      !s.isCustomWidth &&
+      s.widthCm === targetWidthCm &&
+      s.heightCm === targetHeightCm,
+  )
+  if (exact) return { size: exact }
+  const custom = catalog.find(
+    (s) => s.isActive && s.isCustomWidth && s.heightCm === targetHeightCm,
+  )
+  if (custom) return { size: custom, customWidthCm: targetWidthCm }
+  return null
+}
+
+async function refreshBannerPrice() {
+  bannerPriceError.value = null
+  if (!sizesLoaded.value) return
+  bannerPriceLoading.value = true
+  try {
+    const { width, height } = aspectDimensions.value
+    const picked = pickBannerSize(sizes.value, width, height)
+    if (!picked) {
+      // No matching size in the catalog — backend will degrade to design-fee-only
+      // pricing and the customer is only charged the 495 kr. Mirror that here so
+      // the summary total matches the actual Stripe charge.
+      bannerPriceNok.value = 0
+      return
+    }
+    bannerPriceNok.value = await fetchPrice(picked.size.id, picked.customWidthCm)
+  } catch (e: unknown) {
+    const ex = e as { message?: string }
+    bannerPriceError.value =
+      ex.message || 'Kunne ikke beregne bannerkostnad. Total kan avvike på betalingsskjemaet.'
+    bannerPriceNok.value = null
+  } finally {
+    bannerPriceLoading.value = false
+  }
+}
+
+watch(aspectRatio, () => {
+  if (sizesLoaded.value) void refreshBannerPrice()
+})
+
+const totalPriceNok = computed(() => {
+  const banner = bannerPriceNok.value ?? 0
+  return DESIGN_FEE_NOK + banner
 })
 
 // Photo required for manual — the designer needs it
@@ -326,8 +400,23 @@ function formatNok(n: number): string {
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
+async function loadSizesAndPrice() {
+  try {
+    // The catalog rarely changes during a session — fetch once and reuse for
+    // subsequent aspect-ratio toggles (refreshBannerPrice only re-hits the
+    // /sizes/{id}/price endpoint, not the full list).
+    sizes.value = await fetchSizes()
+    sizesLoaded.value = true
+    await refreshBannerPrice()
+  } catch (e: unknown) {
+    const ex = e as { message?: string }
+    bannerPriceError.value =
+      ex.message || 'Kunne ikke laste prisinformasjon for banneret.'
+  }
+}
+
 onMounted(async () => {
-  await loadTemplates()
+  await Promise.all([loadTemplates(), loadSizesAndPrice()])
 
   // Restore form state saved before a login redirect (BANNERSH-97)
   const saved = sessionStorage.getItem(MANUAL_SESSION_KEY)
@@ -378,8 +467,9 @@ onBeforeUnmount(() => {
       </h1>
       <p style="font-size:18px;color:var(--muted);max-width:36em;margin:0 auto">
         Beskriv ønsket og legg ved et portrettfoto — vi designer banneret manuelt og sender deg en
-        forhåndsvisning innen 2–3 virkedager.
-        <strong style="color:var(--text)">{{ formatNok(495) }}</strong>.
+        forhåndsvisning innen 2–3 virkedager. Designhonorar
+        <strong style="color:var(--text)">{{ formatNok(DESIGN_FEE_NOK) }}</strong>
+        + bannerproduksjon (varierer med størrelse).
       </p>
     </header>
 
@@ -787,7 +877,11 @@ onBeforeUnmount(() => {
               >
                 <i v-if="processingPayment" class="fa-solid fa-circle-notch fa-spin"></i>
                 <i v-else class="fa-solid fa-palette"></i>
-                {{ processingPayment ? 'Behandler…' : 'Bestill og betal 495 kr' }}
+                {{
+                  processingPayment
+                    ? 'Behandler…'
+                    : `Bestill og betal ${formatNok(totalPriceNok)}`
+                }}
               </button>
 
               <p style="font-size:12.5px;color:var(--faint);text-align:center;display:flex;align-items:center;justify-content:center;gap:6px">
@@ -844,13 +938,35 @@ onBeforeUnmount(() => {
                 </div>
               </dl>
 
-              <div style="border-top:1px solid var(--line-soft);padding-top:14px;display:flex;justify-content:space-between;align-items:center">
-                <span style="font-weight:700;color:var(--text)">Totalt</span>
-                <span style="font-weight:800;color:var(--accent);font-size:20px;font-family:var(--font-display)">495 kr</span>
+              <!-- BANNERSH-104: itemised total. The customer pays for BOTH the
+                   designer's work AND the printed banner upfront — previously only
+                   the design fee was charged, which left the production cost
+                   uncollected. -->
+              <div style="border-top:1px solid var(--line-soft);padding-top:14px;display:grid;gap:8px">
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:14px;color:var(--muted)">
+                  <span>Designhonorar</span>
+                  <span style="color:var(--text);font-weight:600">{{ formatNok(DESIGN_FEE_NOK) }}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:14px;color:var(--muted)">
+                  <span>Banner ({{ aspectDimensions.width }}×{{ aspectDimensions.height }} cm)</span>
+                  <span style="color:var(--text);font-weight:600">
+                    <span v-if="bannerPriceLoading"><i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i></span>
+                    <template v-else-if="bannerPriceNok !== null">{{ formatNok(bannerPriceNok) }}</template>
+                    <template v-else>–</template>
+                  </span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line-soft);padding-top:10px;margin-top:2px">
+                  <span style="font-weight:700;color:var(--text)">Totalt</span>
+                  <span style="font-weight:800;color:var(--accent);font-size:20px;font-family:var(--font-display)">{{ formatNok(totalPriceNok) }}</span>
+                </div>
               </div>
 
+              <p v-if="bannerPriceError" style="font-size:12.5px;color:var(--gold)">
+                <i class="fa-solid fa-triangle-exclamation"></i> {{ bannerPriceError }}
+              </p>
               <p style="font-size:12.5px;color:var(--faint)">
                 Inkl. én gratis korrigering og levering innen 2–3 virkedager.
+                Frakt kommer i tillegg og beregnes ved utsendelse.
               </p>
             </div>
           </aside>

@@ -68,7 +68,12 @@ export interface RegeneratePaywall402 {
 export interface CreateDesignRequestResponse {
   designRequestId: number
   clientSecret: string
+  /** Total charged to the customer (design fee + banner production cost). */
   totalNok: number
+  /** Design fee portion (BANNERSH-104). 495 NOK on the manual flow today. */
+  designPriceNok: number
+  /** Physical-banner production cost portion (BANNERSH-104). May be 0 in degraded mode. */
+  bannerPriceNok: number
 }
 
 export interface DesignRequestListItem {

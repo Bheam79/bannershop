@@ -84,6 +84,12 @@ callers).
 - Dimension math lives in pure helper `BannerDimensions` (covered by unit tests in `BannerDimensionsTests`).
 - Only `SixLabors.ImageSharp` (3.1.5) is referenced — `SixLabors.ImageSharp.Drawing` is NOT, so `Fill`/`DrawText` extensions on `IImageProcessingContext` are unavailable. Use `Image<Rgba32>` constructor with a fill colour, or `Mutate(ctx => ctx.Crop(...))` for crops.
 
+## Manual design requests (BANNERSH-19 / BANNERSH-104)
+- `POST /api/design-requests/manual` charges the customer **design fee (495 kr) + physical-banner production cost** in a single Stripe PaymentIntent. Pre-BANNERSH-104 only the 495 kr design fee was collected, which silently left the printed banner unpaid.
+- `DesignRequest.PriceNok` stays the design fee (495). New columns `BannerPriceNok`, `BannerSizeId`, `CustomBannerWidthCm` hold the production cost breakdown (migration `AddBannerPriceToManualDesignRequest`).
+- Banner cost is resolved server-side from the chosen `AspectRatio` (`18:9` → 300×150 standard size; `16:9` → 266×150 via custom-width size). Mirrored on the frontend in `ManualBannerBuilderView.pickBannerSize` — keep the two in sync. If no `BannerSize` matches (e.g. catalog not seeded in tests), the service logs and degrades to design-fee-only pricing rather than crashing.
+- `CreateDesignRequestResponseDto` now also returns `designPriceNok` + `bannerPriceNok` so the wizard's summary panel renders the line items without recomputing.
+
 ## AI design requests (BANNERSH-19)
 - `DesignRequest` + `DesignRequestRevision` entities + `AddDesignRequests` migration ship with this task (BANNERSH-26 is the consolidated foundation task — was still TODO when this was done, so the entities were added here).
 - Stripe webhook (`payment_intent.succeeded`) calls BOTH `OrderService.MarkPaidAsync` and `DesignRequestService.MarkPaidAndEnqueueAsync` — the latter looks up by PaymentIntentId, ignores misses, and enqueues a job. Design-request PaymentIntents use `orderId = -designRequestId` metadata so order-lookups by id won't accidentally hit them.

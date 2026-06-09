@@ -45,10 +45,11 @@ public class RegenerateAiTests
         var images = new Mock<IImageProcessingService>();
         var email = new Mock<IEmailService>();
 
+        var pricing = new BannerShop.Api.Services.PricingService(db);
         var svc = new DesignRequestService(
             db, stripe.Object, queue.Object, MakeStorage(),
             images.Object, email.Object, credits.Object,
-            NullLogger<DesignRequestService>.Instance);
+            pricing, NullLogger<DesignRequestService>.Instance);
         return (svc, queue, credits);
     }
 

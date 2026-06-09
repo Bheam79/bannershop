@@ -113,13 +113,25 @@ public record DesignRequestActionResult(
     int DesignRequestId,
     string? ClientSecret = null,
     decimal TotalNok = 0m,
-    DesignRequestDetailDto? Detail = null)
+    DesignRequestDetailDto? Detail = null,
+    decimal DesignPriceNok = 0m,
+    decimal BannerPriceNok = 0m)
 {
     public static DesignRequestActionResult Ok(int id, string clientSecret, decimal totalNok)
-        => new(true, null, id, clientSecret, totalNok);
+        => new(true, null, id, clientSecret, totalNok, null, totalNok, 0m);
+
+    /// <summary>
+    /// Manual-flow success with the design + banner breakdown surfaced (BANNERSH-104).
+    /// <paramref name="totalNok"/> must equal <paramref name="designPriceNok"/> +
+    /// <paramref name="bannerPriceNok"/> — both are echoed back to the frontend so the
+    /// summary panel can render the line items without recomputing them client-side.
+    /// </summary>
+    public static DesignRequestActionResult Ok(int id, string clientSecret, decimal totalNok,
+        decimal designPriceNok, decimal bannerPriceNok)
+        => new(true, null, id, clientSecret, totalNok, null, designPriceNok, bannerPriceNok);
 
     public static DesignRequestActionResult Ok(DesignRequestDetailDto detail)
-        => new(true, null, detail.Id, null, detail.PriceNok, detail);
+        => new(true, null, detail.Id, null, detail.PriceNok, detail, detail.PriceNok, 0m);
 
     public static DesignRequestActionResult Fail(string error)
         => new(false, error, 0);

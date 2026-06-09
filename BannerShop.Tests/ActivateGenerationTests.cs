@@ -35,10 +35,11 @@ public class ActivateGenerationTests
         var credits = new Mock<IAiCreditService>();
         var images = new Mock<IImageProcessingService>();
         var email = new Mock<IEmailService>();
+        var pricing = new BannerShop.Api.Services.PricingService(db);
         return new DesignRequestService(
             db, stripe.Object, queue.Object, MakeStorage(),
             images.Object, email.Object, credits.Object,
-            NullLogger<DesignRequestService>.Instance);
+            pricing, NullLogger<DesignRequestService>.Instance);
     }
 
     private static async Task SeedAsync(BannerShop.Infrastructure.Data.BannerShopDbContext db)
