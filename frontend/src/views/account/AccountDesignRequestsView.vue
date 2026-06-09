@@ -83,7 +83,7 @@ onMounted(load)
       <div>
         <h1 class="display page-title">
           <i class="fa-solid fa-wand-magic-sparkles"></i>
-          Mine design-bestillinger
+          Mine design
         </h1>
         <p v-if="!loading && sortedItems.length > 0" class="page-sub">
           {{ sortedItems.length }} bestilling{{ sortedItems.length !== 1 ? 'er' : '' }} totalt
