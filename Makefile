@@ -295,9 +295,10 @@ config: secrets publish
 	@if [ -f $(ROOT_DIR)/BannerShop.Api/appsettings.Local.json ]; then \
 		echo ">>> Copying appsettings.Local.json → $(APP_DIR)/"; \
 		umask 077 && cp $(ROOT_DIR)/BannerShop.Api/appsettings.Local.json $(APP_DIR)/appsettings.Local.json; \
+	elif [ -f $(APP_DIR)/appsettings.Local.json ]; then \
+		echo ">>> No source-side appsettings.Local.json — keeping existing deployed copy at $(APP_DIR)/appsettings.Local.json"; \
 	else \
-		rm -f $(APP_DIR)/appsettings.Local.json; \
-		echo ">>> No appsettings.Local.json in source tree — removed any stale copy from $(APP_DIR)/"; \
+		echo ">>> No appsettings.Local.json in source tree or deployed dir — skipping."; \
 	fi
 
 build: config
