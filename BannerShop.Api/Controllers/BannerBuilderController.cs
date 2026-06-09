@@ -228,6 +228,48 @@ public class BannerBuilderController : ControllerBase
         });
     }
 
+    // ── GET /api/banner-builder/mine ─────────────────────────────────────────
+    /// <summary>
+    /// Returns the list of uploaded BannerDesign rows owned by the authenticated user,
+    /// excluding designs that are linked as a DesignRequest.FinalBannerDesignId (those
+    /// are AI-generated outputs already exposed via the DesignRequests list endpoint).
+    /// </summary>
+    [HttpGet("mine")]
+    [Authorize]
+    public async Task<IActionResult> ListMine(CancellationToken ct)
+    {
+        var userId = GetUserId();
+        if (userId is null) return Unauthorized();
+
+        // Exclude BannerDesigns that are the final output of a design request —
+        // those are surfaced via GET /api/design-requests instead.
+        var finalDesignIds = (await _db.DesignRequests
+            .Where(dr => dr.FinalBannerDesignId != null)
+            .Select(dr => dr.FinalBannerDesignId!.Value)
+            .ToListAsync(ct))
+            .ToHashSet();
+
+        var designs = await _db.BannerDesigns
+            .AsNoTracking()
+            .Where(d => d.UserId == userId && !finalDesignIds.Contains(d.Id))
+            .OrderByDescending(d => d.CreatedAt)
+            .ToListAsync(ct);
+
+        var items = designs.Select(d => new UploadedDesignListItemDto
+        {
+            Id = d.Id,
+            OriginalFileName = d.OriginalFileName,
+            SelectedHeightCm = d.SelectedHeightCm,
+            ComputedWidthCm = d.ComputedWidthCm,
+            PreviewUrl = d.PreviewStoragePath != null
+                ? Url.Action(nameof(GetPreview), values: new { id = d.Id })
+                : null,
+            CreatedAt = d.CreatedAt,
+        }).ToList();
+
+        return Ok(items);
+    }
+
     // ── GET /api/banner-builder/{id} ────────────────────────────────────────
     /// <summary>
     /// Returns the design metadata (dimensions, height) for an existing BannerDesign.

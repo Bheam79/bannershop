@@ -61,6 +61,14 @@ const router = createRouter({
       meta: { guestOnly: true },
     },
 
+    // ── Mine design (grid view of all designs) ────────────────────────────────
+    {
+      path: '/mine-design',
+      name: 'mine-design',
+      component: () => import('@/views/MyDesignsView.vue'),
+      meta: { requiresAuth: true },
+    },
+
     // ── Customer account ─────────────────────────────────────────────────────
     {
       path: '/account',

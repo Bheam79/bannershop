@@ -118,11 +118,11 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick, true
               Mine ordrer
             </RouterLink>
             <RouterLink
-              to="/account/design-requests"
+              to="/mine-design"
               class="hm-item"
               @click="closeMenu"
             >
-              <i class="fa-solid fa-wand-magic-sparkles" style="width:16px;opacity:.7"></i>
+              <i class="fa-solid fa-palette" style="width:16px;opacity:.7"></i>
               Mine design
             </RouterLink>
             <RouterLink

@@ -45,3 +45,15 @@ public sealed class HeightResponseDto
     public int SelectedHeightCm { get; set; }
     public int ComputedWidthCm { get; set; }
 }
+
+/// <summary>One item in the GET /api/banner-builder/mine list.</summary>
+public sealed class UploadedDesignListItemDto
+{
+    public int Id { get; set; }
+    public string OriginalFileName { get; set; } = string.Empty;
+    public int SelectedHeightCm { get; set; }
+    public int ComputedWidthCm { get; set; }
+    /// <summary>Public URL for the JPEG preview thumbnail.</summary>
+    public string? PreviewUrl { get; set; }
+    public DateTime CreatedAt { get; set; }
+}

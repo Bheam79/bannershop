@@ -2,6 +2,15 @@ import apiClient from './client'
 
 // ─── DTOs (match BannerShop.Api.Models.BannerBuilder) ───────────────────────
 
+export interface UploadedDesignListItem {
+  id: number
+  originalFileName: string
+  selectedHeightCm: number
+  computedWidthCm: number
+  previewUrl: string | null
+  createdAt: string
+}
+
 export interface UploadResponse {
   designId: number
   previewUrl: string
@@ -79,6 +88,16 @@ export async function setBannerHeight(
     `/banner-builder/${designId}/height`,
     { heightCm },
   )
+  return data
+}
+
+/**
+ * Returns all uploaded BannerDesign rows owned by the current user,
+ * excluding those that are final AI-generated outputs of a DesignRequest.
+ * Requires auth.
+ */
+export async function listMyUploads(): Promise<UploadedDesignListItem[]> {
+  const { data } = await apiClient.get<UploadedDesignListItem[]>('/banner-builder/mine')
   return data
 }
 

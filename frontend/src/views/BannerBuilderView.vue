@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { useRouter, RouterLink } from 'vue-router'
+import { useRouter, useRoute, RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
 import { fetchSizes, fetchEyeletPriceNok } from '@/api/shop'
@@ -8,9 +8,11 @@ import type { BannerSize, CartItem, EyeletOption } from '@/types'
 import { countEyelets } from '@/types'
 import UploadZone from '@/components/banner-builder/UploadZone.vue'
 import BannerPreviewEditor from '@/components/banner-builder/BannerPreviewEditor.vue'
+import { getBannerDesign } from '@/api/bannerBuilder'
 import type { UploadResponse } from '@/api/bannerBuilder'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const cart = useCartStore()
 
@@ -168,6 +170,31 @@ watch([design, heightCm, computedWidthCm, rotationDegrees, qty, eyeletOption], (
 
 // Pre-fetch sizes and eyelet price once so info is available immediately after upload.
 onMounted(async () => {
+  // ?designId=<id>: load a previously-uploaded design directly (e.g. from Mine Design page).
+  const designIdParam = (route.query.designId as string | undefined)?.trim()
+  if (designIdParam) {
+    const designId = parseInt(designIdParam, 10)
+    if (!isNaN(designId) && designId > 0) {
+      try {
+        const resp = await getBannerDesign(designId)
+        design.value = resp
+        heightCm.value = resp.selectedHeightCm
+        computedWidthCm.value = resp.computedWidthCm
+        rotationDegrees.value = resp.rotationDegrees
+      } catch {
+        // Non-fatal: just show the upload zone if design can't be loaded.
+      }
+      // Skip sessionStorage restore when we're loading from a specific design ID.
+      try {
+        allSizes.value = await fetchSizes()
+      } catch { /* non-fatal */ }
+      try {
+        eyeletPriceNok.value = await fetchEyeletPriceNok()
+      } catch { /* non-fatal */ }
+      return
+    }
+  }
+
   // Restore state from sessionStorage so F5 doesn't reset the form to the upload step
   const saved = sessionStorage.getItem(SESSION_KEY)
   if (saved) {
