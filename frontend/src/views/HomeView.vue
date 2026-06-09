@@ -416,7 +416,7 @@ async function handleLogout() {
 
         <div style="margin-top:34px;padding-top:22px;border-top:1px solid var(--line-soft);color:var(--faint);font-size:13.5px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px">
           <span>© 2026 BannerShop.no — Kvalitetsbannere fra norsk trykkeri</span>
-          <span>Org. 999 888 777 · Laget i Norge 🇳🇴</span>
+          <span>Beatgrid AS · Org.nr. NO 928 177 572 MVA · Laget i Norge 🇳🇴</span>
         </div>
       </div>
     </footer>

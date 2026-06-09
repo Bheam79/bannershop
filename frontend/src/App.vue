@@ -67,6 +67,7 @@ watch(
     <footer v-if="!isHome && !isAdmin" class="py-8 mt-16 border-t" style="border-color:var(--line-soft)">
       <div class="wrap text-center" style="color:var(--faint);font-size:13.5px">
         <p>© 2026 BannerShop.no — Kvalitetsbannere fra norsk trykkeri</p>
+        <p class="mt-1">Beatgrid AS · Org.nr. NO 928 177 572 MVA</p>
       </div>
     </footer>
   </div>
