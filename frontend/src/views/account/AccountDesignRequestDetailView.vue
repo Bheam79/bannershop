@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { useRoute, RouterLink } from 'vue-router'
+import { useRoute, useRouter, RouterLink } from 'vue-router'
 import {
   getDesignRequest,
   approveDesignRequest,
@@ -12,14 +12,18 @@ import {
   type BannerTemplateItem,
   type BannerGenerationHistoryItem,
 } from '@/api/designRequests'
-import { uploadBannerFile } from '@/api/bannerBuilder'
+import { uploadBannerFile, getBannerDesign } from '@/api/bannerBuilder'
+import { fetchSizes } from '@/api/shop'
 import { generateRequestIntegrity } from '@/composables/useRequestIntegrity'
 import { getAiCreditsBalance } from '@/api/aiCredits'
 import { useAuthStore } from '@/stores/auth'
+import { useCartStore } from '@/stores/cart'
 
 const route = useRoute()
+const router = useRouter()
 const requestId = Number(route.params.id)
 const auth = useAuthStore()
+const cart = useCartStore()
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 const request = ref<DesignRequestDetail | null>(null)
@@ -349,6 +353,48 @@ async function selectGeneration(gen: BannerGenerationHistoryItem) {
 function formatGenTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })
+}
+
+// ── Reorder / Copy (BANNERSH-130) ─────────────────────────────────────────────
+const reordering = ref(false)
+const reorderError = ref<string | null>(null)
+
+/**
+ * Add the finalBannerDesignId to the cart with its current pricing and navigate
+ * to checkout — lets the customer order another copy of an approved design.
+ */
+async function reorder() {
+  if (!request.value?.finalBannerDesignId || reordering.value) return
+  reordering.value = true
+  reorderError.value = null
+  try {
+    const design = await getBannerDesign(request.value.finalBannerDesignId)
+    const sizes = await fetchSizes(design.computedWidthCm)
+    const pricingSize = sizes.find(
+      (s) => s.isCustomWidth && s.heightCm === design.selectedHeightCm,
+    )
+    if (pricingSize && pricingSize.calculatedPrice != null) {
+      cart.addItem({
+        bannerSizeId: pricingSize.id,
+        bannerSizeName: `AI banner ${design.computedWidthCm} × ${design.selectedHeightCm} cm`,
+        customWidthCm: design.computedWidthCm,
+        heightCm: design.selectedHeightCm,
+        quantity: 1,
+        unitPriceNok: pricingSize.calculatedPrice,
+        eyeletOption: 'None',
+        eyeletFeeNok: 0,
+        designId: request.value.finalBannerDesignId,
+        notes: `AI banner design #${request.value.finalBannerDesignId}`,
+      })
+      void router.push('/checkout')
+    } else {
+      reorderError.value = 'Kunne ikke finne pris for dette banneret. Prøv igjen.'
+    }
+  } catch {
+    reorderError.value = 'Noe gikk galt ved bestilling. Prøv igjen.'
+  } finally {
+    reordering.value = false
+  }
 }
 </script>
 
@@ -716,6 +762,33 @@ function formatGenTime(iso: string | null | undefined): string {
             <i class="fa-solid fa-download"></i>
             Last ned full versjon
           </a>
+        </div>
+
+        <!-- BANNERSH-130: reorder / copy actions for approved/final designs -->
+        <div class="reorder-actions">
+          <button
+            v-if="request.finalBannerDesignId"
+            type="button"
+            class="btn btn-reorder"
+            :disabled="reordering"
+            @click="reorder"
+          >
+            <i v-if="reordering" class="fa-solid fa-circle-notch fa-spin"></i>
+            <i v-else class="fa-solid fa-cart-shopping"></i>
+            {{ reordering ? 'Legger i handlekurv…' : 'Bestill på nytt' }}
+          </button>
+          <RouterLink
+            v-if="isAi"
+            :to="`/banner-builder/ai?copyFrom=${request.id}`"
+            class="btn btn-copy"
+          >
+            <i class="fa-solid fa-copy"></i>
+            Kopier og lag ny versjon
+          </RouterLink>
+        </div>
+        <div v-if="reorderError" class="alert-error" style="margin-top:0.5rem">
+          <i class="fa-solid fa-circle-exclamation"></i>
+          {{ reorderError }}
         </div>
       </div>
 
@@ -1215,6 +1288,64 @@ function formatGenTime(iso: string | null | undefined): string {
   font-size: 0.875rem;
   line-height: 1.6;
   color: var(--muted);
+}
+
+/* ── Reorder / Copy actions — BANNERSH-130 ─────────────────── */
+.reorder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.btn-reorder {
+  flex: 1;
+  min-width: 160px;
+  justify-content: center;
+  padding: 13px 18px;
+  border-radius: 12px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  background: rgba(58, 157, 126, 0.2);
+  color: #7de0c0;
+  border: 1px solid rgba(58, 157, 126, 0.4);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.15s, border-color 0.15s;
+  font-family: var(--font-ui);
+  text-decoration: none;
+}
+.btn-reorder:hover:not(:disabled) {
+  background: rgba(58, 157, 126, 0.32);
+  border-color: rgba(58, 157, 126, 0.6);
+}
+.btn-reorder:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-copy {
+  flex: 1;
+  min-width: 160px;
+  justify-content: center;
+  padding: 13px 18px;
+  border-radius: 12px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  font-family: var(--font-ui);
+  text-decoration: none;
+}
+.btn-copy:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(255, 106, 61, 0.06);
 }
 
 /* ── AI actions (regenerate + edit panel) — BANNERSH-84 ────── */

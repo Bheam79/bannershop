@@ -75,6 +75,10 @@ const regenerateError = ref<string | null>(null)
 // Edit-and-regenerate panel toggle (shown in 'ready' phase)
 const editExpanded = ref(false)
 
+// ── Reorder (Approved / Final designs) ───────────────────────────────────────
+const reordering = ref(false)
+const reorderError = ref<string | null>(null)
+
 // ── Credits badge (auth users only) ──────────────────────────────────────────
 const creditsRemaining = ref<number | null>(null)
 // BANNERSH-83: track whether the user has spent their free generation. Together with
@@ -621,6 +625,42 @@ async function approve() {
   }
 }
 
+// ── Reorder current Approved / Final design ───────────────────────────────────
+async function reorderCurrentDesign() {
+  const d = currentDesignRequest.value
+  if (!d?.finalBannerDesignId || reordering.value) return
+  reordering.value = true
+  reorderError.value = null
+  try {
+    const design = await getBannerDesign(d.finalBannerDesignId)
+    const sizes = await fetchSizes(design.computedWidthCm)
+    const pricingSize = sizes.find(
+      (s) => s.isCustomWidth && s.heightCm === design.selectedHeightCm,
+    )
+    if (pricingSize && pricingSize.calculatedPrice != null) {
+      cart.addItem({
+        bannerSizeId: pricingSize.id,
+        bannerSizeName: `AI banner ${design.computedWidthCm} × ${design.selectedHeightCm} cm`,
+        customWidthCm: design.computedWidthCm,
+        heightCm: design.selectedHeightCm,
+        quantity: 1,
+        unitPriceNok: pricingSize.calculatedPrice,
+        eyeletOption: 'None',
+        eyeletFeeNok: 0,
+        designId: d.finalBannerDesignId,
+        notes: `AI banner design #${d.finalBannerDesignId}`,
+      })
+      void router.push('/checkout')
+    } else {
+      reorderError.value = 'Kunne ikke finne pris for dette banneret. Prøv igjen.'
+    }
+  } catch {
+    reorderError.value = 'Noe gikk galt ved bestilling. Prøv igjen.'
+  } finally {
+    reordering.value = false
+  }
+}
+
 // ── Re-generate ───────────────────────────────────────────────────────────────
 async function regenerate() {
   if (!designRequestId.value || regenerating.value) return
@@ -839,6 +879,29 @@ onMounted(async () => {
   // template has already been pre-selected by loadTemplates(); skip the
   // template-picker step and drop the user straight into "Tilpass".
   const categoryParam = (route.query.category as string | undefined)?.trim()
+
+  // BANNERSH-130: when arriving from "copy" action on an existing design request,
+  // pre-fill wizard inputs from that request and skip to step 2.
+  const copyFromParam = (route.query.copyFrom as string | undefined)?.trim()
+  if (copyFromParam) {
+    const copyFromId = parseInt(copyFromParam, 10)
+    if (!isNaN(copyFromId) && copyFromId > 0) {
+      try {
+        const detail = await getDesignRequest(copyFromId)
+        selectedTemplateId.value = detail.bannerTemplateId
+        language.value = detail.language === 'en' ? 'en' : 'nb'
+        personName.value = detail.personName
+        personAge.value = detail.personAge ?? null
+        textContent.value = detail.textContent
+        themeDescription.value = detail.themeDescription
+        aspectRatio.value = detail.aspectRatio === '18:9' ? '18:9' : '16:9'
+        step.value = 2
+      } catch {
+        // Non-critical — just keep defaults and let the user fill in manually.
+      }
+      return
+    }
+  }
 
   // Resume a pending AI design from a previous session.
   // Common case: anonymous user generated a banner, registered/logged in, and was
@@ -1344,13 +1407,42 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- Approved / Final status -->
+        <!-- Approved / Final status + reorder / copy actions (BANNERSH-130) -->
         <div
           v-if="currentDesignRequest.status === 'Approved' || currentDesignRequest.status === 'Final'"
-          style="display:flex;align-items:center;gap:10px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.25);border-radius:12px;padding:14px 18px;color:#4ade80;font-size:14px"
+          style="display:grid;gap:14px"
         >
-          <i class="fa-solid fa-circle-check"></i>
-          Banneret er godkjent og sendt til produksjon.
+          <div style="display:flex;align-items:center;gap:10px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.25);border-radius:12px;padding:14px 18px;color:#4ade80;font-size:14px">
+            <i class="fa-solid fa-circle-check"></i>
+            Banneret er godkjent og sendt til produksjon.
+          </div>
+          <!-- Reorder + copy actions -->
+          <div style="display:flex;gap:14px;flex-wrap:wrap">
+            <button
+              v-if="currentDesignRequest.finalBannerDesignId"
+              type="button"
+              class="btn"
+              style="flex:1;justify-content:center;padding:14px;font-size:15px;border-radius:12px;background:#3a9d7e;color:#fff;min-width:200px"
+              :disabled="reordering"
+              @click="reorderCurrentDesign"
+            >
+              <i v-if="reordering" class="fa-solid fa-circle-notch fa-spin"></i>
+              <i v-else class="fa-solid fa-cart-shopping"></i>
+              {{ reordering ? 'Legger i handlekurv…' : 'Bestill på nytt' }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost"
+              style="flex:1;justify-content:center;padding:14px;font-size:15px;border-radius:12px;min-width:200px"
+              @click="returnToWizardIdle"
+            >
+              <i class="fa-solid fa-copy"></i>
+              Kopier og lag ny versjon
+            </button>
+          </div>
+          <div v-if="reorderError" class="error-box">
+            <i class="fa-solid fa-circle-exclamation"></i> {{ reorderError }}
+          </div>
         </div>
 
         <!-- Action buttons (AwaitingApproval) -->
