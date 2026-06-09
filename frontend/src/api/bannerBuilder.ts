@@ -26,6 +26,12 @@ export interface HeightResponse {
 
 // ─── API calls ──────────────────────────────────────────────────────────────
 
+/** Fetches metadata (dimensions, height) for an existing BannerDesign. */
+export async function getBannerDesign(id: number): Promise<UploadResponse> {
+  const { data } = await apiClient.get<UploadResponse>(`/banner-builder/${id}`)
+  return data
+}
+
 /** Uploads a banner image (or PDF). Reports upload progress via callback. */
 export async function uploadBannerFile(
   file: File,

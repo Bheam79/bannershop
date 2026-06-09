@@ -307,7 +307,8 @@ public class DesignRequestServiceTests
 
         var ok = await svc.ApproveAsync(id, 1);
         ok.Success.Should().BeTrue();
-        db.DesignRequests.Single().Status.Should().Be(DesignRequestStatus.Final);
+        // Customer approval moves to Approved; Final is set later by admin on delivery.
+        db.DesignRequests.Single().Status.Should().Be(DesignRequestStatus.Approved);
     }
 
     [Fact]

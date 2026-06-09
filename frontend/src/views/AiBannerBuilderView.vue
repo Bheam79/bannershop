@@ -4,7 +4,9 @@ import { useRouter, RouterLink } from 'vue-router'
 import { loadStripe } from '@stripe/stripe-js'
 import type { Stripe, StripeCardElement } from '@stripe/stripe-js'
 import { useAuthStore } from '@/stores/auth'
-import { uploadBannerFile } from '@/api/bannerBuilder'
+import { useCartStore } from '@/stores/cart'
+import { uploadBannerFile, getBannerDesign } from '@/api/bannerBuilder'
+import { fetchSizes } from '@/api/shop'
 import {
   fetchTemplates,
   createAiRequest,
@@ -22,9 +24,10 @@ import { getAiCreditsBalance, buyCreditPack } from '@/api/aiCredits'
 import { generateRequestIntegrity } from '@/composables/useRequestIntegrity'
 import { useAiCreditsStore } from '@/stores/aiCredits'
 
-// ── Router / auth ─────────────────────────────────────────────────────────────
+// ── Router / auth / cart ──────────────────────────────────────────────────────
 const router = useRouter()
 const auth = useAuthStore()
+const cart = useCartStore()
 // Shared credit-badge store (BANNERSH-87) — mirror every local creditsRemaining
 // update into the store so the header pill stays accurate without forcing the
 // user to navigate away from the wizard.
@@ -528,10 +531,43 @@ async function approve() {
   approveError.value = null
   approving.value = true
   try {
-    await approveDesignRequest(designRequestId.value)
-    currentDesignRequest.value = await getDesignRequest(designRequestId.value)
+    const approved = await approveDesignRequest(designRequestId.value)
+    currentDesignRequest.value = approved
     localStorage.removeItem('ai_banner_draft_id')
-    router.push('/account/orders')
+
+    // If the approval produced a BannerDesign (finalBannerDesignId), add it to the
+    // cart and navigate directly to checkout so the user can place their print order.
+    if (approved.finalBannerDesignId) {
+      try {
+        const design = await getBannerDesign(approved.finalBannerDesignId)
+        const sizes = await fetchSizes(design.computedWidthCm)
+        const pricingSize = sizes.find(
+          (s) => s.isCustomWidth && s.heightCm === design.selectedHeightCm,
+        )
+        if (pricingSize && pricingSize.calculatedPrice != null) {
+          cart.addItem({
+            bannerSizeId: pricingSize.id,
+            bannerSizeName: `AI banner ${design.computedWidthCm} × ${design.selectedHeightCm} cm`,
+            customWidthCm: design.computedWidthCm,
+            heightCm: design.selectedHeightCm,
+            quantity: 1,
+            unitPriceNok: pricingSize.calculatedPrice,
+            eyeletOption: 'None',
+            eyeletFeeNok: 0,
+            designId: approved.finalBannerDesignId,
+            notes: `AI banner design #${approved.finalBannerDesignId}`,
+          })
+          router.push('/checkout')
+          return
+        }
+      } catch {
+        // Non-fatal: if pricing fails, fall through to the design-request detail page
+      }
+    }
+
+    // Fallback: navigate to the design-request detail page where the user can
+    // manually proceed to order.
+    router.push(`/account/design-requests/${designRequestId.value}`)
   } catch (e: unknown) {
     const ex = e as { response?: { data?: { error?: string } }; message?: string }
     approveError.value =

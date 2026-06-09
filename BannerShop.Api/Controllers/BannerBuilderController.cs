@@ -228,6 +228,34 @@ public class BannerBuilderController : ControllerBase
         });
     }
 
+    // ── GET /api/banner-builder/{id} ────────────────────────────────────────
+    /// <summary>
+    /// Returns the design metadata (dimensions, height) for an existing BannerDesign.
+    /// Used by the AI banner wizard after approval so the frontend can compute the price
+    /// and pre-populate the cart item before navigating to checkout.
+    /// </summary>
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetDesign(int id, CancellationToken ct)
+    {
+        var userId = GetUserId();
+
+        var design = await _db.BannerDesigns.AsNoTracking()
+            .FirstOrDefaultAsync(d => d.Id == id, ct);
+        if (design is null) return NotFound();
+        if (!UserCanAccess(design, userId)) return Forbid();
+
+        return Ok(new UploadResponseDto
+        {
+            DesignId = design.Id,
+            PreviewUrl = Url.Action(nameof(GetPreview), values: new { id = design.Id }) ?? string.Empty,
+            WidthPx = design.WidthPx,
+            HeightPx = design.HeightPx,
+            RotationDegrees = design.RotationDegrees,
+            SelectedHeightCm = design.SelectedHeightCm,
+            ComputedWidthCm = design.ComputedWidthCm
+        });
+    }
+
     // ── GET /api/banner-builder/{id}/preview ─────────────────────────────────
     [HttpGet("{id:int}/preview")]
     public async Task<IActionResult> GetPreview(int id, CancellationToken ct)

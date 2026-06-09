@@ -67,8 +67,7 @@ async function approve() {
   approveError.value = ''
   approveSuccess.value = ''
   try {
-    await approveDesignRequest(requestId)
-    request.value = await getDesignRequest(requestId)
+    request.value = await approveDesignRequest(requestId)
     approveSuccess.value = 'Designet er godkjent! Banneret sendes til produksjon.'
   } catch (e: unknown) {
     const ex = e as { response?: { data?: { error?: string } }; message?: string }

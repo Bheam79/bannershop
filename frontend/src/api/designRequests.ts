@@ -163,9 +163,10 @@ export async function getDesignRequest(id: number): Promise<DesignRequestDetail>
   return data
 }
 
-/** Customer approves the preview result. */
-export async function approveDesignRequest(id: number): Promise<void> {
-  await apiClient.post(`/design-requests/${id}/approve`)
+/** Customer approves the preview result. Returns the updated design request detail. */
+export async function approveDesignRequest(id: number): Promise<DesignRequestDetail> {
+  const { data } = await apiClient.post<DesignRequestDetail>(`/design-requests/${id}/approve`)
+  return data
 }
 
 /**

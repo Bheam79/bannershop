@@ -382,7 +382,9 @@ public sealed class DesignRequestService : IDesignRequestService
         if (r.Status is not (DesignRequestStatus.AwaitingApproval or DesignRequestStatus.Revised))
             return DesignRequestActionResult.Fail($"Cannot approve a request in status {r.Status}.");
 
-        r.Status = DesignRequestStatus.Final;
+        // Move to Approved (customer accepted the preview). Final is set later by admin
+        // when the physical banner is delivered.
+        r.Status = DesignRequestStatus.Approved;
         r.CustomerApprovedAt = DateTime.UtcNow;
         r.UpdatedAt = DateTime.UtcNow;
 
