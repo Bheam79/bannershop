@@ -59,6 +59,22 @@ public class BringShippingService : IShippingService
         if (productCodes.Count == 0)
             productCodes.Add("SERVICEPAKKE");
 
+        // BANNERSH-143: hardcoded customer number applies the negotiated rate
+        // agreement. eVarslingProducts is the catalogue of codes that support
+        // Bring e-notification, only sent when EVarsling is enabled.
+        var eVarslingProducts = (_options.EVarslingProducts ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        BringConsignmentParties? parties = null;
+        if (!string.IsNullOrWhiteSpace(_options.CustomerNumber))
+        {
+            parties = new BringConsignmentParties
+            {
+                Sender = new BringConsignmentParty { CustomerNumber = _options.CustomerNumber },
+            };
+        }
+
         var request = new BringShipmentRequest
         {
             Consignments =
@@ -69,7 +85,17 @@ public class BringShippingService : IShippingService
                     FromPostalCode = _options.SenderPostalCode,
                     ToCountryCode = "NO",
                     ToPostalCode = normalizedPostal,
-                    Products = productCodes.Select(p => new BringProductRef { Id = p }).ToList(),
+                    Parties = parties,
+                    Products = productCodes.Select(p => new BringProductRef
+                    {
+                        Id = p,
+                        AdditionalServices = (_options.EVarsling && eVarslingProducts.Contains(p))
+                            ? new List<BringAdditionalService>
+                              {
+                                  new BringAdditionalService { Id = "EVARSLING" },
+                              }
+                            : null,
+                    }).ToList(),
                     Packages =
                     {
                         new BringPackage
@@ -84,10 +110,15 @@ public class BringShippingService : IShippingService
             }
         };
 
+        // BANNERSH-143: rates endpoint is configurable via BringOptions.RatesPath
+        // (defaults to /shippingguide/v2). The /products sub-path is the rates
+        // calculator action; the URL is appended onto the configured BaseUrl.
+        var ratesUrl = $"{_options.RatesPath.TrimEnd('/')}/products";
+
         BringShipmentResponse? response;
         try
         {
-            using var http = new HttpRequestMessage(HttpMethod.Post, "/shippingguide/api/v2/products");
+            using var http = new HttpRequestMessage(HttpMethod.Post, ratesUrl);
             http.Headers.Add("X-Mybring-API-Uid", _options.ApiUid);
             http.Headers.Add("X-Mybring-API-Key", _options.ApiKey);
             http.Headers.Add("X-Bring-Client-URL", _options.ClientUrl);

@@ -2,6 +2,8 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using BannerShop.Api.Services;
+using BannerShop.Api.Services.Shipping;
 using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
 using BannerShop.Infrastructure.Data;
@@ -85,6 +87,18 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
                 opts.TokenValidationParameters.ValidIssuer   = JwtIssuer;
                 opts.TokenValidationParameters.ValidAudience = JwtAudience;
             });
+
+            // ── BANNERSH-143: force MockShippingService in tests ────────────────────
+            // BringOptions now ships with hardcoded production credentials so
+            // Program.cs registers the live BringShippingService by default. Tests
+            // must not hit the real Bring API — swap the registration out for the
+            // deterministic mock.
+            var shippingDescriptors = services
+                .Where(d => d.ServiceType == typeof(IShippingService))
+                .ToList();
+            foreach (var d in shippingDescriptors)
+                services.Remove(d);
+            services.AddScoped<IShippingService, MockShippingService>();
         });
     }
 

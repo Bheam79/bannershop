@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import type { ShippingEstimate } from '@/types'
-import { calculateShipping } from '@/api/shop'
+import { calculateShipping, type PackingMode } from '@/api/shop'
 
 const props = defineProps<{
   bannerSizeId: number | null
@@ -12,10 +12,12 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'estimate', value: ShippingEstimate | null): void
   (e: 'postal-code', value: string): void
+  (e: 'packing-mode', value: PackingMode): void
 }>()
 
 const postalCode = ref('')
 const city = ref('')
+const packingMode = ref<PackingMode>('Rolled')
 const estimate = ref<ShippingEstimate | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -45,10 +47,12 @@ async function compute() {
       bannerSizeId: props.bannerSizeId,
       customWidthCm: props.customWidthCm ?? undefined,
       qty: props.qty,
+      packingMode: packingMode.value,
     })
     estimate.value = result
     emit('estimate', result)
     emit('postal-code', postalCode.value.trim())
+    emit('packing-mode', packingMode.value)
   } catch (e: unknown) {
     const ex = e as { response?: { data?: { error?: string } } }
     error.value = ex.response?.data?.error || 'Kunne ikke beregne frakt.'
@@ -59,9 +63,9 @@ async function compute() {
   }
 }
 
-// Recompute when banner selection / qty changes (only if a valid postcode is set)
+// Recompute when banner selection / qty / packing changes (only if a valid postcode is set)
 watch(
-  () => [props.bannerSizeId, props.customWidthCm, props.qty],
+  () => [props.bannerSizeId, props.customWidthCm, props.qty, packingMode.value],
   () => {
     if (/^\d{4}$/.test(postalCode.value.trim())) compute()
   },
@@ -74,6 +78,44 @@ watch(
     <p class="text-sm text-gray-600 mb-4">
       Skriv inn postnummer for å se fraktpris og estimert leveringsdato.
     </p>
+
+    <!-- BANNERSH-143: rolled vs folded selector -->
+    <fieldset class="mb-4">
+      <legend class="text-sm font-medium text-gray-700 mb-2">Pakking</legend>
+      <div class="flex gap-2">
+        <label
+          class="flex-1 cursor-pointer border rounded-lg px-3 py-2 text-sm transition"
+          :class="packingMode === 'Rolled'
+            ? 'border-blue-600 bg-blue-50 text-blue-900'
+            : 'border-gray-300 text-gray-700 hover:bg-gray-50'"
+        >
+          <input
+            v-model="packingMode"
+            type="radio"
+            value="Rolled"
+            class="sr-only"
+          />
+          <span class="font-semibold">Rullet</span>
+          <span class="block text-xs text-gray-600">Sendt som rør (anbefalt)</span>
+        </label>
+        <label
+          class="flex-1 cursor-pointer border rounded-lg px-3 py-2 text-sm transition"
+          :class="packingMode === 'Folded'
+            ? 'border-blue-600 bg-blue-50 text-blue-900'
+            : 'border-gray-300 text-gray-700 hover:bg-gray-50'"
+        >
+          <input
+            v-model="packingMode"
+            type="radio"
+            value="Folded"
+            class="sr-only"
+          />
+          <span class="font-semibold">Brettet</span>
+          <span class="block text-xs text-gray-600">Flat eske 50×60 cm</span>
+        </label>
+      </div>
+    </fieldset>
+
     <div class="flex flex-col sm:flex-row gap-3">
       <input
         v-model="postalCode"
@@ -118,7 +160,7 @@ watch(
         <div class="text-sm text-yellow-800">Ekspresslevering</div>
         <div class="text-2xl font-bold text-gray-900 mt-1">
           {{ estimate.express.costNok.toFixed(0) }} kr
-          <span class="text-sm font-normal text-gray-600">+ 500 kr produksjonsgebyr</span>
+          <span class="text-sm font-normal text-gray-600">inkl. 500 kr produksjonsgebyr</span>
         </div>
         <div class="text-xs text-gray-700 mt-1">
           Levering ca. {{ formatDateOffset(estimate.express.estimatedDays) }}

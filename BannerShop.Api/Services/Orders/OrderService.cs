@@ -201,7 +201,9 @@ public class OrderService : IOrderService
                 foreach (var input in req.Items)
                 {
                     var size = sizes[input.BannerSizeId];
-                    var parcel = await _parcels.CalculateAsync(size, input.CustomWidthCm, input.Quantity, ct);
+                    // BANNERSH-143: pass through the customer's packing choice so the
+                    // server-side quote matches the price they saw in the cart.
+                    var parcel = await _parcels.CalculateAsync(size, input.CustomWidthCm, input.Quantity, req.PackingMode, ct);
                     var quote = await _shipping.CalculateAsync(req.ShippingAddress!.PostalCode, req.ShippingAddress.City, parcel, ct);
                     shippingCost += quote.Standard.CostNok;
                     if (quote.Standard.EstimatedDays > maxCarrierDays)

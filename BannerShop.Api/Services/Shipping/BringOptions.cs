@@ -2,17 +2,27 @@ namespace BannerShop.Api.Services.Shipping;
 
 /// <summary>
 /// Configuration bound from the "Bring" section of appsettings.
-/// Credentials are issued by Bring/Posten at https://www.mybring.com/
+/// Credentials are issued by Bring/Posten at https://www.mybring.com/.
+///
+/// BANNERSH-143: production credentials are hardcoded as defaults so the
+/// shipping calculator works out-of-the-box without secrets management.
+/// Override via appsettings if a different Mybring account is needed.
 /// </summary>
 public class BringOptions
 {
     public const string SectionName = "Bring";
 
     /// <summary>Bring API user identifier (typically the registered Mybring e-mail).</summary>
-    public string ApiUid { get; set; } = string.Empty;
+    public string ApiUid { get; set; } = "post@beatgrid.no";
 
     /// <summary>Bring API key.</summary>
-    public string ApiKey { get; set; } = string.Empty;
+    public string ApiKey { get; set; } = "fce1db12-90bb-40b4-9ee4-81c5e40dae32";
+
+    /// <summary>
+    /// Mybring customer number (parties.customerNumber) used to apply the
+    /// negotiated rate agreement on the Shipping Guide API.
+    /// </summary>
+    public string CustomerNumber { get; set; } = "20027039252";
 
     /// <summary>Sender postal code (the shop address).</summary>
     public string SenderPostalCode { get; set; } = "0001";
@@ -31,6 +41,30 @@ public class BringOptions
 
     /// <summary>Base URL of the Bring Shipping Guide v2 API.</summary>
     public string BaseUrl { get; set; } = "https://api.bring.com";
+
+    /// <summary>
+    /// Path to the Shipping Guide rates endpoint, appended to <see cref="BaseUrl"/>.
+    /// </summary>
+    public string RatesPath { get; set; } = "/shippingguide/v2";
+
+    /// <summary>
+    /// Bring booking API base URL (reserved for future booking integration; the
+    /// rates calculator uses <see cref="BaseUrl"/> + <see cref="RatesPath"/>).
+    /// </summary>
+    public string BookingUrl { get; set; } = "https://api.bring.com/booking/api";
+
+    /// <summary>
+    /// When true, request Bring e-Varsling (e-notification of delivery) for any
+    /// product in <see cref="EVarslingProducts"/>. Defaults to false — the shop
+    /// handles its own delivery notifications via email/SMS.
+    /// </summary>
+    public bool EVarsling { get; set; } = false;
+
+    /// <summary>
+    /// Comma-separated product codes that support e-Varsling. Used only when
+    /// <see cref="EVarsling"/> is true.
+    /// </summary>
+    public string EVarslingProducts { get; set; } = "SERVICEPAKKE,BPAKKE_DOR-DOR,PA_DOREN,EKSPRESS09";
 
     /// <summary>Request timeout in seconds.</summary>
     public int TimeoutSeconds { get; set; } = 10;

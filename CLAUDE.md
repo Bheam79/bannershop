@@ -67,6 +67,22 @@ cd /workspace/repo/BannerShop.Api && dotnet run
 - 2 materials (160cm/400g and 180cm/680g), 7 banner sizes, 5 pricing parameters
 - Seed is in `BannerShopDbContext.SeedData()` — applied via migration
 
+## Bring shipping (BANNERSH-143)
+`BringOptions` ships with the production Mybring credentials hardcoded as defaults
+(uid `post@beatgrid.no`, customer number `20027039252`, rates endpoint
+`https://api.bring.com/shippingguide/v2`). Override via `Bring:*` in appsettings.
+The `ParcelCalculator` supports two customer-selectable packing modes via
+`PackingMode { Rolled, Folded }`:
+- **Rolled**: L = `min(width,height) + 2 cm`; W = H = `(9 + 0.5 × longSideMeters) × √qty`
+- **Folded**: 50 × 60 cm flat; H = `(10 + 1 × longSideMeters) × qty`
+
+`ShippingEstimator.vue` exposes the radio toggle; `CreateOrderDraftRequest.PackingMode`
+threads the choice to `OrderService` so the server-side quote matches what the
+customer saw. **`TestWebApplicationFactory` re-registers `MockShippingService`** —
+because Bring is now considered configured by default, tests would otherwise hit
+the live API. Persisting the choice on the `Order` entity for fulfilment is filed
+as a follow-up.
+
 ## Multi-panel pricing (BANNERSH-88)
 `Material.MaxBannerWidthCm` is the max banner width producible as a single panel. When a
 banner exceeds it, `PricingService` multiplies the per-panel formula price by the panel

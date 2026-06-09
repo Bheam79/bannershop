@@ -67,14 +67,18 @@ builder.Services.AddMemoryCache();
 builder.Services.Configure<BringOptions>(builder.Configuration.GetSection(BringOptions.SectionName));
 builder.Services.AddScoped<ParcelCalculator>();
 
-var bringSection = builder.Configuration.GetSection(BringOptions.SectionName);
-var bringUid = bringSection["ApiUid"];
-var bringKey = bringSection["ApiKey"];
+// BANNERSH-143: BringOptions now ships with hardcoded production credentials so
+// the bring shipping calculator works out-of-the-box. The Configure<BringOptions>
+// call above still binds appsettings overrides on top of those defaults. The
+// effective ApiUid/ApiKey are read after binding (placeholder values from
+// older appsettings.json still fall back to the MockShippingService).
+var effectiveBring = new BringOptions();
+builder.Configuration.GetSection(BringOptions.SectionName).Bind(effectiveBring);
 var bringConfigured =
-    !string.IsNullOrWhiteSpace(bringUid) &&
-    !string.IsNullOrWhiteSpace(bringKey) &&
-    !bringUid.StartsWith("REPLACE_WITH_", StringComparison.OrdinalIgnoreCase) &&
-    !bringKey.StartsWith("REPLACE_WITH_", StringComparison.OrdinalIgnoreCase);
+    !string.IsNullOrWhiteSpace(effectiveBring.ApiUid) &&
+    !string.IsNullOrWhiteSpace(effectiveBring.ApiKey) &&
+    !effectiveBring.ApiUid.StartsWith("REPLACE_WITH_", StringComparison.OrdinalIgnoreCase) &&
+    !effectiveBring.ApiKey.StartsWith("REPLACE_WITH_", StringComparison.OrdinalIgnoreCase);
 
 if (bringConfigured)
 {

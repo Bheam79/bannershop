@@ -25,6 +25,14 @@ internal class BringConsignment
     [JsonPropertyName("toPostalCode")]
     public string ToPostalCode { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Mybring sender/recipient agreement info. Omitted when no customer number
+    /// is configured (BANNERSH-143).
+    /// </summary>
+    [JsonPropertyName("parties")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public BringConsignmentParties? Parties { get; set; }
+
     [JsonPropertyName("products")]
     public List<BringProductRef> Products { get; set; } = new();
 
@@ -32,7 +40,33 @@ internal class BringConsignment
     public List<BringPackage> Packages { get; set; } = new();
 }
 
+internal class BringConsignmentParties
+{
+    [JsonPropertyName("sender")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public BringConsignmentParty? Sender { get; set; }
+}
+
+internal class BringConsignmentParty
+{
+    [JsonPropertyName("customerNumber")]
+    public string CustomerNumber { get; set; } = string.Empty;
+}
+
 internal class BringProductRef
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Per-product additional services (e.g. EVARSLING). Omitted when none.
+    /// </summary>
+    [JsonPropertyName("additionalServices")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<BringAdditionalService>? AdditionalServices { get; set; }
+}
+
+internal class BringAdditionalService
 {
     [JsonPropertyName("id")]
     public string Id { get; set; } = string.Empty;

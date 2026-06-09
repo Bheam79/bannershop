@@ -48,7 +48,7 @@ public class ShippingController : ControllerBase
         ParcelDimensions parcel;
         try
         {
-            parcel = await _parcels.CalculateAsync(size, req.CustomWidthCm, req.Qty, ct);
+            parcel = await _parcels.CalculateAsync(size, req.CustomWidthCm, req.Qty, req.PackingMode, ct);
         }
         catch (InvalidOperationException ex)
         {

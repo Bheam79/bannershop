@@ -33,12 +33,16 @@ export async function fetchEyeletPriceNok(): Promise<number> {
 
 // ─── Shipping endpoint ──────────────────────────────────────────────────────
 
+export type PackingMode = 'Rolled' | 'Folded'
+
 export interface ShippingCalculateRequest {
   postalCode: string
   city?: string
   bannerSizeId: number
   customWidthCm?: number
   qty: number
+  /** BANNERSH-143 — defaults to Rolled when omitted. */
+  packingMode?: PackingMode
 }
 
 interface ShippingOptionResponse {
