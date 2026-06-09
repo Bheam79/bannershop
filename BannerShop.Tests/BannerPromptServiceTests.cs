@@ -139,4 +139,66 @@ public class BannerPromptServiceTests
 
         prompt.Should().Contain("\\\"hi\\\"");
     }
+
+    [Fact]
+    public void Person_centred_category_includes_name_in_overlay_instruction()
+    {
+        // Birthday is person-centred — name must appear in the overlay clause so
+        // the image model renders it as text on the banner.
+        var prompt = _sut.BuildPrompt(new BannerPromptInput(
+            Category: BannerTemplateCategory.Birthday,
+            Language: "nb",
+            PersonName: "Emma",
+            PersonAge: 20,
+            TextContent: "Gratulerer med dagen",
+            ThemeDescription: "",
+            AspectRatio: "16:9",
+            HasPortrait: false));
+
+        prompt.Should().Contain("\"Emma\"");
+        prompt.Should().Contain("\"Gratulerer med dagen\"");
+        // Both should be in the *same* overlay instruction
+        prompt.Should().Contain("Overlay these text elements");
+        prompt.Should().NotContain("Overlay this text");
+    }
+
+    [Fact]
+    public void Non_person_centred_category_uses_single_text_overlay()
+    {
+        // Christmas is NOT person-centred — only TextContent goes in the overlay.
+        var prompt = _sut.BuildPrompt(new BannerPromptInput(
+            Category: BannerTemplateCategory.Christmas,
+            Language: "nb",
+            PersonName: "Erik",
+            PersonAge: null,
+            TextContent: "God jul",
+            ThemeDescription: "",
+            AspectRatio: "16:9",
+            HasPortrait: false));
+
+        prompt.Should().Contain("\"God jul\"");
+        prompt.Should().Contain("Overlay this text");
+        prompt.Should().NotContain("Overlay these text elements");
+    }
+
+    [Fact]
+    public void Portrait_path_with_person_centred_category_also_includes_name_in_overlay()
+    {
+        // Even when a portrait is uploaded the name should appear in the overlay
+        // instruction so the model renders it as typography.
+        var prompt = _sut.BuildPrompt(new BannerPromptInput(
+            Category: BannerTemplateCategory.Confirmation,
+            Language: "nb",
+            PersonName: "Lars",
+            PersonAge: 15,
+            TextContent: "Gratulerer med konfirmasjonen",
+            ThemeDescription: "",
+            AspectRatio: "16:9",
+            HasPortrait: true));
+
+        prompt.Should().Contain("preserve the face from the reference image");
+        prompt.Should().Contain("\"Lars\"");
+        prompt.Should().Contain("\"Gratulerer med konfirmasjonen\"");
+        prompt.Should().Contain("Overlay these text elements");
+    }
 }

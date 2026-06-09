@@ -41,11 +41,28 @@ public sealed class BannerPromptService : IBannerPromptService
         if (!string.IsNullOrEmpty(text))
         {
             var langName = LanguageDisplayName(input.Language);
-            sb.Append(" Overlay this text in large, readable ")
-              .Append(langName)
-              .Append(" typography: \"")
-              .Append(text.Replace("\"", "\\\""))
-              .Append("\".");
+            var name     = (input.PersonName ?? string.Empty).Trim();
+
+            if (!string.IsNullOrEmpty(name) && input.Category.IsPersonCentred())
+            {
+                // For person-centred celebrations the celebrant's name must appear as
+                // rendered text on the banner, not just as background context.
+                sb.Append(" Overlay these text elements in large, readable ")
+                  .Append(langName)
+                  .Append(" typography: the name \"")
+                  .Append(name.Replace("\"", "\\\""))
+                  .Append("\" prominently, and below it the message \"")
+                  .Append(text.Replace("\"", "\\\""))
+                  .Append("\".");
+            }
+            else
+            {
+                sb.Append(" Overlay this text in large, readable ")
+                  .Append(langName)
+                  .Append(" typography: \"")
+                  .Append(text.Replace("\"", "\\\""))
+                  .Append("\".");
+            }
         }
 
         sb.Append(" Photorealistic, print-quality, ")
