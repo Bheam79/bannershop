@@ -271,6 +271,81 @@ builder.Services.AddSwaggerGen(c =>
 // ─── Build ────────────────────────────────────────────────────────────────────
 var app = builder.Build();
 
+// ─── BANNERSH-98: loud OpenAI-key state log at startup ───────────────────────
+// Operators were unsure whether appsettings.Local.json was being picked up at
+// all. We dump the resolved working directory, which appsettings files are on
+// disk next to the dll, and the resolved OpenAi:ApiKey state (masked) so the
+// answer is in journalctl from the first line of every boot.
+{
+    var startupLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup.OpenAi");
+    var cwd = Directory.GetCurrentDirectory();
+    var contentRoot = app.Environment.ContentRootPath;
+    var envName = app.Environment.EnvironmentName;
+
+    string[] candidateFiles =
+    {
+        "appsettings.json",
+        $"appsettings.{envName}.json",
+        "appsettings.Local.json",
+    };
+    var fileStates = candidateFiles
+        .Select(name =>
+        {
+            var abs = Path.GetFullPath(name);
+            return File.Exists(abs)
+                ? $"{name}=present ({abs})"
+                : $"{name}=absent ({abs})";
+        })
+        .ToArray();
+
+    var openAiCfg = app.Configuration.GetSection("OpenAi");
+    var rawKey = openAiCfg["ApiKey"];
+    string keyState = rawKey switch
+    {
+        null => "missing",
+        "" => "empty",
+        var k when k.StartsWith("sk-REPLACE", StringComparison.OrdinalIgnoreCase) => $"placeholder({Mask(k)})",
+        var k when k.StartsWith("REPLACE_", StringComparison.OrdinalIgnoreCase) => $"placeholder({Mask(k)})",
+        var k => $"set({Mask(k)}, {k.Length} chars)",
+    };
+
+    startupLog.LogInformation(
+        "Boot config: Environment={Env} ContentRoot={ContentRoot} CWD={Cwd}",
+        envName, contentRoot, cwd);
+    startupLog.LogInformation(
+        "Boot config: appsettings files: {Files}", string.Join(" | ", fileStates));
+    startupLog.LogInformation(
+        "Boot config: OpenAi:ApiKey={KeyState} ImageModel={Model} ImageQuality={Quality} BaseUrl={BaseUrl}",
+        keyState,
+        openAiCfg["ImageModel"] ?? "(default)",
+        openAiCfg["ImageQuality"] ?? "(default)",
+        openAiCfg["BaseUrl"] ?? "(default)");
+
+    // Verify the IAiImageService implementation that DI resolves — the type
+    // name confirms whether real OpenAI or a fallback is wired in. Wrapped so
+    // a DI-resolution issue can't take down the boot.
+    try
+    {
+        using var scope = app.Services.CreateScope();
+        var aiSvc = scope.ServiceProvider
+            .GetRequiredService<BannerShop.Api.Services.DesignRequests.IAiImageService>();
+        startupLog.LogInformation(
+            "Boot config: IAiImageService implementation = {Type}", aiSvc.GetType().FullName);
+    }
+    catch (Exception ex)
+    {
+        startupLog.LogError(ex,
+            "Boot config: failed to resolve IAiImageService — DI is broken.");
+    }
+
+    static string Mask(string key)
+    {
+        if (string.IsNullOrEmpty(key)) return "(empty)";
+        if (key.Length <= 10) return new string('*', key.Length);
+        return key[..6] + "…" + key[^4..];
+    }
+}
+
 // ─── Middleware pipeline ──────────────────────────────────────────────────────
 if (app.Environment.IsDevelopment())
 {

@@ -144,7 +144,12 @@ public sealed class AiGenerationPipeline
                 prompt = basePrompt;
 
             // 3. Generate
-            _log.LogInformation("Pipeline: generating image for DesignRequest {Id} (generation {GenId})", designRequestId, generation.Id);
+            // BANNERSH-98: explicitly log the IAiImageService implementation type
+            // so operators can confirm at a glance whether the real OpenAI-backed
+            // service or a fallback (Mock/Placeholder) is wired in.
+            _log.LogInformation(
+                "Pipeline: generating image for DesignRequest {Id} (generation {GenId}) using {AiServiceType}",
+                designRequestId, generation.Id, _ai.GetType().FullName);
             var generated = await _ai.GenerateAsync(
                 new AiImageRequest(prompt, request.AspectRatio, referenceAbs), ct);
 

@@ -53,6 +53,15 @@ public sealed class OpenAiImageService : IAiImageService
         if (!string.IsNullOrWhiteSpace(opts.OrgId))
             _http.DefaultRequestHeaders.TryAddWithoutValidation("OpenAI-Organization", opts.OrgId);
         _http.Timeout = TimeSpan.FromSeconds(opts.TimeoutSeconds);
+
+        // BANNERSH-98: per-task spec — make it loud and obvious that the real
+        // OpenAI-backed service is wired into DI (operator was unsure whether
+        // the mock or the real implementation was active).
+        _log.LogInformation(
+            "OpenAiImageService constructed. BaseUrl={BaseUrl} ImageModel={Model} ImageQuality={Quality} " +
+            "ConfigApiKey={ConfigKeyStatus} TimeoutSeconds={Timeout}",
+            opts.BaseUrl, opts.ImageModel, opts.ImageQuality,
+            DescribeKey(opts.ApiKey), opts.TimeoutSeconds);
     }
 
     public async Task<AiImageResult> GenerateAsync(AiImageRequest request, CancellationToken ct)
@@ -61,17 +70,35 @@ public sealed class OpenAiImageService : IAiImageService
         // GetEffectiveApiKeyAsync reads IOptionsMonitor.CurrentValue so it always
         // reflects the live configuration — including any appsettings.Local.json
         // changes that took effect after startup (reloadOnChange: true).
-        var apiKey = await GetEffectiveApiKeyAsync(ct);
-        if (apiKey is null)
+        var apiKeyOpt = await GetEffectiveApiKeyAsync(ct);
+        if (apiKeyOpt is null)
         {
-            _log.LogWarning(
-                "OpenAI API key is not configured (neither in admin settings nor in appsettings). " +
-                "Returning placeholder image. Configure the key at /admin/settings.");
+            // BANNERSH-98: Loud Error-level log so it is impossible to miss in
+            // journalctl when the operator wonders "why is it still drawing a
+            // solid colour?". Includes both source states so the diagnostic is
+            // self-contained.
+            var cfgKey = _optsMonitor.CurrentValue.ApiKey;
+            _log.LogError(
+                "OpenAI API key NOT CONFIGURED — falling back to PLACEHOLDER image (solid-colour PNG). " +
+                "DB setting 'openai_api_key' = {DbKeyStatus}; appsettings 'OpenAi:ApiKey' = {ConfigKeyStatus}. " +
+                "Fix: put a valid sk-… key in appsettings.Local.json -> OpenAi:ApiKey, OR set it via " +
+                "/admin/settings. Then no service restart is required.",
+                DescribeKey(await _settings.GetValueAsync("openai_api_key", ct)),
+                DescribeKey(cfgKey));
             return await GeneratePlaceholderAsync(request, ct);
         }
 
+        var apiKey = apiKeyOpt.Value;
+        _log.LogInformation(
+            "OpenAI image generation: invoking real API. KeySource={Source} KeyPrefix={Prefix} " +
+            "Model={Model} HasPortrait={HasPortrait} AspectRatio={AspectRatio}",
+            apiKey.Source, MaskKey(apiKey.Key),
+            _optsMonitor.CurrentValue.ImageModel,
+            !string.IsNullOrWhiteSpace(request.ReferenceImagePath) && File.Exists(request.ReferenceImagePath),
+            request.AspectRatio);
+
         // Set auth header with the current key.
-        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey.Key);
 
         var size = NativeSizeFor(request.AspectRatio);
 
@@ -86,10 +113,21 @@ public sealed class OpenAiImageService : IAiImageService
         var tempPath = Path.Combine(Path.GetTempPath(), $"openai_{Guid.NewGuid():N}.png");
         await File.WriteAllBytesAsync(tempPath, pngBytes, ct);
 
+        _log.LogInformation(
+            "OpenAI image generation: success. Bytes={Bytes} SavedTo={Path} Size={Width}x{Height}",
+            pngBytes.Length, tempPath, size.Width, size.Height);
+
         return new AiImageResult(tempPath, size.Width, size.Height);
     }
 
     // ── Key resolution ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Source the effective API key came from — used in log messages so the
+    /// operator can see at a glance whether the DB admin-panel value or the
+    /// appsettings value was selected.
+    /// </summary>
+    private readonly record struct ResolvedKey(string Key, string Source);
 
     /// <summary>
     /// Returns the effective OpenAI API key, preferring the DB-stored value
@@ -100,18 +138,20 @@ public sealed class OpenAiImageService : IAiImageService
     /// appsettings.Local.json (reloadOnChange: true) take effect without a
     /// service restart.
     /// </summary>
-    private async Task<string?> GetEffectiveApiKeyAsync(CancellationToken ct)
+    private async Task<ResolvedKey?> GetEffectiveApiKeyAsync(CancellationToken ct)
     {
         // 1. Database setting (admin panel) — always checked first.
         var dbKey = await _settings.GetValueAsync("openai_api_key", ct);
+        _log.LogDebug("OpenAI key probe: DB 'openai_api_key' -> {Status}", DescribeKey(dbKey));
         if (!string.IsNullOrWhiteSpace(dbKey) && !IsPlaceholderKey(dbKey))
-            return dbKey;
+            return new ResolvedKey(dbKey, "db:openai_api_key");
 
         // 2. Config-file value — read CurrentValue so changes to
         // appsettings.Local.json are picked up without a restart.
         var cfgKey = _optsMonitor.CurrentValue.ApiKey;
+        _log.LogDebug("OpenAI key probe: appsettings 'OpenAi:ApiKey' -> {Status}", DescribeKey(cfgKey));
         if (!string.IsNullOrWhiteSpace(cfgKey) && !IsPlaceholderKey(cfgKey))
-            return cfgKey;
+            return new ResolvedKey(cfgKey, "appsettings:OpenAi:ApiKey");
 
         return null;
     }
@@ -121,10 +161,34 @@ public sealed class OpenAiImageService : IAiImageService
         key.StartsWith("REPLACE_", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// Produces a short, safe human description of an API-key value for logs:
+    /// "unset" / "placeholder(sk-REPLACE…)" / "set(sk-prj…1A2B, 51 chars)".
+    /// Never leaks the secret middle of the key.
+    /// </summary>
+    private static string DescribeKey(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key)) return "unset";
+        if (IsPlaceholderKey(key)) return $"placeholder({MaskKey(key)})";
+        return $"set({MaskKey(key)}, {key.Length} chars)";
+    }
+
+    /// <summary>
+    /// Returns "abcd…wxyz" — first 6 chars + last 4 chars — so the operator can
+    /// recognise the key in logs without exposing the secret portion. Very short
+    /// keys (≤10 chars) are masked entirely.
+    /// </summary>
+    private static string MaskKey(string? key)
+    {
+        if (string.IsNullOrEmpty(key)) return "(empty)";
+        if (key.Length <= 10) return new string('*', key.Length);
+        return key[..6] + "…" + key[^4..];
+    }
+
+    /// <summary>
     /// Generates a solid-colour placeholder PNG (same as MockAiImageService)
     /// when no API key is configured.
     /// </summary>
-    private static async Task<AiImageResult> GeneratePlaceholderAsync(AiImageRequest request, CancellationToken ct)
+    private async Task<AiImageResult> GeneratePlaceholderAsync(AiImageRequest request, CancellationToken ct)
     {
         const int Width = 1920;
         const int Height = 1080;
@@ -139,6 +203,12 @@ public sealed class OpenAiImageService : IAiImageService
 
         using var img = new Image<Rgba32>(Width, Height, tint);
         await img.SaveAsPngAsync(tempPath, ct);
+
+        _log.LogWarning(
+            "Generated solid-colour PLACEHOLDER PNG ({Width}x{Height}, rgb={R},{G},{B}) at {Path} — " +
+            "real OpenAI API was NOT called. See preceding error for the reason.",
+            Width, Height, tint.R, tint.G, tint.B, tempPath);
+
         return new AiImageResult(tempPath, Width, Height);
     }
 
