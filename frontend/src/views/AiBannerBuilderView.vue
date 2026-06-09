@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
-import { useRouter, RouterLink } from 'vue-router'
+import { useRouter, useRoute, RouterLink } from 'vue-router'
 import { loadStripe } from '@stripe/stripe-js'
 import type { Stripe, StripeCardElement } from '@stripe/stripe-js'
 import { useAuthStore } from '@/stores/auth'
@@ -26,6 +26,7 @@ import { useAiCreditsStore } from '@/stores/aiCredits'
 
 // ── Router / auth / cart ──────────────────────────────────────────────────────
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const cart = useCartStore()
 // Shared credit-badge store (BANNERSH-87) — mirror every local creditsRemaining
@@ -205,6 +206,39 @@ const categoryIconClass: Record<string, string> = {
   Other: 'fa-gift',
 }
 
+// BANNERSH-105: per-category placeholder strings for the "Tekst på banneret"
+// field. Birthday is the default fallback when the category is unknown.
+const categoryBannerTextPlaceholder: Record<string, string> = {
+  Birthday: 'f.eks. Gratulerer med dagen',
+  Confirmation: 'f.eks. Gratulerer med konfirmasjonen',
+  Wedding: 'f.eks. Gratulerer med bryllupsdagen',
+  Baptism: 'f.eks. Til lykke med dåpsdagen',
+  Anniversary: 'f.eks. Gratulerer med jubileet',
+  Christmas: 'f.eks. God jul',
+  NewYear: 'f.eks. Godt nytt år',
+  Other: 'f.eks. Velkommen til festen',
+}
+
+const textContentPlaceholder = computed(() => {
+  const cat = selectedTemplate.value?.category
+  return (cat && categoryBannerTextPlaceholder[cat]) ?? 'f.eks. Gratulerer med dagen'
+})
+
+const themeDescriptionPlaceholder = computed(() => {
+  const cat = selectedTemplate.value?.category
+  switch (cat) {
+    case 'Birthday':     return 'f.eks. Prinsessetema, rosa og gull'
+    case 'Confirmation': return 'f.eks. Elegant, dempede farger'
+    case 'Wedding':      return 'f.eks. Romantisk, hvit og gull'
+    case 'Baptism':      return 'f.eks. Lyse pastellfarger, duer og blomster'
+    case 'Anniversary':  return 'f.eks. Klassisk, gull og sølv'
+    case 'Christmas':    return 'f.eks. Tradisjonell jul, rødt og grønt'
+    case 'NewYear':      return 'f.eks. Festlig, gull og fyrverkeri'
+    case 'Other':        return 'f.eks. Sommerfest, sol og strand'
+    default:             return 'f.eks. Tropisk fest, lilla og gull'
+  }
+})
+
 // ── Load templates ────────────────────────────────────────────────────────────
 async function loadTemplates() {
   templatesLoading.value = true
@@ -212,7 +246,17 @@ async function loadTemplates() {
   try {
     templates.value = await fetchTemplates()
     if (templates.value.length > 0 && selectedTemplateId.value === null) {
-      selectedTemplateId.value = templates.value[0]?.id ?? null
+      // BANNERSH-105: when the user arrived from a front-page category card
+      // (e.g. /banner-builder/ai?category=Birthday), pre-select the matching
+      // template so they can skip the template-picker step entirely.
+      const categoryParam = (route.query.category as string | undefined)?.trim()
+      let preselected: BannerTemplateItem | undefined
+      if (categoryParam) {
+        preselected = templates.value.find(
+          (t) => t.category.toLowerCase() === categoryParam.toLowerCase(),
+        )
+      }
+      selectedTemplateId.value = (preselected ?? templates.value[0])?.id ?? null
     }
   } catch (e: unknown) {
     const ex = e as { response?: { data?: { error?: string } }; message?: string }
@@ -801,7 +845,16 @@ onMounted(async () => {
       step.value = 3
       designRequestId.value = draftId
       startPolling(draftId)
+      return
     }
+  }
+
+  // BANNERSH-105: when arriving from a front-page category card the matching
+  // template has already been pre-selected by loadTemplates(); skip the
+  // template-picker step and drop the user straight into "Tilpass".
+  const categoryParam = (route.query.category as string | undefined)?.trim()
+  if (categoryParam && selectedTemplateId.value !== null) {
+    step.value = 2
   }
 })
 
@@ -984,6 +1037,28 @@ onBeforeUnmount(() => {
          STEP 2: Personalize
     ════════════════════════════════════════════════════════════════════════ -->
     <div v-else-if="step === 2">
+      <!-- BANNERSH-105: selected template summary so the user can see which
+           celebration they're customising for (especially when arriving from a
+           front-page category card that skipped step 1). -->
+      <div v-if="selectedTemplate" class="selected-template-card">
+        <div class="selected-template-ico">
+          <i :class="['fa-solid', categoryIconClass[selectedTemplate.category] ?? 'fa-star']"></i>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div class="selected-template-eyebrow">Du tilpasser</div>
+          <div class="selected-template-name">{{ templateName }}</div>
+        </div>
+        <button
+          type="button"
+          class="selected-template-change"
+          @click="step = 1"
+          aria-label="Bytt feiringsmal"
+        >
+          <i class="fa-solid fa-pen-to-square" style="font-size:11px"></i>
+          Bytt mal
+        </button>
+      </div>
+
       <div class="bb-panel" style="display:grid;gap:20px">
         <div>
           <label for="personName" class="field-label">Navn <span style="color:var(--accent)">*</span></label>
@@ -995,12 +1070,12 @@ onBeforeUnmount(() => {
         </div>
         <div>
           <label for="textContent" class="field-label">Tekst på banneret <span style="color:var(--accent)">*</span></label>
-          <textarea id="textContent" v-model="textContent" rows="3" maxlength="500" class="dark-input" style="resize:none" placeholder="f.eks. Gratulerer med 50-årsdagen!" />
+          <textarea id="textContent" v-model="textContent" rows="3" maxlength="500" class="dark-input" style="resize:none" :placeholder="textContentPlaceholder" />
           <p style="margin-top:5px;font-size:12px;color:var(--faint)">{{ textContent.length }} / 500 tegn</p>
         </div>
         <div>
           <label for="themeDescription" class="field-label">Tema / stil <span style="color:var(--accent)">*</span></label>
-          <input id="themeDescription" v-model="themeDescription" type="text" maxlength="500" class="dark-input" placeholder="f.eks. Tropisk fest, lilla og gull" />
+          <input id="themeDescription" v-model="themeDescription" type="text" maxlength="500" class="dark-input" :placeholder="themeDescriptionPlaceholder" />
         </div>
 
         <!-- Portrait photo upload (moved here from step 1) -->
@@ -1781,6 +1856,69 @@ onBeforeUnmount(() => {
   place-items: center;
   font-size: 20px;
   color: var(--accent);
+}
+
+/* ── Selected-template summary (BANNERSH-105) ────────────────── */
+.selected-template-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  margin-bottom: 18px;
+}
+.selected-template-ico {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(255,106,61,.12);
+  border: 1px solid rgba(255,106,61,.28);
+  display: grid;
+  place-items: center;
+  font-size: 19px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.selected-template-eyebrow {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: 2px;
+}
+.selected-template-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--text);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.selected-template-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  transition: border-color .15s, color .15s, background .15s;
+  flex-shrink: 0;
+}
+.selected-template-change:hover {
+  border-color: var(--accent);
+  color: var(--accent-2);
+  background: rgba(255,106,61,.06);
 }
 
 /* ── Photo upload zone ───────────────────────────────────────── */

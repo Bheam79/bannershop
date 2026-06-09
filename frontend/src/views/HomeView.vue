@@ -19,6 +19,9 @@ interface Cat {
   img: string
   big: string
   sub: string
+  /** BannerTemplateCategory string — passed as ?category=… to /banner-builder/ai
+   *  so the wizard pre-selects the matching template and jumps to step 2. */
+  templateCategory: string
 }
 
 const CATS: Cat[] = [
@@ -26,36 +29,44 @@ const CATS: Cat[] = [
     id: 'bursdag', icon: 'fa-cake-candles', name: 'Bursdag', occ: 'Bursdagsbanner', price: 810,
     img: '/banners/banner-emma-princess.png',
     big: 'Gratulerer med dagen!', sub: 'Emma fyller 6 år',
+    templateCategory: 'Birthday',
   },
   {
     id: 'konfirmasjon', icon: 'fa-graduation-cap', name: 'Konfirmasjon', occ: 'Konfirmasjonsbanner', price: 810,
     img: '/banners/banner-konfirmasjon.png',
     big: 'Konfirmant 2026', sub: 'Gratulerer, Jonas!',
+    templateCategory: 'Confirmation',
   },
   {
     id: 'dap', icon: 'fa-leaf', name: 'Dåp', occ: 'Dåpsbanner', price: 810,
     img: '/banners/banner-dap.png',
     big: 'Velkommen til verden', sub: 'Lille Markus',
+    templateCategory: 'Baptism',
   },
   {
     id: 'bryllup', icon: 'fa-ring', name: 'Bryllup', occ: 'Bryllupsbanner', price: 945,
     img: '/banners/banner-bryllup.png',
     big: 'Maria & Johan', sub: 'For alltid · 12.07.2026',
+    templateCategory: 'Wedding',
   },
   {
     id: 'sommerfest', icon: 'fa-sun', name: 'Sommerfest', occ: 'Sommerfestbanner', price: 810,
     img: '/banners/banner-sommerfest.png',
     big: 'Sommerfest 2026', sub: 'Velkommen alle sammen',
+    templateCategory: 'Other',
   },
 ]
 
 const selectedCat = ref<Cat>(CATS[0]!)
 
+// BANNERSH-105: clicking a category card now jumps straight into the AI wizard
+// with the matching template pre-selected (skips the template-picker step).
 function select(cat: Cat) {
   selectedCat.value = cat
-  // Scroll to preview section
-  const el = document.getElementById('bestill')
-  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  router.push({
+    path: '/banner-builder/ai',
+    query: { category: cat.templateCategory },
+  })
 }
 
 function scrollTo(id: string) {
@@ -265,7 +276,7 @@ async function handleLogout() {
               <li style="list-style:none;display:flex;align-items:center;gap:10px;font-size:14.5px;color:var(--muted)"><i class="fa-solid fa-check" style="color:var(--accent)"></i> Maljer i hjørnene som rimelig tilvalg</li>
             </ul>
             <div style="margin-top:auto;display:grid;gap:10px">
-              <button class="btn btn-primary btn-lg" style="justify-content:center;width:100%" @click="router.push('/banner-builder/ai')">
+              <button class="btn btn-primary btn-lg" style="justify-content:center;width:100%" @click="router.push({ path: '/banner-builder/ai', query: { category: selectedCat.templateCategory } })">
                 <i class="fa-solid fa-cart-shopping"></i> Kom i gang med dette
               </button>
               <div style="font-size:13px;color:var(--faint);text-align:center;margin-top:2px">
