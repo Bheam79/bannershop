@@ -395,23 +395,27 @@ test.describe('Admin panel', () => {
     await page.goto(`/admin/orders/${order.orderId}`)
     await expect(page.getByRole('heading', { name: /Ordre #/i })).toBeVisible({ timeout: 10_000 })
 
-    // Find shipping form
-    const shipSection = page.locator('.bg-white').filter({ hasText: 'Fraktinformasjon' })
-    await expect(shipSection).toBeVisible()
+    // Shipping form lives inside the admin Actions section (dark theme,
+    // bg-gray-800) and is only rendered once the order is InProduction.
+    // The read-only Fraktinformasjon panel is hidden until tracking is
+    // saved, so target the inputs/button directly.
+    const carrierInput = page.locator('input[placeholder*="Bring"]')
+    const trackingInput = page.locator('input[placeholder*="370799"]')
+    const saveBtn = page.getByRole('button', { name: /Lagre fraktinfo/i })
+
+    await expect(carrierInput).toBeVisible({ timeout: 10_000 })
 
     // Fill carrier
-    const carrierInput = shipSection.locator('input[placeholder*="Bring"]')
     await carrierInput.clear()
     await carrierInput.fill('Bring')
 
     // Fill tracking number
-    const trackingInput = shipSection.locator('input[placeholder*="370799"]')
     await trackingInput.fill('370799000000000002')
 
     // Save
-    await shipSection.getByRole('button', { name: /Lagre fraktinfo/i }).click()
+    await saveBtn.click()
 
     // Success message
-    await expect(shipSection.locator('text=/Fraktinfo lagret|✓/i')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('text=/Fraktinfo lagret|✓/i').first()).toBeVisible({ timeout: 10_000 })
   })
 })
