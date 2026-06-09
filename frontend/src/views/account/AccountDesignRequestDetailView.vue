@@ -481,10 +481,6 @@ function formatGenTime(iso: string | null | undefined): string {
           </button>
         </div>
 
-        <div v-if="approveSuccess" class="alert-success">
-          <i class="fa-solid fa-circle-check"></i>
-          {{ approveSuccess }}
-        </div>
         <div v-if="approveError" class="alert-error">
           <i class="fa-solid fa-circle-exclamation"></i>
           {{ approveError }}
@@ -736,6 +732,15 @@ function formatGenTime(iso: string | null | undefined): string {
       <div v-else-if="request.status === 'Cancelled'" class="status-block status-block--cancelled">
         <i class="fa-solid fa-ban status-block__icon"></i>
         <h2 class="status-block__title">Bestillingen er kansellert</h2>
+      </div>
+
+      <!-- Approve success feedback (BANNERSH-123: must live outside the
+           AwaitingApproval block — once approve() succeeds, status flips to
+           Approved and that block is removed from the DOM, so an
+           approveSuccess div inside it would never get rendered). -->
+      <div v-if="approveSuccess" class="alert-success">
+        <i class="fa-solid fa-circle-check"></i>
+        {{ approveSuccess }}
       </div>
 
       <!-- Revision success feedback -->
