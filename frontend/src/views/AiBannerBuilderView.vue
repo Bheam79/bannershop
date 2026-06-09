@@ -1025,7 +1025,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div style="max-width:960px;margin:0 auto;padding:2rem 1.5rem 4rem">
+  <div style="max-width:1200px;margin:0 auto;padding:2rem 1.5rem 4rem">
 
     <!-- Header (with credits badge for logged-in users) -->
     <header style="margin-bottom:2.5rem;text-align:center;position:relative">
@@ -1048,51 +1048,57 @@ onBeforeUnmount(() => {
     </header>
 
     <!-- ═══════════════════════════════════════════════════════════════════
-         PAST BANNERS GALLERY (BANNERSH-83)
-         Shown above the wizard for logged-in users with previous AI designs.
-         Lets them revisit / pick a past banner if they change their mind.
+         TWO-COLUMN LAYOUT: past banners sidebar (left) + wizard (right)
+         BANNERSH-145: moved gallery from horizontal strip above wizard to
+         a sticky vertical sidebar so it doesn't disrupt the input flow.
     ════════════════════════════════════════════════════════════════════════ -->
-    <section
-      v-if="auth.isLoggedIn && pastDesigns.length > 0"
-      class="past-section"
-      aria-label="Tidligere genererte banner"
-    >
-      <div class="past-header">
-        <h2 class="display past-title">
-          <i class="fa-solid fa-clock-rotate-left"></i>
-          Tidligere genererte banner
-        </h2>
-        <span class="past-count">{{ pastDesigns.length }}</span>
-      </div>
-      <p class="past-sub">Klikk for å åpne et tidligere banner — du kan godkjenne det eller bruke det som utgangspunkt.</p>
-      <div class="past-strip">
-        <button
-          v-for="d in pastDesigns"
-          :key="d.id"
-          type="button"
-          class="past-card"
-          :class="{ 'past-card-active': designRequestId === d.id }"
-          @click="selectPastDesign(d)"
-        >
-          <div class="past-thumb">
-            <img v-if="d.previewUrl" :src="d.previewUrl" :alt="`Tidligere banner for ${d.personName}`" />
-          </div>
-          <div class="past-meta">
-            <div class="past-name">{{ d.personName || 'Uten navn' }}</div>
-            <div class="past-theme">{{ d.themeDescription || '—' }}</div>
-            <div class="past-status">
-              <i v-if="d.status === 'Final' || d.status === 'Approved'" class="fa-solid fa-circle-check" style="color:#4ade80"></i>
-              <i v-else-if="d.status === 'AwaitingApproval'" class="fa-solid fa-hourglass-half" style="color:var(--gold)"></i>
-              <i v-else class="fa-solid fa-circle-info" style="color:var(--faint)"></i>
-              {{ d.status === 'AwaitingApproval' ? 'Venter godkjenning'
-                : d.status === 'Final' ? 'Bestilt'
-                : d.status === 'Approved' ? 'Godkjent'
-                : d.status }}
+    <div :class="auth.isLoggedIn && pastDesigns.length > 0 ? 'wizard-with-sidebar' : ''">
+
+      <!-- Left column: past banners sidebar -->
+      <aside
+        v-if="auth.isLoggedIn && pastDesigns.length > 0"
+        class="past-sidebar"
+        aria-label="Tidligere genererte banner"
+      >
+        <div class="past-sidebar-hd">
+          <span class="display past-title">
+            <i class="fa-solid fa-clock-rotate-left"></i>
+            Tidligere
+          </span>
+          <span class="past-count">{{ pastDesigns.length }}</span>
+        </div>
+        <p class="past-sub">Klikk for å åpne — godkjenn eller bruk som utgangspunkt.</p>
+        <div class="past-sidebar-list">
+          <button
+            v-for="d in pastDesigns"
+            :key="d.id"
+            type="button"
+            class="past-card"
+            :class="{ 'past-card-active': designRequestId === d.id }"
+            @click="selectPastDesign(d)"
+          >
+            <div class="past-thumb">
+              <img v-if="d.previewUrl" :src="d.previewUrl" :alt="`Tidligere banner for ${d.personName}`" />
             </div>
-          </div>
-        </button>
-      </div>
-    </section>
+            <div class="past-meta">
+              <div class="past-name">{{ d.personName || 'Uten navn' }}</div>
+              <div class="past-theme">{{ d.themeDescription || '—' }}</div>
+              <div class="past-status">
+                <i v-if="d.status === 'Final' || d.status === 'Approved'" class="fa-solid fa-circle-check" style="color:#4ade80"></i>
+                <i v-else-if="d.status === 'AwaitingApproval'" class="fa-solid fa-hourglass-half" style="color:var(--gold)"></i>
+                <i v-else class="fa-solid fa-circle-info" style="color:var(--faint)"></i>
+                {{ d.status === 'AwaitingApproval' ? 'Venter godkjenning'
+                  : d.status === 'Final' ? 'Bestilt'
+                  : d.status === 'Approved' ? 'Godkjent'
+                  : d.status }}
+              </div>
+            </div>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Right column: main wizard content -->
+      <div>
 
     <!-- Soft auth hint (anonymous user after creation) -->
     <div v-if="requiresAuthHint" class="notice-gold" style="margin-bottom:2rem">
@@ -1871,6 +1877,9 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+      </div><!-- end wizard main content -->
+    </div><!-- end wizard-with-sidebar -->
+
     <!-- ═══════════════════════════════════════════════════════════════════
          PAYWALL MODAL
     ════════════════════════════════════════════════════════════════════════ -->
@@ -2505,52 +2514,86 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
-/* ── Past-banners gallery (BANNERSH-83) ──────────────────────── */
-.past-section {
+/* ── Two-column layout: sidebar + wizard (BANNERSH-145) ──────── */
+.wizard-with-sidebar {
+  display: grid;
+  grid-template-columns: 210px 1fr;
+  gap: 28px;
+  align-items: start;
+}
+@media (max-width: 820px) {
+  .wizard-with-sidebar {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Past-banners sidebar (BANNERSH-83, BANNERSH-145) ────────── */
+.past-sidebar {
+  position: sticky;
+  top: 20px;
   background: var(--surface);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  padding: 18px 20px 20px;
-  margin-bottom: 1.5rem;
+  padding: 14px 12px 16px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
 }
-.past-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 4px;
-}
-.past-title {
-  font-size: 17px;
-  color: var(--text);
+.past-sidebar-hd {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0;
+  margin-bottom: 4px;
 }
-.past-title i { color: var(--accent); }
+.past-title {
+  font-size: 14px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.past-title i { color: var(--accent); font-size: 13px; }
 .past-count {
   background: rgba(255,106,61,.12);
   border: 1px solid rgba(255,106,61,.3);
   color: var(--accent);
   border-radius: 99px;
-  padding: 2px 10px;
-  font-size: 12px;
+  padding: 2px 9px;
+  font-size: 11.5px;
   font-weight: 700;
+  flex-shrink: 0;
 }
 .past-sub {
-  font-size: 13px;
+  font-size: 11.5px;
   color: var(--muted);
-  margin: 0 0 14px;
+  margin: 0 0 12px;
+  line-height: 1.4;
 }
-.past-strip {
+.past-sidebar-list {
   display: flex;
-  gap: 12px;
-  overflow-x: auto;
-  padding-bottom: 6px;
-  scroll-snap-type: x mandatory;
+  flex-direction: column;
+  gap: 8px;
+}
+@media (max-width: 820px) {
+  .past-sidebar {
+    position: static;
+    max-height: none;
+  }
+  .past-sidebar-list {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scroll-snap-type: x mandatory;
+  }
+  .past-sidebar-list .past-card {
+    flex: 0 0 160px;
+    width: 160px;
+  }
 }
 .past-card {
-  flex: 0 0 200px;
+  width: 100%;
   display: flex;
   flex-direction: column;
   background: var(--surface-2);
@@ -2589,13 +2632,13 @@ onBeforeUnmount(() => {
   display: block;
 }
 .past-meta {
-  padding: 9px 12px 11px;
+  padding: 8px 10px 10px;
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
 .past-name {
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: 700;
   color: var(--text);
   white-space: nowrap;
@@ -2603,7 +2646,7 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
 }
 .past-theme {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -2611,7 +2654,7 @@ onBeforeUnmount(() => {
 }
 .past-status {
   margin-top: 3px;
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--faint);
   display: flex;
   align-items: center;
