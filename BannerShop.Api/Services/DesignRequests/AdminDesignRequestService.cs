@@ -2,10 +2,11 @@ using BannerShop.Api.Models.DesignRequests;
 using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Api.Services.DesignRequests.Replicate;
 using BannerShop.Api.Services.Email;
+using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
+using BannerShop.Core.Helpers;
 using BannerShop.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using BannerShop.Core.Entities;
 
 namespace BannerShop.Api.Services.DesignRequests;
 
@@ -175,6 +176,27 @@ public sealed class AdminDesignRequestService : IAdminDesignRequestService
         r.DesignerPreviewPath = storagePath;
         r.Status = DesignRequestStatus.AwaitingApproval;
         r.UpdatedAt = DateTime.UtcNow;
+
+        // Advance the linked Order state (BANNERSH-109).
+        // Manual mode: Paid → DesignReady (designer has uploaded the result).
+        // AI mode: should not happen (pipeline handles AI advances), but guard anyway.
+        if (r.OrderId.HasValue)
+        {
+            var order = await _db.Orders.FindAsync(new object?[] { r.OrderId.Value }, ct);
+            if (order is not null)
+            {
+                var targetState = r.Mode == DesignRequestMode.Manual
+                    ? OrderState.DesignReady
+                    : OrderState.CustomerApproval;
+
+                if (OrderStateHelper.IsValidTransition(order.OrderType, order.OrderState, targetState))
+                {
+                    order.OrderState = targetState;
+                    order.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+        }
+
         await _db.SaveChangesAsync(ct);
 
         _log.LogInformation("Admin uploaded preview for DesignRequest {Id}", id);

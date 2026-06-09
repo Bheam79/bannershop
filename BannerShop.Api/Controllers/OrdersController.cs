@@ -3,6 +3,7 @@ using BannerShop.Api.Models.Orders;
 using BannerShop.Api.Services.Orders;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using static BannerShop.Api.Services.Orders.OrderActionErrorType;
 
 namespace BannerShop.Api.Controllers;
 
@@ -68,6 +69,26 @@ public class OrdersController : ControllerBase
         if (userId == 0) return Unauthorized();
         var result = await _orders.CancelMineAsync(userId, id, ct);
         if (!result.Success) return BadRequest(new { error = result.Error });
+        return Ok(result.Order);
+    }
+
+    // ── POST /api/orders/{id}/approve ────────────────────────────────────────
+    /// <summary>
+    /// Customer approves the AI or manual design preview for this order.
+    /// Advances <c>OrderState</c> from <c>CustomerApproval</c> to <c>InProduction</c>
+    /// and mirrors the approval on the linked DesignRequest (if any).
+    /// Returns 422 when the current state is not <c>CustomerApproval</c>.
+    /// </summary>
+    [HttpPost("{id:int}/approve")]
+    public async Task<IActionResult> ApproveDesign(int id, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        if (userId == 0) return Unauthorized();
+        var result = await _orders.ApproveDesignAsync(id, userId, ct);
+        if (!result.Success)
+            return result.ErrorType == InvalidTransition
+                ? UnprocessableEntity(new { error = result.Error })
+                : NotFound(new { error = result.Error });
         return Ok(result.Order);
     }
 

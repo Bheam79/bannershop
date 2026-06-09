@@ -5,6 +5,7 @@ using BannerShop.Api.Services.Email;
 using BannerShop.Api.Services.Orders.Stripe;
 using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
+using BannerShop.Core.Helpers;
 using BannerShop.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using System.IO;
@@ -501,6 +502,19 @@ public sealed class DesignRequestService : IDesignRequestService
         r.Status = DesignRequestStatus.Approved;
         r.CustomerApprovedAt = DateTime.UtcNow;
         r.UpdatedAt = DateTime.UtcNow;
+
+        // Advance the linked Order state: CustomerApproval → InProduction (BANNERSH-109).
+        if (r.OrderId.HasValue)
+        {
+            var order = await _db.Orders.FindAsync(new object?[] { r.OrderId.Value }, ct);
+            if (order is not null
+                && OrderStateHelper.IsValidTransition(order.OrderType, order.OrderState, OrderState.InProduction))
+            {
+                order.OrderState = OrderState.InProduction;
+                order.Status = OrderStatus.InProduction;
+                order.UpdatedAt = DateTime.UtcNow;
+            }
+        }
 
         // Create a BannerDesign row so the customer can add the result directly to the print cart.
         await TryCreateFinalBannerDesignAsync(r, ct);

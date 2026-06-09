@@ -86,4 +86,22 @@ public class AdminOrdersController : ControllerBase
                 : NotFound(new { error = result.Error });
         return Ok(result.Order);
     }
+
+    // ── POST /api/admin/orders/{id}/advance ──────────────────────────────────
+    /// <summary>
+    /// Advances the order's <c>OrderState</c> to the requested next state, validating
+    /// the transition against the order's type via <c>OrderStateHelper</c>.
+    /// Returns 422 when the transition is not permitted.
+    /// </summary>
+    [HttpPost("{id:int}/advance")]
+    public async Task<IActionResult> Advance(int id, [FromBody] AdvanceOrderStateRequest req, CancellationToken ct)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        var result = await _orders.AdvanceStateAsync(id, req.Next, ct);
+        if (!result.Success)
+            return result.ErrorType == InvalidTransition
+                ? UnprocessableEntity(new { error = result.Error })
+                : NotFound(new { error = result.Error });
+        return Ok(result.Order);
+    }
 }

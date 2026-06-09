@@ -36,6 +36,22 @@ public interface IOrderService
 
     Task<OrderActionResult> SetShippingAsync(int orderId, SetShippingRequest req, CancellationToken ct = default);
 
+    /// <summary>
+    /// Advances <see cref="Core.Entities.Order.OrderState"/> from its current value to
+    /// <paramref name="next"/>, validating the transition against the order's
+    /// <see cref="Core.Enums.OrderType"/> using <see cref="Core.Helpers.OrderStateHelper"/>.
+    /// Returns a transition-error result when the move is not permitted.
+    /// </summary>
+    Task<OrderActionResult> AdvanceStateAsync(int orderId, OrderState next, CancellationToken ct = default);
+
+    /// <summary>
+    /// Customer-initiated design approval for an AI or Manual-design order in
+    /// <see cref="Core.Enums.OrderState.CustomerApproval"/>. Advances Order state to
+    /// <see cref="Core.Enums.OrderState.InProduction"/> and mirrors the approval on the
+    /// linked <see cref="Core.Entities.DesignRequest"/> (if any).
+    /// </summary>
+    Task<OrderActionResult> ApproveDesignAsync(int orderId, int callerUserId, CancellationToken ct = default);
+
     // ── Internal hook used by the Stripe webhook controller ───────────────────
 
     Task MarkPaidAsync(string paymentIntentId, int? orderIdHint, CancellationToken ct = default);

@@ -76,6 +76,13 @@ public class UpdateOrderStatusRequest
     public OrderStatus Status { get; set; }
 }
 
+/// <summary>Request body for <c>POST /api/admin/orders/{id}/advance</c>.</summary>
+public class AdvanceOrderStateRequest
+{
+    [Required]
+    public OrderState Next { get; set; }
+}
+
 public class UpdateProductionRequest
 {
     [Required]
@@ -123,6 +130,8 @@ public class OrderListItemDto
 {
     public int Id { get; set; }
     public string Status { get; set; } = string.Empty;
+    public string OrderType { get; set; } = string.Empty;
+    public string OrderState { get; set; } = string.Empty;
     public string DeliveryType { get; set; } = string.Empty;
     public decimal TotalNok { get; set; }
     public int ItemCount { get; set; }
@@ -139,6 +148,10 @@ public class OrderDetailDto
     public string? CustomerName { get; set; }
     public string? CustomerEmail { get; set; }
     public string Status { get; set; } = string.Empty;
+    /// <summary>Fulfilment flow: CustomBanner / AiBanner / ManualDesign.</summary>
+    public string OrderType { get; set; } = string.Empty;
+    /// <summary>Lifecycle state per the state-machine (BANNERSH-109).</summary>
+    public string OrderState { get; set; } = string.Empty;
     public string DeliveryType { get; set; } = string.Empty;
     public decimal ShippingCostNok { get; set; }
     public decimal ExpressFeeNok { get; set; }

@@ -1,6 +1,7 @@
 using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
+using BannerShop.Core.Helpers;
 using BannerShop.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -206,6 +207,19 @@ public sealed class AiGenerationPipeline
             request.Status = DesignRequestStatus.AwaitingApproval;
             request.LastError = null;
             request.UpdatedAt = DateTime.UtcNow;
+
+            // Advance the linked Order state: Paid → CustomerApproval (BANNERSH-109).
+            if (request.OrderId.HasValue)
+            {
+                var order = await _db.Orders.FindAsync(new object?[] { request.OrderId.Value }, ct);
+                if (order is not null
+                    && OrderStateHelper.IsValidTransition(order.OrderType, order.OrderState, OrderState.CustomerApproval))
+                {
+                    order.OrderState = OrderState.CustomerApproval;
+                    order.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
             await _db.SaveChangesAsync(ct);
 
             _log.LogInformation("Pipeline: DesignRequest {Id} -> AwaitingApproval (gen={GenId}, path={Path})",

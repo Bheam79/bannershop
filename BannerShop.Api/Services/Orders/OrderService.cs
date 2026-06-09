@@ -8,6 +8,7 @@ using BannerShop.Api.Services.Orders.Stripe;
 using BannerShop.Api.Services.Shipping;
 using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
+using BannerShop.Core.Helpers;
 using BannerShop.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -246,10 +247,17 @@ public class OrderService : IOrderService
             _db.Addresses.Add(address);
         }
 
+        // Determine order type: CustomBanner unless any item references a DesignRequest.
+        // AI-design orders route through a separate path (BANNERSH-108); items with a
+        // DesignRequestId here are from the banner-builder custom upload flow.
+        var orderType = hasAiDesign ? OrderType.AiBanner : OrderType.CustomBanner;
+
         var order = new Order
         {
             UserId              = userId,
             Status              = OrderStatus.PendingPayment,
+            OrderType           = orderType,
+            OrderState          = OrderState.Draft,
             DeliveryType        = req.DeliveryType,
             ShippingAddress     = address,
             ShippingCostNok     = decimal.Round(shippingCost, 2),
@@ -299,6 +307,8 @@ public class OrderService : IOrderService
             {
                 Id = o.Id,
                 Status = o.Status.ToString(),
+                OrderType = o.OrderType.ToString(),
+                OrderState = o.OrderState.ToString(),
                 DeliveryType = o.DeliveryType.ToString(),
                 TotalNok = o.TotalNok,
                 ItemCount = o.Items.Count,
@@ -331,6 +341,7 @@ public class OrderService : IOrderService
             return OrderActionResult.Fail($"Order in status {order.Status} cannot be cancelled by the customer.");
 
         order.Status = OrderStatus.Cancelled;
+        order.OrderState = OrderState.Cancelled;
         order.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
 
@@ -376,6 +387,8 @@ public class OrderService : IOrderService
             {
                 Id = o.Id,
                 Status = o.Status.ToString(),
+                OrderType = o.OrderType.ToString(),
+                OrderState = o.OrderState.ToString(),
                 DeliveryType = o.DeliveryType.ToString(),
                 TotalNok = o.TotalNok,
                 ItemCount = o.Items.Count,
@@ -414,6 +427,16 @@ public class OrderService : IOrderService
         }
 
         order.Status = status;
+        // Mirror onto OrderState for status values that have a direct mapping.
+        order.OrderState = status switch
+        {
+            OrderStatus.Paid          => OrderState.Paid,
+            OrderStatus.InProduction  => OrderState.InProduction,
+            OrderStatus.Shipped       => OrderState.Shipped,
+            OrderStatus.Delivered     => OrderState.Delivered,
+            OrderStatus.Cancelled     => OrderState.Cancelled,
+            _                         => order.OrderState // keep existing for Draft / PendingPayment / ReadyToShip
+        };
         order.UpdatedAt = DateTime.UtcNow;
 
         // Auto-stamp DeliveredAt when transitioning to Delivered
@@ -448,7 +471,10 @@ public class OrderService : IOrderService
         if (order is not null)
         {
             if (order.Status == OrderStatus.Paid && stage != ProductionStage.Queued)
+            {
                 order.Status = OrderStatus.InProduction;
+                order.OrderState = OrderState.InProduction;
+            }
 
             // If ALL items report ReadyToShip, transition the whole order
             if (stage == ProductionStage.ReadyToShip)
@@ -510,6 +536,7 @@ public class OrderService : IOrderService
         }
 
         order.Status = OrderStatus.Shipped;
+        order.OrderState = OrderState.Shipped;
         order.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
 
@@ -539,6 +566,7 @@ public class OrderService : IOrderService
         }
 
         order.Status = OrderStatus.Paid;
+        order.OrderState = OrderState.Paid;
         order.UpdatedAt = DateTime.UtcNow;
 
         // Seed initial Queued production rows for each item
@@ -614,6 +642,93 @@ public class OrderService : IOrderService
     }
 
     // ────────────────────────────────────────────────────────────────────────
+    // State-machine operations (BANNERSH-109)
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// <inheritdoc />
+    public async Task<OrderActionResult> AdvanceStateAsync(
+        int orderId, OrderState next, CancellationToken ct = default)
+    {
+        var order = await _db.Orders.FindAsync(new object?[] { orderId }, ct);
+        if (order is null) return OrderActionResult.Fail("Order not found.");
+
+        if (!OrderStateHelper.IsValidTransition(order.OrderType, order.OrderState, next))
+        {
+            var seq = string.Join(" → ", OrderStateHelper.ValidSequence(order.OrderType)
+                .Select(s => s.ToString()));
+            return OrderActionResult.FailTransition(
+                $"Cannot advance order {orderId} from '{order.OrderState}' to '{next}' " +
+                $"for type '{order.OrderType}'. Valid sequence: {seq}.");
+        }
+
+        order.OrderState = next;
+        // Keep the legacy Status in sync for states that have a direct mapping.
+        order.Status = next switch
+        {
+            OrderState.Paid         => OrderStatus.Paid,
+            OrderState.InProduction => OrderStatus.InProduction,
+            OrderState.Shipped      => OrderStatus.Shipped,
+            OrderState.Delivered    => OrderStatus.Delivered,
+            OrderState.Cancelled    => OrderStatus.Cancelled,
+            _                       => order.Status
+        };
+        order.UpdatedAt = DateTime.UtcNow;
+
+        if (next == OrderState.Delivered)
+        {
+            var tracking = await _db.ShipmentTrackings
+                .FirstOrDefaultAsync(t => t.OrderId == orderId, ct);
+            if (tracking is not null && tracking.DeliveredAt is null)
+                tracking.DeliveredAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync(ct);
+        var full = await LoadFullOrderAsync(orderId, ct);
+        return OrderActionResult.Ok(ToDetailDto(full!));
+    }
+
+    /// <inheritdoc />
+    public async Task<OrderActionResult> ApproveDesignAsync(
+        int orderId, int callerUserId, CancellationToken ct = default)
+    {
+        var order = await _db.Orders.FindAsync(new object?[] { orderId }, ct);
+        if (order is null || order.UserId != callerUserId)
+            return OrderActionResult.Fail("Order not found.");
+
+        if (order.OrderState != OrderState.CustomerApproval)
+        {
+            return OrderActionResult.FailTransition(
+                $"Order {orderId} is in state '{order.OrderState}'; " +
+                $"approval requires CustomerApproval state.");
+        }
+
+        // Advance Order state.
+        order.OrderState = OrderState.InProduction;
+        order.Status = OrderStatus.InProduction;
+        order.UpdatedAt = DateTime.UtcNow;
+
+        // Mirror approval on any linked DesignRequest.
+        var dr = await _db.DesignRequests
+            .FirstOrDefaultAsync(r => r.OrderId == orderId, ct);
+        if (dr is not null
+            && (dr.Status == DesignRequestStatus.AwaitingApproval
+                || dr.Status == DesignRequestStatus.Revised))
+        {
+            dr.Status = DesignRequestStatus.Approved;
+            dr.CustomerApprovedAt = DateTime.UtcNow;
+            dr.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation(
+            "ApproveDesignAsync: order {OrderId} → InProduction (callerUserId={UserId}).",
+            orderId, callerUserId);
+
+        var full = await LoadFullOrderAsync(orderId, ct);
+        return OrderActionResult.Ok(ToDetailDto(full!));
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
     // Helpers
     // ────────────────────────────────────────────────────────────────────────
 
@@ -644,6 +759,8 @@ public class OrderService : IOrderService
         CustomerName = o.User?.Name,
         CustomerEmail = o.User?.Email,
         Status = o.Status.ToString(),
+        OrderType = o.OrderType.ToString(),
+        OrderState = o.OrderState.ToString(),
         DeliveryType = o.DeliveryType.ToString(),
         ShippingCostNok = o.ShippingCostNok,
         ExpressFeeNok = o.ExpressFeeNok,
