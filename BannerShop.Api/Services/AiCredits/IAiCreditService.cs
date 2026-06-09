@@ -9,7 +9,7 @@ public interface IAiCreditService
 {
     /// <summary>
     /// Returns true if the given IP address is eligible for a free anonymous AI generation
-    /// (i.e. it has not already used one within the rolling 30-day window).
+    /// (i.e. it has used fewer than 2 within the rolling 30-day window).
     /// </summary>
     Task<bool> IsAnonymousEligibleAsync(string ipAddress, CancellationToken ct = default);
 

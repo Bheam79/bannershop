@@ -26,16 +26,35 @@ public class AiCreditServiceTests
     }
 
     [Fact]
-    public async Task IsAnonymousEligibleAsync_returns_false_after_usage_within_window()
+    public async Task IsAnonymousEligibleAsync_returns_true_after_one_usage_within_window()
     {
         using var db = DbHelper.CreateInMemory();
         var svc = MakeService(db);
 
+        // One usage — still under the limit of 2.
         db.IpAiUsages.Add(new BannerShop.Core.Entities.IpAiUsage
         {
             IpAddress = "192.0.2.2",
-            CreatedAt = DateTime.UtcNow.AddDays(-5) // 5 days ago — within 30-day window
+            CreatedAt = DateTime.UtcNow.AddDays(-5)
         });
+        await db.SaveChangesAsync();
+
+        var eligible = await svc.IsAnonymousEligibleAsync("192.0.2.2");
+
+        eligible.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task IsAnonymousEligibleAsync_returns_false_after_two_usages_within_window()
+    {
+        using var db = DbHelper.CreateInMemory();
+        var svc = MakeService(db);
+
+        // Two usages — limit of 2 reached.
+        db.IpAiUsages.AddRange(
+            new BannerShop.Core.Entities.IpAiUsage { IpAddress = "192.0.2.2", CreatedAt = DateTime.UtcNow.AddDays(-5) },
+            new BannerShop.Core.Entities.IpAiUsage { IpAddress = "192.0.2.2", CreatedAt = DateTime.UtcNow.AddDays(-2) }
+        );
         await db.SaveChangesAsync();
 
         var eligible = await svc.IsAnonymousEligibleAsync("192.0.2.2");

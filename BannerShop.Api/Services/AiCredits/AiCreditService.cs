@@ -23,14 +23,17 @@ public sealed class AiCreditService : IAiCreditService
         _log = log;
     }
 
+    /// <summary>Maximum number of free anonymous AI generations allowed per IP per rolling window.</summary>
+    private const int AnonymousFreeLimit = 2;
+
     /// <inheritdoc />
     public async Task<bool> IsAnonymousEligibleAsync(string ipAddress, CancellationToken ct = default)
     {
         var windowStart = DateTime.UtcNow - RollingWindow;
         var usedInWindow = await _db.IpAiUsages
             .AsNoTracking()
-            .AnyAsync(u => u.IpAddress == ipAddress && u.CreatedAt >= windowStart, ct);
-        return !usedInWindow;
+            .CountAsync(u => u.IpAddress == ipAddress && u.CreatedAt >= windowStart, ct);
+        return usedInWindow < AnonymousFreeLimit;
     }
 
     /// <inheritdoc />
