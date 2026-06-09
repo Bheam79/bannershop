@@ -348,7 +348,7 @@ async function selectPastDesign(item: DesignRequestListItem) {
     language.value = detail.language === 'en' ? 'en' : 'nb'
     aspectRatio.value = detail.aspectRatio === '18:9' ? '18:9' : '16:9'
 
-    step.value = 3
+    step.value = 2
     if (detail.status === 'AwaitingApproval' || detail.status === 'Approved' || detail.status === 'Final') {
       genPhase.value = 'ready'
     } else if (detail.status === 'InProgress' || detail.status === 'Pending') {
@@ -625,6 +625,7 @@ async function approve() {
     if (approved.finalBannerDesignId) {
       try {
         await loadTilpassPricing(approved.finalBannerDesignId)
+        step.value = 3
         genPhase.value = 'tilpass'
         // Scroll to top so the new step is immediately visible.
         window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -700,6 +701,7 @@ function addTilpassToCartAndCheckout() {
 
 // ── Tilpass: back to the ready phase ─────────────────────────────────────────
 function backFromTilpass() {
+  step.value = 2
   genPhase.value = 'ready'
   tilpassError.value = null
 }
@@ -1005,7 +1007,7 @@ onMounted(async () => {
   if (resumeParam === '1' && draftIdStr && auth.isLoggedIn && !categoryParam) {
     const draftId = parseInt(draftIdStr, 10)
     if (!isNaN(draftId) && draftId > 0) {
-      step.value = 3
+      step.value = 2
       designRequestId.value = draftId
       startPolling(draftId)
       return
@@ -1115,7 +1117,7 @@ onBeforeUnmount(() => {
     <!-- Step indicator -->
     <nav class="step-nav" style="margin-bottom:2rem" aria-label="Steg">
       <button
-        v-for="(label, idx) in ['Velg mal', 'Tilpass', 'Generer']"
+        v-for="(label, idx) in ['Velg mal', 'Tilpass', 'Fullfør']"
         :key="idx"
         type="button"
         class="step-nav-btn"
@@ -1124,7 +1126,7 @@ onBeforeUnmount(() => {
           'step-done': step > idx + 1,
           'step-future': step < idx + 1,
         }"
-        :disabled="idx + 1 > step && genPhase === 'idle'"
+        :disabled="idx + 1 > step"
         @click="idx + 1 < step ? (step = (idx + 1) as 1 | 2 | 3) : undefined"
       >
         <span
@@ -1322,18 +1324,175 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div style="margin-top:24px;display:flex;justify-content:space-between">
+      <!-- ── Inline preview + generate area (BANNERSH-146) ─────────────── -->
+      <div style="margin-top:20px">
+
+        <!-- Error from generateBanner -->
+        <div v-if="generateApiError" class="error-box" style="margin-bottom:12px">
+          <i class="fa-solid fa-circle-exclamation"></i> {{ generateApiError }}
+        </div>
+
+        <!-- Phase: submitting / generating — spinner inside the frame -->
+        <div v-if="genPhase === 'submitting' || genPhase === 'generating'" class="preview-generating">
+          <div style="position:relative;width:56px;height:56px">
+            <div style="position:absolute;inset:0;border-radius:50%;border:4px solid var(--surface-2)"></div>
+            <div style="position:absolute;inset:0;border-radius:50%;border:4px solid transparent;border-top-color:var(--accent);animation:spin 1s linear infinite"></div>
+          </div>
+          <div style="text-align:center">
+            <div class="display" style="font-size:20px;color:var(--text);margin-bottom:4px">
+              {{ genPhase === 'submitting' ? 'Sender forespørsel…' : 'Genererer banner…' }}
+            </div>
+            <p v-if="genPhase === 'generating'" style="font-size:13.5px;color:var(--muted)">
+              AI-en jobber med designet ditt. Dette tar vanligvis 20–60 sekunder.
+            </p>
+          </div>
+        </div>
+
+        <!-- Phase: anon_pending — anonymous user after generation -->
+        <div v-else-if="genPhase === 'anon_pending'" class="preview-anon">
+          <i class="fa-solid fa-circle-check" style="font-size:40px;color:#4ade80;margin-bottom:12px"></i>
+          <h3 class="display" style="font-size:20px;color:var(--text);margin-bottom:8px">Banneret genereres!</h3>
+          <p style="font-size:14px;color:var(--muted);max-width:28em;text-align:center;margin:0 0 16px">
+            Opprett en konto for å se og godkjenne resultatet — og for å bestille det ferdige banneret.
+          </p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
+            <RouterLink :to="`/register?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" class="btn btn-primary" style="padding:10px 20px">
+              <i class="fa-solid fa-user-plus"></i> Opprett konto
+            </RouterLink>
+            <RouterLink :to="`/login?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" class="btn btn-ghost" style="padding:10px 20px">
+              Logg inn
+            </RouterLink>
+          </div>
+          <p v-if="designRequestId" style="margin-top:16px;font-size:12px;color:var(--faint)">
+            Design-ID: {{ designRequestId }}
+          </p>
+        </div>
+
+        <!-- Phase: ready — show the generated image -->
+        <div v-else-if="genPhase === 'ready' && currentDesignRequest" class="bb-panel" style="padding:0;overflow:hidden">
+          <img
+            v-if="currentDesignRequest.previewUrl"
+            :src="currentDesignRequest.previewUrl"
+            :alt="`AI-generert banner for ${currentDesignRequest.personName}`"
+            style="width:100%;height:auto;object-fit:contain;display:block"
+          />
+          <div v-else style="display:flex;align-items:center;justify-content:center;height:180px;color:var(--faint)">
+            Forhåndsvisning ikke tilgjengelig
+          </div>
+        </div>
+
+        <!-- Phase: error -->
+        <div v-else-if="genPhase === 'error'" class="preview-generating preview-error-frame">
+          <i class="fa-solid fa-triangle-exclamation" style="font-size:36px;color:var(--accent);margin-bottom:8px"></i>
+          <div class="display" style="font-size:18px;color:var(--text);margin-bottom:6px">Noe gikk galt</div>
+          <p style="font-size:13.5px;color:var(--muted);text-align:center;max-width:26em">
+            {{ currentDesignRequest?.lastError ?? 'AI-genereringen feilet. Prøv igjen.' }}
+          </p>
+        </div>
+
+        <!-- Phase: idle — placeholder frame -->
+        <div v-else class="preview-placeholder">
+          <i class="fa-solid fa-wand-magic-sparkles" style="font-size:30px;color:var(--accent);opacity:.45;margin-bottom:10px"></i>
+          <div class="display" style="font-size:20px;color:var(--muted)">{{ templateName || 'AI Banner' }}</div>
+          <p style="font-size:13px;color:var(--faint);margin-top:6px">Banneret ditt vil vises her</p>
+        </div>
+
+        <!-- Action buttons + credits (hidden while generating or anon_pending) -->
+        <div v-if="genPhase !== 'submitting' && genPhase !== 'generating' && genPhase !== 'anon_pending'" style="margin-top:16px;display:grid;gap:12px">
+
+          <!-- Error rows -->
+          <div v-if="approveError" class="error-box">
+            <i class="fa-solid fa-circle-exclamation"></i> {{ approveError }}
+          </div>
+          <div v-if="regenerateError" class="error-box">
+            <i class="fa-solid fa-circle-exclamation"></i> {{ regenerateError }}
+          </div>
+          <div v-if="reorderError" class="error-box">
+            <i class="fa-solid fa-circle-exclamation"></i> {{ reorderError }}
+          </div>
+
+          <!-- "Gå videre" — AwaitingApproval: approve → tilpass (step 3) -->
+          <button
+            v-if="genPhase === 'ready' && currentDesignRequest?.status === 'AwaitingApproval'"
+            type="button"
+            class="btn"
+            style="width:100%;justify-content:center;padding:14px;font-size:16px;border-radius:12px;background:#3a9d7e;color:#fff"
+            :disabled="approving"
+            @click="approve"
+          >
+            <i v-if="approving" class="fa-solid fa-circle-notch fa-spin"></i>
+            <i v-else class="fa-solid fa-arrow-right"></i>
+            {{ approving ? 'Behandler…' : 'Gå videre' }}
+          </button>
+
+          <!-- "Bestill på nytt" — Approved / Final -->
+          <button
+            v-if="genPhase === 'ready' && currentDesignRequest?.finalBannerDesignId && (currentDesignRequest?.status === 'Approved' || currentDesignRequest?.status === 'Final')"
+            type="button"
+            class="btn"
+            style="width:100%;justify-content:center;padding:14px;font-size:16px;border-radius:12px;background:#3a9d7e;color:#fff"
+            :disabled="reordering"
+            @click="reorderCurrentDesign"
+          >
+            <i v-if="reordering" class="fa-solid fa-circle-notch fa-spin"></i>
+            <i v-else class="fa-solid fa-cart-shopping"></i>
+            {{ reordering ? 'Legger i handlekurv…' : 'Bestill på nytt' }}
+          </button>
+
+          <!-- Generate (idle) / Regenerate (ready/error) button -->
+          <button
+            type="button"
+            class="btn btn-primary"
+            style="width:100%;justify-content:center;padding:14px;font-size:16px;border-radius:12px"
+            :disabled="!step2Valid"
+            @click="genPhase === 'ready' ? regenerate() : generateBanner()"
+          >
+            <i v-if="genPhase === 'error'" class="fa-solid fa-rotate"></i>
+            <i v-else-if="isOutOfGenerations && genPhase !== 'ready'" class="fa-solid fa-bag-shopping"></i>
+            <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
+            <template v-if="genPhase === 'ready'">
+              <template v-if="canGenerateForFree === true">Generer ny versjon (gratis)</template>
+              <template v-else-if="hasCreditsAvailable">Generer ny versjon (1 kreditt)</template>
+              <template v-else>Generer ny versjon</template>
+            </template>
+            <template v-else-if="genPhase === 'idle'">{{ generateButtonLabel }}</template>
+            <template v-else>Prøv igjen</template>
+          </button>
+
+          <!-- Credits text (per task: "Du har xx gratis ai bilder igjen" / "Du har xx ai kreditter igjen") -->
+          <p style="font-size:13px;color:var(--faint);text-align:center;margin:0">
+            <template v-if="canGenerateForFree === true">
+              <i class="fa-solid fa-gift" style="color:var(--accent);margin-right:5px"></i>
+              Du har 1 gratis AI bilde igjen
+            </template>
+            <template v-else-if="auth.isLoggedIn && creditsRemaining !== null && creditsRemaining > 0">
+              <i class="fa-solid fa-wand-magic-sparkles" style="color:var(--accent);margin-right:5px"></i>
+              Du har {{ creditsRemaining }} AI kreditter igjen
+            </template>
+            <template v-else-if="auth.isLoggedIn && isOutOfGenerations">
+              <i class="fa-solid fa-circle-exclamation" style="color:var(--accent);margin-right:5px"></i>
+              Ingen genereringer igjen —
+              <button type="button" style="color:var(--accent);font-weight:600;background:none;border:none;cursor:pointer;padding:0;font-family:var(--font-ui);font-size:13px" @click="pendingAction = 'generate'; openPaywallModal()">kjøp kreditter</button>
+            </template>
+            <template v-else-if="!auth.isLoggedIn">
+              <i class="fa-solid fa-shield-halved" style="margin-right:5px"></i>
+              Første generering er gratis — ingen betalingsinformasjon nødvendig
+            </template>
+          </p>
+        </div>
+      </div>
+
+      <!-- Navigation: back only (generation is now inline) -->
+      <div style="margin-top:24px">
         <button type="button" class="btn btn-ghost" @click="step = 1">
           <i class="fa-solid fa-arrow-left" style="font-size:12px"></i> Tilbake
-        </button>
-        <button type="button" class="btn btn-primary" style="padding:12px 28px" :disabled="!step2Valid" @click="goToStep(3)">
-          Neste: Generer <i class="fa-solid fa-arrow-right" style="font-size:12px"></i>
         </button>
       </div>
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════════════
-         STEP 3: Generate + results
+         STEP 3: Fullfør — eyelet picker + add to cart (BANNERSH-146)
+         Only reached via approve() which always sets genPhase = 'tilpass'.
     ════════════════════════════════════════════════════════════════════════ -->
     <div v-else-if="step === 3">
 
@@ -1716,7 +1875,7 @@ onBeforeUnmount(() => {
       <!-- BANNERSH-133: post-approval step where the customer picks an eyelet
            option and sees the running total before sending the banner to the
            cart. -->
-      <div v-else-if="genPhase === 'tilpass' && currentDesignRequest" style="display:grid;gap:24px">
+      <div v-if="genPhase === 'tilpass' && currentDesignRequest" style="display:grid;gap:24px">
         <div style="text-align:center">
           <h2 class="display" style="font-size:28px;color:var(--text);margin-bottom:8px">
             <i class="fa-solid fa-sliders" style="color:var(--accent);margin-right:8px"></i>
@@ -2424,6 +2583,51 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 .error-box i { color: var(--accent); flex-shrink: 0; }
+
+/* ── Step-2 inline preview area (BANNERSH-146) ───────────────── */
+.preview-placeholder {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 2px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem;
+  gap: 4px;
+}
+.preview-generating {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 2rem;
+}
+.preview-error-frame {
+  border-color: rgba(255,106,61,.3);
+  background: rgba(255,106,61,.04);
+}
+.preview-anon {
+  width: 100%;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 2rem;
+  text-align: center;
+}
 
 /* ── Spinner / pulse animations ──────────────────────────────── */
 @keyframes spin { to { transform: rotate(360deg); } }
