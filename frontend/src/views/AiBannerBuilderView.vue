@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import { loadStripe } from '@stripe/stripe-js'
 import type { Stripe, StripeCardElement } from '@stripe/stripe-js'
@@ -62,6 +62,9 @@ const textContent = ref('')
 const themeDescription = ref('')
 
 // ── Step 2: Quality / size selection (mirrors ManualBannerBuilderView) ────────
+// BANNERSH-162: quality/size picker only appears AFTER a banner has been
+// generated, and the displayed widths are derived from the actual aspect ratio
+// of the AI image (set via the preview <img>'s @load handler).
 type QualityOption = 'high' | 'good' | 'custom'
 const selectedQuality = ref<QualityOption>('high')
 
@@ -80,6 +83,13 @@ interface OptionPriceState {
 const option1State = ref<OptionPriceState>({ price: null, loading: false, comingSoon: false })
 const option2State = ref<OptionPriceState>({ price: null, loading: false, comingSoon: false })
 const customState  = ref<OptionPriceState>({ price: null, loading: false, comingSoon: false })
+
+// ── BANNERSH-162: AI image aspect ratio (width / height) ─────────────────────
+// Set when the preview <img> fires @load — derived from the actual rendered
+// image's natural dimensions so the printed banner matches what the user sees.
+// Falls back to parsing currentDesignRequest.aspectRatio when the image hasn't
+// loaded yet (e.g. during selectPastDesign).
+const aiImageNaturalRatio = ref<number | null>(null)
 
 // ── Step 3: Generation state ──────────────────────────────────────────────────
 // BANNERSH-133: `tilpass` is a post-approval phase where the customer picks an
@@ -165,10 +175,50 @@ const templateName = computed(() => {
   return language.value === 'en' ? t.nameEn : t.nameNb
 })
 
+// BANNERSH-162: effective AI image aspect ratio used to scale the printed banner.
+// Prefer the loaded image's actual w/h; fall back to parsing
+// `currentDesignRequest.aspectRatio` (formats: 'WxH', '16:9', '18:9') for past
+// designs that haven't loaded yet. Returns null if no source is available — in
+// that case the high/good options fall back to their static default widths.
+const aiImageAspectRatio = computed<number | null>(() => {
+  if (aiImageNaturalRatio.value && aiImageNaturalRatio.value > 0) {
+    return aiImageNaturalRatio.value
+  }
+  const raw = currentDesignRequest.value?.aspectRatio
+  if (!raw) return null
+  // 'WxH' (e.g. '360x150')
+  const dimsMatch = /^(\d+)x(\d+)$/i.exec(raw)
+  if (dimsMatch && dimsMatch[1] && dimsMatch[2]) {
+    const w = parseInt(dimsMatch[1], 10)
+    const h = parseInt(dimsMatch[2], 10)
+    if (w > 0 && h > 0) return w / h
+  }
+  // 'A:B' (e.g. '16:9', '18:9')
+  const ratioMatch = /^(\d+):(\d+)$/.exec(raw)
+  if (ratioMatch && ratioMatch[1] && ratioMatch[2]) {
+    const a = parseInt(ratioMatch[1], 10)
+    const b = parseInt(ratioMatch[2], 10)
+    if (a > 0 && b > 0) return a / b
+  }
+  return null
+})
+
+// BANNERSH-162: high-quality option = 150 cm tall, width derived from AI image
+// ratio. Good-quality option = 180 cm tall. Defaults fall back to the legacy
+// 360 × 150 / 300 × 180 dimensions while no image is loaded yet.
+const highOptionWidthCm = computed(() => {
+  const r = aiImageAspectRatio.value
+  return r ? Math.round(150 * r) : 360
+})
+const goodOptionWidthCm = computed(() => {
+  const r = aiImageAspectRatio.value
+  return r ? Math.round(180 * r) : 300
+})
+
 // Dimensions for the currently selected quality option
 const selectedDimensions = computed(() => {
-  if (selectedQuality.value === 'high') return { width: 360, height: 150 }
-  if (selectedQuality.value === 'good') return { width: 300, height: 180 }
+  if (selectedQuality.value === 'high') return { width: highOptionWidthCm.value, height: 150 }
+  if (selectedQuality.value === 'good') return { width: goodOptionWidthCm.value, height: 180 }
   return { width: customWidth.value ?? 0, height: customHeight.value ?? 0 }
 })
 
@@ -181,13 +231,17 @@ const aspectRatioForBackend = computed(() => {
 
 const step1Valid = computed(() => selectedTemplateId.value !== null)
 
+// BANNERSH-162: the quality picker is now hidden until a banner is generated,
+// so pre-generation validation must NOT require custom width/height. The custom
+// validation only matters after the user has actually selected 'Egendefinert'
+// in the (post-generation) picker — guarded by genPhase === 'ready'.
 const step2Valid = computed(() => {
   if (
     personName.value.trim().length === 0 ||
     textContent.value.trim().length === 0 ||
     themeDescription.value.trim().length === 0
   ) return false
-  if (selectedQuality.value === 'custom') {
+  if (genPhase.value === 'ready' && selectedQuality.value === 'custom') {
     return (customWidth.value ?? 0) > 0 && (customHeight.value ?? 0) > 0
   }
   return true
@@ -263,8 +317,8 @@ async function computeOptionPrice(
 async function refreshAllPrices() {
   if (!sizesLoaded.value) return
   await Promise.all([
-    computeOptionPrice(360, 150, option1State.value),
-    computeOptionPrice(300, 180, option2State.value),
+    computeOptionPrice(highOptionWidthCm.value, 150, option1State.value),
+    computeOptionPrice(goodOptionWidthCm.value, 180, option2State.value),
   ])
 }
 
@@ -278,6 +332,65 @@ async function refreshCustomPrice() {
 watch([customWidth, customHeight, customMaterialGsm], () => {
   if (sizesLoaded.value) void refreshCustomPrice()
 })
+
+// BANNERSH-162: when the AI image's aspect ratio resolves (or changes between
+// generations), re-price the high/good options against the new dynamic widths.
+watch(aiImageAspectRatio, () => {
+  if (sizesLoaded.value) void refreshAllPrices()
+})
+
+// BANNERSH-162: custom width ↔ height are linked via the AI image's aspect
+// ratio — editing one auto-updates the other so the print preserves the
+// generated image's proportions. The lock prevents the linked-update from
+// triggering its own watcher (which would otherwise re-link back the original
+// edit and lock the values). Cleared on nextTick so Vue's same-value skip
+// can't leave the lock stuck (when the paired value happens to round to its
+// current value, the paired watcher never fires).
+let customLinkLock = false
+function releaseCustomLink() {
+  void nextTick(() => { customLinkLock = false })
+}
+watch(customWidth, (w) => {
+  if (customLinkLock) return
+  const r = aiImageAspectRatio.value
+  if (!r || !w || w <= 0) return
+  customLinkLock = true
+  customHeight.value = Math.max(1, Math.round(w / r))
+  releaseCustomLink()
+})
+watch(customHeight, (h) => {
+  if (customLinkLock) return
+  const r = aiImageAspectRatio.value
+  if (!r || !h || h <= 0) return
+  customLinkLock = true
+  customWidth.value = Math.max(1, Math.round(h * r))
+  releaseCustomLink()
+})
+
+// BANNERSH-162: when the user opens the 'Egendefinert' tab for the first time
+// after a generation, prefill width/height from the high-quality defaults so
+// they have an editable starting point rather than empty fields.
+watch(selectedQuality, (q) => {
+  if (q !== 'custom') return
+  const r = aiImageAspectRatio.value
+  if (!r) return
+  if (customWidth.value == null && customHeight.value == null) {
+    customLinkLock = true
+    customHeight.value = 150
+    customWidth.value = Math.max(1, Math.round(150 * r))
+    releaseCustomLink()
+  }
+})
+
+// BANNERSH-162: handler attached to the preview <img>'s @load — captures the
+// generated image's natural dimensions so the printed-banner sizing math has a
+// real ratio (rather than the placeholder 360x150 sent at generation time).
+function onPreviewImageLoaded(e: Event) {
+  const img = e.target as HTMLImageElement
+  if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+    aiImageNaturalRatio.value = img.naturalWidth / img.naturalHeight
+  }
+}
 
 // BANNERSH-87: mirror the local creditsRemaining ref into the shared store so
 // the navbar credit badge updates the instant a generation succeeds, without
@@ -459,6 +572,9 @@ async function selectPastDesign(item: DesignRequestListItem) {
     const detail = await getDesignRequest(item.id)
     designRequestId.value = item.id
     currentDesignRequest.value = detail
+    // BANNERSH-162: clear the cached natural ratio so the loaded image's @load
+    // event becomes the authoritative source for the post-generation picker.
+    aiImageNaturalRatio.value = null
     // Pre-fill the editable fields so "Generer ny versjon" / "Gå tilbake og endre"
     // start from the same inputs the user picked last time.
     personName.value = detail.personName
@@ -502,6 +618,9 @@ function returnToWizardIdle() {
   // credits — see `isOutOfGenerations` guard in generateBanner()).
   currentDesignRequest.value = null
   designRequestId.value = null
+  // BANNERSH-162: drop the cached natural ratio so the quality picker is
+  // ready for whatever ratio the next generation produces.
+  aiImageNaturalRatio.value = null
   localStorage.removeItem('ai_banner_draft_id')
   step.value = 2
 }
@@ -601,6 +720,9 @@ function goToStep(s: 1 | 2 | 3) {
 async function generateBanner() {
   if (genPhase.value === 'submitting' || genPhase.value === 'generating') return
   generateApiError.value = null
+  // BANNERSH-162: clear the cached natural ratio so the new image's load event
+  // is the authoritative source for the post-generation quality picker.
+  aiImageNaturalRatio.value = null
 
   // BANNERSH-83: when we already know this auth user has spent their free generation
   // and has 0 credits, surface the paywall *before* posting — otherwise the user sees
@@ -874,6 +996,9 @@ async function regenerate() {
   if (!designRequestId.value || regenerating.value) return
   regenerateError.value = null
   regenerating.value = true
+  // BANNERSH-162: clear the natural ratio so the re-generated image's load
+  // event resets the quality picker dimensions.
+  aiImageNaturalRatio.value = null
   try {
     const integrity = await generateRequestIntegrity()
     const resp = await regenerateDesignRequest(
@@ -1476,129 +1601,9 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- Quality / size selection -->
-        <div>
-          <div class="field-label" style="margin-bottom:12px">Velg kvalitet og størrelse</div>
-          <div class="quality-grid">
-
-            <!-- Option 1: Høykvalitet -->
-            <button
-              type="button"
-              class="quality-btn"
-              :class="{ 'quality-btn-active': selectedQuality === 'high' }"
-              @click="selectedQuality = 'high'"
-            >
-              <span v-if="option1State.comingSoon" class="coming-soon-pill">Kommer snart</span>
-              <div class="quality-btn-title">Høykvalitet</div>
-              <div class="quality-btn-sub">3 års fargegaranti</div>
-              <div class="quality-btn-dims">ca. 360 × 150 cm</div>
-              <div class="quality-btn-price">
-                <template v-if="option1State.loading">
-                  <i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i>
-                </template>
-                <template v-else-if="option1State.price !== null">
-                  {{ formatNok(option1State.price) }}
-                </template>
-                <template v-else>–</template>
-              </div>
-            </button>
-
-            <!-- Option 2: God kvalitet -->
-            <button
-              type="button"
-              class="quality-btn"
-              :class="{ 'quality-btn-active': selectedQuality === 'good' }"
-              @click="selectedQuality = 'good'"
-            >
-              <span v-if="option2State.comingSoon" class="coming-soon-pill">Kommer snart</span>
-              <div class="quality-btn-title">God kvalitet</div>
-              <div class="quality-btn-sub">3 måneders fargegaranti</div>
-              <div class="quality-btn-dims">ca. 300 × 180 cm</div>
-              <div class="quality-btn-price">
-                <template v-if="option2State.loading">
-                  <i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i>
-                </template>
-                <template v-else-if="option2State.price !== null">
-                  {{ formatNok(option2State.price) }}
-                </template>
-                <template v-else>–</template>
-              </div>
-            </button>
-
-            <!-- Option 3: Custom -->
-            <button
-              type="button"
-              class="quality-btn"
-              :class="{ 'quality-btn-active': selectedQuality === 'custom' }"
-              @click="selectedQuality = 'custom'"
-            >
-              <span v-if="customState.comingSoon" class="coming-soon-pill">Kommer snart</span>
-              <div class="quality-btn-title">Egendefinert</div>
-              <div class="quality-btn-sub">Velg kvalitet og størrelse</div>
-              <div class="quality-btn-dims">skriv inn mål</div>
-              <div class="quality-btn-price" style="color:var(--faint);font-size:13px">
-                <template v-if="customState.loading">
-                  <i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i>
-                </template>
-                <template v-else-if="customState.price !== null">
-                  {{ formatNok(customState.price) }}
-                </template>
-                <template v-else>–</template>
-              </div>
-            </button>
-
-          </div>
-
-          <!-- Custom option inline form -->
-          <div v-if="selectedQuality === 'custom'" class="custom-size-form">
-            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
-              <div>
-                <label class="field-label" style="margin-bottom:6px">Bredde (cm)</label>
-                <input
-                  v-model.number="customWidth"
-                  type="number"
-                  min="50"
-                  max="2000"
-                  class="dark-input"
-                  style="width:110px"
-                  placeholder="f.eks. 300"
-                />
-              </div>
-              <div>
-                <label class="field-label" style="margin-bottom:6px">Høyde (cm)</label>
-                <input
-                  v-model.number="customHeight"
-                  type="number"
-                  min="50"
-                  max="500"
-                  class="dark-input"
-                  style="width:110px"
-                  placeholder="f.eks. 150"
-                />
-              </div>
-              <div>
-                <label class="field-label" style="margin-bottom:6px">Materialkvalitet</label>
-                <div style="display:flex;gap:8px">
-                  <button
-                    type="button"
-                    class="mat-btn"
-                    :class="{ 'mat-btn-active': customMaterialGsm === 400 }"
-                    @click="customMaterialGsm = 400"
-                  >400g</button>
-                  <button
-                    type="button"
-                    class="mat-btn"
-                    :class="{ 'mat-btn-active': customMaterialGsm === 680 }"
-                    @click="customMaterialGsm = 680"
-                  >680g</button>
-                </div>
-              </div>
-            </div>
-            <div v-if="customState.comingSoon" style="margin-top:8px;font-size:13px;color:var(--gold)">
-              <i class="fa-solid fa-clock"></i> Denne kombinasjonen er ikke tilgjengelig ennå.
-            </div>
-          </div>
-        </div>
+        <!-- BANNERSH-162: quality / size selection is rendered BELOW the
+             generated banner preview (further down in this template) instead of
+             here, and is hidden until a banner has been generated. -->
       </div>
 
       <!-- ── Inline preview + generate area (BANNERSH-146) ─────────────── -->
@@ -1646,17 +1651,151 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Phase: ready — show the generated image -->
-        <div v-else-if="genPhase === 'ready' && currentDesignRequest" class="bb-panel" style="padding:0;overflow:hidden">
-          <img
-            v-if="currentDesignRequest.previewUrl"
-            :src="currentDesignRequest.previewUrl"
-            :alt="`AI-generert banner for ${currentDesignRequest.personName}`"
-            style="width:100%;height:auto;object-fit:contain;display:block"
-          />
-          <div v-else style="display:flex;align-items:center;justify-content:center;height:180px;color:var(--faint)">
-            Forhåndsvisning ikke tilgjengelig
+        <template v-else-if="genPhase === 'ready' && currentDesignRequest">
+          <div class="bb-panel" style="padding:0;overflow:hidden">
+            <img
+              v-if="currentDesignRequest.previewUrl"
+              :src="currentDesignRequest.previewUrl"
+              :alt="`AI-generert banner for ${currentDesignRequest.personName}`"
+              style="width:100%;height:auto;object-fit:contain;display:block"
+              @load="onPreviewImageLoaded"
+            />
+            <div v-else style="display:flex;align-items:center;justify-content:center;height:180px;color:var(--faint)">
+              Forhåndsvisning ikke tilgjengelig
+            </div>
           </div>
-        </div>
+
+          <!-- BANNERSH-162: quality / size picker rendered BELOW the preview.
+               Widths for the two preset options are derived from the AI image's
+               actual aspect ratio (set in onPreviewImageLoaded), and the custom
+               option's width/height inputs auto-link via that same ratio. -->
+          <div v-if="currentDesignRequest.previewUrl" class="bb-panel" style="margin-top:20px">
+            <div class="field-label" style="margin-bottom:12px">Velg kvalitet og størrelse</div>
+            <div class="quality-grid">
+
+              <!-- Option 1: Høykvalitet — 150 cm tall, width = 150 × image ratio -->
+              <button
+                type="button"
+                class="quality-btn"
+                :class="{ 'quality-btn-active': selectedQuality === 'high' }"
+                @click="selectedQuality = 'high'"
+              >
+                <span v-if="option1State.comingSoon" class="coming-soon-pill">Kommer snart</span>
+                <div class="quality-btn-title">Høykvalitet</div>
+                <div class="quality-btn-sub">3 års fargegaranti</div>
+                <div class="quality-btn-dims">ca. {{ highOptionWidthCm }} × 150 cm</div>
+                <div class="quality-btn-price">
+                  <template v-if="option1State.loading">
+                    <i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i>
+                  </template>
+                  <template v-else-if="option1State.price !== null">
+                    {{ formatNok(option1State.price) }}
+                  </template>
+                  <template v-else>–</template>
+                </div>
+              </button>
+
+              <!-- Option 2: God kvalitet — 180 cm tall, width = 180 × image ratio -->
+              <button
+                type="button"
+                class="quality-btn"
+                :class="{ 'quality-btn-active': selectedQuality === 'good' }"
+                @click="selectedQuality = 'good'"
+              >
+                <span v-if="option2State.comingSoon" class="coming-soon-pill">Kommer snart</span>
+                <div class="quality-btn-title">God kvalitet</div>
+                <div class="quality-btn-sub">3 måneders fargegaranti</div>
+                <div class="quality-btn-dims">ca. {{ goodOptionWidthCm }} × 180 cm</div>
+                <div class="quality-btn-price">
+                  <template v-if="option2State.loading">
+                    <i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i>
+                  </template>
+                  <template v-else-if="option2State.price !== null">
+                    {{ formatNok(option2State.price) }}
+                  </template>
+                  <template v-else>–</template>
+                </div>
+              </button>
+
+              <!-- Option 3: Custom -->
+              <button
+                type="button"
+                class="quality-btn"
+                :class="{ 'quality-btn-active': selectedQuality === 'custom' }"
+                @click="selectedQuality = 'custom'"
+              >
+                <span v-if="customState.comingSoon" class="coming-soon-pill">Kommer snart</span>
+                <div class="quality-btn-title">Egendefinert</div>
+                <div class="quality-btn-sub">Velg kvalitet og størrelse</div>
+                <div class="quality-btn-dims">skriv inn mål</div>
+                <div class="quality-btn-price" style="color:var(--faint);font-size:13px">
+                  <template v-if="customState.loading">
+                    <i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i>
+                  </template>
+                  <template v-else-if="customState.price !== null">
+                    {{ formatNok(customState.price) }}
+                  </template>
+                  <template v-else>–</template>
+                </div>
+              </button>
+
+            </div>
+
+            <!-- Custom option inline form (width ↔ height linked via image ratio) -->
+            <div v-if="selectedQuality === 'custom'" class="custom-size-form">
+              <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+                <div>
+                  <label class="field-label" style="margin-bottom:6px">Bredde (cm)</label>
+                  <input
+                    v-model.number="customWidth"
+                    type="number"
+                    min="50"
+                    max="2000"
+                    class="dark-input"
+                    style="width:110px"
+                    placeholder="f.eks. 300"
+                  />
+                </div>
+                <div>
+                  <label class="field-label" style="margin-bottom:6px">Høyde (cm)</label>
+                  <input
+                    v-model.number="customHeight"
+                    type="number"
+                    min="50"
+                    max="500"
+                    class="dark-input"
+                    style="width:110px"
+                    placeholder="f.eks. 150"
+                  />
+                </div>
+                <div>
+                  <label class="field-label" style="margin-bottom:6px">Materialkvalitet</label>
+                  <div style="display:flex;gap:8px">
+                    <button
+                      type="button"
+                      class="mat-btn"
+                      :class="{ 'mat-btn-active': customMaterialGsm === 400 }"
+                      @click="customMaterialGsm = 400"
+                    >400g</button>
+                    <button
+                      type="button"
+                      class="mat-btn"
+                      :class="{ 'mat-btn-active': customMaterialGsm === 680 }"
+                      @click="customMaterialGsm = 680"
+                    >680g</button>
+                  </div>
+                </div>
+              </div>
+              <p v-if="aiImageAspectRatio" style="margin-top:8px;font-size:12.5px;color:var(--faint)">
+                <i class="fa-solid fa-link"></i>
+                Bredde og høyde er låst til bildets forhold — endrer du den ene oppdateres den andre.
+              </p>
+              <div v-if="customState.comingSoon" style="margin-top:8px;font-size:13px;color:var(--gold)">
+                <i class="fa-solid fa-clock"></i> Denne kombinasjonen er ikke tilgjengelig ennå.
+              </div>
+            </div>
+          </div>
+        </template>
 
         <!-- Phase: error -->
         <div v-else-if="genPhase === 'error'" class="preview-generating preview-error-frame">
@@ -1844,8 +1983,8 @@ onBeforeUnmount(() => {
               <div>
                 <dt class="field-label" style="margin-bottom:3px">Størrelse</dt>
                 <dd style="color:var(--text)">
-                  <span v-if="selectedQuality === 'high'">Høykvalitet — ca. 360 × 150 cm</span>
-                  <span v-else-if="selectedQuality === 'good'">God kvalitet — ca. 300 × 180 cm</span>
+                  <span v-if="selectedQuality === 'high'">Høykvalitet — ca. {{ highOptionWidthCm }} × 150 cm</span>
+                  <span v-else-if="selectedQuality === 'good'">God kvalitet — ca. {{ goodOptionWidthCm }} × 180 cm</span>
                   <span v-else>Egendefinert — {{ customWidth ?? '?' }} × {{ customHeight ?? '?' }} cm</span>
                 </dd>
               </div>
@@ -1938,6 +2077,7 @@ onBeforeUnmount(() => {
             :src="currentDesignRequest.previewUrl"
             :alt="`AI-generert banner for ${currentDesignRequest.personName}`"
             style="width:100%;height:auto;object-fit:contain;display:block"
+            @load="onPreviewImageLoaded"
           />
           <div v-else style="display:flex;align-items:center;justify-content:center;height:240px;color:var(--faint)">
             Forhåndsvisning ikke tilgjengelig
@@ -2172,6 +2312,7 @@ onBeforeUnmount(() => {
             :src="currentDesignRequest.previewUrl"
             :alt="`AI-generert banner for ${currentDesignRequest.personName}`"
             style="width:100%;height:auto;object-fit:contain;display:block"
+            @load="onPreviewImageLoaded"
           />
           <div v-else style="display:flex;align-items:center;justify-content:center;height:240px;color:var(--faint)">
             Forhåndsvisning ikke tilgjengelig
