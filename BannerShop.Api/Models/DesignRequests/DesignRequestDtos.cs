@@ -24,9 +24,14 @@ public class CreateManualDesignRequestDto
     [Required, StringLength(500)]
     public string ThemeDescription { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Banner dimensions. Legacy values: '16:9' (266×150 cm) and '18:9' (300×150 cm).
+    /// New values: 'WxH' format, e.g. '250x150', '270x180', or any custom dimension.
+    /// </summary>
     [Required]
-    [RegularExpression("^(16:9|18:9)$", ErrorMessage = "AspectRatio must be '16:9' or '18:9'.")]
-    public string AspectRatio { get; set; } = "16:9";
+    [RegularExpression(@"^(16:9|18:9|\d{1,4}x\d{1,4})$",
+        ErrorMessage = "AspectRatio must be '16:9', '18:9', or a 'WxH' dimension string.")]
+    public string AspectRatio { get; set; } = "250x150";
 
     /// <summary>Optional BannerDesign id for an uploaded portrait photo.</summary>
     public int? UploadedPhotoBannerDesignId { get; set; }

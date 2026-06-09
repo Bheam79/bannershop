@@ -43,7 +43,15 @@ const personName = ref('')
 const personAge = ref<number | null>(null)
 const textContent = ref('')
 const themeDescription = ref('')
-const aspectRatio = ref<'16:9' | '18:9'>('16:9')
+
+// ── Step 2: Quality / size selection ─────────────────────────────────────────
+type QualityOption = 'high' | 'good' | 'custom'
+const selectedQuality = ref<QualityOption>('high')
+
+// Custom option inputs
+const customWidth = ref<number | null>(null)
+const customHeight = ref<number | null>(null)
+const customMaterialGsm = ref<400 | 680>(400)
 
 // ── Step 3: Review + Stripe payment ──────────────────────────────────────────
 const stripeRef = ref<Stripe | null>(null)
@@ -64,14 +72,21 @@ const completedRequestId = ref<number | null>(null)
 // ── BANNERSH-104: design fee + banner production cost breakdown ──────────────
 // The manual flow charges the customer for BOTH the designer's work AND the
 // printed banner upfront. The design fee is a fixed 495 NOK; the banner cost
-// is recalculated from /api/sizes whenever the aspect ratio changes so the
-// summary panel can show the customer the full total before they pay.
+// is resolved per quality option from /api/sizes.
 const DESIGN_FEE_NOK = 495
 const sizes = ref<BannerSize[]>([])
 const sizesLoaded = ref(false)
-const bannerPriceNok = ref<number | null>(null)
-const bannerPriceLoading = ref(false)
 const bannerPriceError = ref<string | null>(null)
+
+// Per-option state
+interface OptionPriceState {
+  price: number | null
+  loading: boolean
+  comingSoon: boolean
+}
+const option1State = ref<OptionPriceState>({ price: null, loading: false, comingSoon: false })
+const option2State = ref<OptionPriceState>({ price: null, loading: false, comingSoon: false })
+const customState  = ref<OptionPriceState>({ price: null, loading: false, comingSoon: false })
 
 // ── Computed helpers ──────────────────────────────────────────────────────────
 const selectedTemplate = computed(() =>
@@ -84,64 +99,119 @@ const templateName = computed(() => {
   return language.value === 'en' ? t.nameEn : t.nameNb
 })
 
-const aspectDimensions = computed(() => {
-  if (aspectRatio.value === '18:9') return { width: 300, height: 150 }
-  return { width: 266, height: 150 }
+// Dimensions for the currently selected quality option
+const selectedDimensions = computed(() => {
+  if (selectedQuality.value === 'high') return { width: 250, height: 150 }
+  if (selectedQuality.value === 'good') return { width: 270, height: 180 }
+  return { width: customWidth.value ?? 0, height: customHeight.value ?? 0 }
 })
 
-// ── Banner cost resolution (BANNERSH-104) ───────────────────────────────────
-// Mirrors `ResolveBannerProductionCostAsync` on the backend: prefer an exact
-// fixed-width BannerSize match for the chosen aspect-ratio dimensions; fall
-// back to a custom-width size of the same height. Keep these two implementations
-// in sync — if the customer sees one number on the page they need to be charged
-// the same number, not a recomputed one.
+// Aspect ratio string sent to the backend
+const aspectRatioForBackend = computed(() => {
+  const { width, height } = selectedDimensions.value
+  if (width > 0 && height > 0) return `${width}x${height}`
+  return '250x150'
+})
+
+// Label for the summary panel
+const selectedQualityLabel = computed(() => {
+  if (selectedQuality.value === 'high') return 'Høykvalitet (3 år)'
+  if (selectedQuality.value === 'good') return 'God kvalitet (3 mnd)'
+  return `Egendefinert ${customMaterialGsm.value}g`
+})
+
+// Current banner price based on which option is selected
+const bannerPriceNok = computed<number | null>(() => {
+  if (selectedQuality.value === 'high') return option1State.value.price
+  if (selectedQuality.value === 'good') return option2State.value.price
+  return customState.value.price
+})
+
+const bannerPriceLoading = computed(() => {
+  if (selectedQuality.value === 'high') return option1State.value.loading
+  if (selectedQuality.value === 'good') return option2State.value.loading
+  return customState.value.loading
+})
+
+// ── Banner cost resolution ────────────────────────────────────────────────────
 function pickBannerSize(
   catalog: BannerSize[],
   targetWidthCm: number,
   targetHeightCm: number,
+  materialGsm?: number,
 ): { size: BannerSize; customWidthCm?: number } | null {
+  // Prefer exact fixed-width match
   const exact = catalog.find(
     (s) =>
       s.isActive &&
       !s.isCustomWidth &&
       s.widthCm === targetWidthCm &&
-      s.heightCm === targetHeightCm,
+      s.heightCm === targetHeightCm &&
+      (materialGsm == null || s.material?.weightGsm === materialGsm),
   )
   if (exact) return { size: exact }
+  // Fall back to custom-width of the same height
   const custom = catalog.find(
-    (s) => s.isActive && s.isCustomWidth && s.heightCm === targetHeightCm,
+    (s) =>
+      s.isActive &&
+      s.isCustomWidth &&
+      s.heightCm === targetHeightCm &&
+      (materialGsm == null || s.material?.weightGsm === materialGsm),
   )
   if (custom) return { size: custom, customWidthCm: targetWidthCm }
   return null
 }
 
-async function refreshBannerPrice() {
-  bannerPriceError.value = null
-  if (!sizesLoaded.value) return
-  bannerPriceLoading.value = true
+function isComingSoon(size: BannerSize): boolean {
+  if (!size.availableFrom) return false
+  return new Date(size.availableFrom) > new Date()
+}
+
+async function computeOptionPrice(
+  targetWidth: number,
+  targetHeight: number,
+  state: OptionPriceState,
+  materialGsm?: number,
+) {
+  state.loading = true
+  state.price = null
+  state.comingSoon = false
   try {
-    const { width, height } = aspectDimensions.value
-    const picked = pickBannerSize(sizes.value, width, height)
+    const picked = pickBannerSize(sizes.value, targetWidth, targetHeight, materialGsm)
     if (!picked) {
-      // No matching size in the catalog — backend will degrade to design-fee-only
-      // pricing and the customer is only charged the 495 kr. Mirror that here so
-      // the summary total matches the actual Stripe charge.
-      bannerPriceNok.value = 0
+      state.price = null
       return
     }
-    bannerPriceNok.value = await fetchPrice(picked.size.id, picked.customWidthCm)
-  } catch (e: unknown) {
-    const ex = e as { message?: string }
-    bannerPriceError.value =
-      ex.message || 'Kunne ikke beregne bannerkostnad. Total kan avvike på betalingsskjemaet.'
-    bannerPriceNok.value = null
+    state.comingSoon = isComingSoon(picked.size)
+    state.price = await fetchPrice(picked.size.id, picked.customWidthCm)
+  } catch {
+    state.price = null
   } finally {
-    bannerPriceLoading.value = false
+    state.loading = false
   }
 }
 
-watch(aspectRatio, () => {
-  if (sizesLoaded.value) void refreshBannerPrice()
+async function refreshAllPrices() {
+  if (!sizesLoaded.value) return
+  bannerPriceError.value = null
+  await Promise.all([
+    computeOptionPrice(250, 150, option1State.value),
+    computeOptionPrice(270, 180, option2State.value),
+  ])
+}
+
+async function refreshCustomPrice() {
+  const w = customWidth.value ?? 0
+  const h = customHeight.value ?? 0
+  if (!sizesLoaded.value || w <= 0 || h <= 0) {
+    customState.value.price = null
+    return
+  }
+  await computeOptionPrice(w, h, customState.value, customMaterialGsm.value)
+}
+
+watch([customWidth, customHeight, customMaterialGsm], () => {
+  if (sizesLoaded.value) void refreshCustomPrice()
 })
 
 const totalPriceNok = computed(() => {
@@ -154,12 +224,15 @@ const step1Valid = computed(
   () => selectedTemplateId.value !== null && uploadedPhotoBannerDesignId.value !== null,
 )
 
-const step2Valid = computed(
-  () =>
-    personName.value.trim().length > 0 &&
-    textContent.value.trim().length > 0 &&
-    themeDescription.value.trim().length > 0,
-)
+const step2Valid = computed(() => {
+  if (!personName.value.trim() || !textContent.value.trim() || !themeDescription.value.trim())
+    return false
+  // Custom option requires both dimensions to be filled
+  if (selectedQuality.value === 'custom') {
+    return (customWidth.value ?? 0) > 0 && (customHeight.value ?? 0) > 0
+  }
+  return true
+})
 
 // ── Category icons (FontAwesome) ──────────────────────────────────────────────
 const categoryIconClass: Record<string, string> = {
@@ -273,7 +346,10 @@ function saveFormState() {
       personAge: personAge.value,
       textContent: textContent.value,
       themeDescription: themeDescription.value,
-      aspectRatio: aspectRatio.value,
+      selectedQuality: selectedQuality.value,
+      customWidth: customWidth.value,
+      customHeight: customHeight.value,
+      customMaterialGsm: customMaterialGsm.value,
     }))
   } catch { /* non-fatal */ }
 }
@@ -353,7 +429,7 @@ async function pay() {
       personAge: personAge.value ?? undefined,
       textContent: textContent.value.trim(),
       themeDescription: themeDescription.value.trim(),
-      aspectRatio: aspectRatio.value,
+      aspectRatio: aspectRatioForBackend.value,
       uploadedPhotoBannerDesignId: uploadedPhotoBannerDesignId.value ?? undefined,
     })
     reqId = resp.designRequestId
@@ -402,12 +478,9 @@ function formatNok(n: number): string {
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 async function loadSizesAndPrice() {
   try {
-    // The catalog rarely changes during a session — fetch once and reuse for
-    // subsequent aspect-ratio toggles (refreshBannerPrice only re-hits the
-    // /sizes/{id}/price endpoint, not the full list).
     sizes.value = await fetchSizes()
     sizesLoaded.value = true
-    await refreshBannerPrice()
+    await refreshAllPrices()
   } catch (e: unknown) {
     const ex = e as { message?: string }
     bannerPriceError.value =
@@ -430,7 +503,10 @@ onMounted(async () => {
         personAge: number | null
         textContent: string
         themeDescription: string
-        aspectRatio: '16:9' | '18:9'
+        selectedQuality?: QualityOption
+        customWidth?: number | null
+        customHeight?: number | null
+        customMaterialGsm?: 400 | 680
       }
       if (s.selectedTemplateId !== null) selectedTemplateId.value = s.selectedTemplateId
       language.value = s.language
@@ -439,7 +515,10 @@ onMounted(async () => {
       personAge.value = s.personAge
       textContent.value = s.textContent
       themeDescription.value = s.themeDescription
-      aspectRatio.value = s.aspectRatio
+      if (s.selectedQuality) selectedQuality.value = s.selectedQuality
+      if (s.customWidth != null) customWidth.value = s.customWidth
+      if (s.customHeight != null) customHeight.value = s.customHeight
+      if (s.customMaterialGsm) customMaterialGsm.value = s.customMaterialGsm
       sessionStorage.removeItem(MANUAL_SESSION_KEY)
       // If form is complete, go straight to step 3 (payment)
       if (step1Valid.value && step2Valid.value) {
@@ -746,49 +825,126 @@ onBeforeUnmount(() => {
             />
           </div>
 
-          <!-- Aspect ratio -->
+          <!-- Quality / size selection -->
           <div>
-            <div class="field-label" style="margin-bottom:10px">Størrelsesformat</div>
-            <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <div class="field-label" style="margin-bottom:12px">Velg kvalitet og størrelse</div>
+            <div class="quality-grid">
+
+              <!-- Option 1: Høykvalitet -->
               <button
                 type="button"
-                class="ratio-btn"
-                :class="{ 'ratio-btn-active': aspectRatio === '16:9' }"
-                @click="aspectRatio = '16:9'"
+                class="quality-btn"
+                :class="{ 'quality-btn-active': selectedQuality === 'high' }"
+                @click="selectedQuality = 'high'"
               >
-                <div style="font-weight:700;margin-bottom:2px">16:9 (Standard)</div>
-                <div style="font-size:12px;opacity:.7">ca. 266 × 150 cm</div>
+                <span v-if="option1State.comingSoon" class="coming-soon-pill">Kommer snart</span>
+                <div class="quality-btn-title">Høykvalitet</div>
+                <div class="quality-btn-sub">3 års fargegaranti</div>
+                <div class="quality-btn-dims">ca. 250 × 150 cm</div>
+                <div class="quality-btn-price">
+                  <template v-if="option1State.loading">
+                    <i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i>
+                  </template>
+                  <template v-else-if="option1State.price !== null">
+                    {{ formatNok(option1State.price) }}
+                  </template>
+                  <template v-else>–</template>
+                </div>
               </button>
+
+              <!-- Option 2: God kvalitet -->
               <button
                 type="button"
-                class="ratio-btn"
-                :class="{ 'ratio-btn-active': aspectRatio === '18:9' }"
-                @click="aspectRatio = '18:9'"
+                class="quality-btn"
+                :class="{ 'quality-btn-active': selectedQuality === 'good' }"
+                @click="selectedQuality = 'good'"
               >
-                <div style="font-weight:700;margin-bottom:2px">18:9 (Bred)</div>
-                <div style="font-size:12px;opacity:.7">ca. 300 × 150 cm</div>
+                <span v-if="option2State.comingSoon" class="coming-soon-pill">Kommer snart</span>
+                <div class="quality-btn-title">God kvalitet</div>
+                <div class="quality-btn-sub">3 måneders fargegaranti</div>
+                <div class="quality-btn-dims">ca. 270 × 180 cm</div>
+                <div class="quality-btn-price">
+                  <template v-if="option2State.loading">
+                    <i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i>
+                  </template>
+                  <template v-else-if="option2State.price !== null">
+                    {{ formatNok(option2State.price) }}
+                  </template>
+                  <template v-else>–</template>
+                </div>
               </button>
+
+              <!-- Option 3: Custom -->
+              <button
+                type="button"
+                class="quality-btn"
+                :class="{ 'quality-btn-active': selectedQuality === 'custom' }"
+                @click="selectedQuality = 'custom'"
+              >
+                <span v-if="customState.comingSoon" class="coming-soon-pill">Kommer snart</span>
+                <div class="quality-btn-title">Egendefinert</div>
+                <div class="quality-btn-sub">Velg kvalitet og størrelse</div>
+                <div class="quality-btn-dims">skriv inn mål</div>
+                <div class="quality-btn-price" style="color:var(--faint);font-size:12px">
+                  <template v-if="customState.loading">
+                    <i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i>
+                  </template>
+                  <template v-else-if="customState.price !== null">
+                    {{ formatNok(customState.price) }}
+                  </template>
+                  <template v-else>–</template>
+                </div>
+              </button>
+
             </div>
-            <!-- Size preview -->
-            <div class="size-preview" style="margin-top:16px">
-              <div
-                class="ratio-visual"
-                :style="aspectRatio === '16:9'
-                  ? { width: '96px', height: '54px' }
-                  : { width: '108px', height: '54px' }"
-              >
-                {{ aspectRatio }}
+
+            <!-- Custom option inline form -->
+            <div v-if="selectedQuality === 'custom'" class="custom-size-form">
+              <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+                <div>
+                  <label class="field-label" style="margin-bottom:6px">Bredde (cm)</label>
+                  <input
+                    v-model.number="customWidth"
+                    type="number"
+                    min="50"
+                    max="2000"
+                    class="dark-input"
+                    style="width:110px"
+                    placeholder="f.eks. 300"
+                  />
+                </div>
+                <div>
+                  <label class="field-label" style="margin-bottom:6px">Høyde (cm)</label>
+                  <input
+                    v-model.number="customHeight"
+                    type="number"
+                    min="50"
+                    max="500"
+                    class="dark-input"
+                    style="width:110px"
+                    placeholder="f.eks. 150"
+                  />
+                </div>
+                <div>
+                  <label class="field-label" style="margin-bottom:6px">Materialkvalitet</label>
+                  <div style="display:flex;gap:8px">
+                    <button
+                      type="button"
+                      class="mat-btn"
+                      :class="{ 'mat-btn-active': customMaterialGsm === 400 }"
+                      @click="customMaterialGsm = 400"
+                    >400g</button>
+                    <button
+                      type="button"
+                      class="mat-btn"
+                      :class="{ 'mat-btn-active': customMaterialGsm === 680 }"
+                      @click="customMaterialGsm = 680"
+                    >680g</button>
+                  </div>
+                </div>
               </div>
-              <div>
-                <div style="font-size:14.5px;font-weight:700;color:var(--text)">
-                  Ca. {{ aspectDimensions.width }} × {{ aspectDimensions.height }} cm
-                </div>
-                <div style="font-size:12.5px;color:var(--faint);margin-top:2px">
-                  {{ aspectRatio === '16:9'
-                    ? 'Standard panoramabanner – passer de fleste anledninger'
-                    : 'Bredere format – flott for lange vegger og rekkverk'
-                  }}
-                </div>
+              <div v-if="customState.comingSoon" style="margin-top:8px;font-size:12.5px;color:var(--gold)">
+                <i class="fa-solid fa-clock"></i> Denne kombinasjonen er ikke tilgjengelig ennå.
               </div>
             </div>
           </div>
@@ -917,8 +1073,13 @@ onBeforeUnmount(() => {
                   <dd style="color:var(--text)">{{ themeDescription }}</dd>
                 </div>
                 <div>
-                  <dt class="field-label" style="margin-bottom:3px">Format</dt>
-                  <dd style="color:var(--text)">{{ aspectRatio }} — ca. {{ aspectDimensions.width }} × {{ aspectDimensions.height }} cm</dd>
+                  <dt class="field-label" style="margin-bottom:3px">Størrelse</dt>
+                  <dd style="color:var(--text)">
+                    {{ selectedQualityLabel }}
+                    <span v-if="selectedDimensions.width > 0 && selectedDimensions.height > 0">
+                      — ca. {{ selectedDimensions.width }} × {{ selectedDimensions.height }} cm
+                    </span>
+                  </dd>
                 </div>
                 <div>
                   <dt class="field-label" style="margin-bottom:3px">Portrettfoto</dt>
@@ -948,7 +1109,12 @@ onBeforeUnmount(() => {
                   <span style="color:var(--text);font-weight:600">{{ formatNok(DESIGN_FEE_NOK) }}</span>
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:center;font-size:14px;color:var(--muted)">
-                  <span>Banner ({{ aspectDimensions.width }}×{{ aspectDimensions.height }} cm)</span>
+                  <span>
+                    Banner
+                    <template v-if="selectedDimensions.width > 0 && selectedDimensions.height > 0">
+                      ({{ selectedDimensions.width }}×{{ selectedDimensions.height }} cm)
+                    </template>
+                  </span>
                   <span style="color:var(--text);font-weight:600">
                     <span v-if="bannerPriceLoading"><i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i></span>
                     <template v-else-if="bannerPriceNok !== null">{{ formatNok(bannerPriceNok) }}</template>
@@ -1145,44 +1311,98 @@ onBeforeUnmount(() => {
 .dark-input::placeholder { color: var(--faint); }
 .dark-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,106,61,.18); }
 
-/* ── Aspect ratio buttons ────────────────────────────────────── */
-.ratio-btn {
+/* ── Quality / size selector ─────────────────────────────────── */
+.quality-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+@media (max-width: 560px) { .quality-grid { grid-template-columns: 1fr; } }
+
+.quality-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   border: 2px solid var(--line);
-  border-radius: 12px;
-  padding: 12px 20px;
+  border-radius: 14px;
+  padding: 16px 14px 14px;
   font-size: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-family: var(--font-ui);
+  text-align: left;
+}
+.quality-btn:hover { border-color: var(--line-soft); color: var(--text); }
+.quality-btn-active {
+  border-color: var(--accent);
+  background: rgba(255,106,61,.08);
+  color: var(--text);
+  box-shadow: 0 0 0 2px rgba(255,106,61,.2);
+}
+.quality-btn-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+}
+.quality-btn-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.quality-btn-dims {
+  font-size: 12.5px;
+  color: var(--faint);
+}
+.quality-btn-price {
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* "Kommer snart" pill */
+.coming-soon-pill {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(231,185,78,.18);
+  border: 1px solid rgba(231,185,78,.4);
+  color: #e7d08a;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 99px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* Custom size inline form */
+.custom-size-form {
+  margin-top: 14px;
+  padding: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+}
+
+/* Material selector buttons */
+.mat-btn {
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
   background: transparent;
   color: var(--muted);
   font-family: var(--font-ui);
-  text-align: left;
 }
-.ratio-btn:hover { color: var(--text); }
-.ratio-btn-active { border-color: var(--accent); color: var(--text); background: rgba(255,106,61,.08); }
-
-/* ── Size preview ────────────────────────────────────────────── */
-.size-preview {
-  background: var(--surface-2);
-  border: 1px solid var(--line-soft);
-  border-radius: 12px;
-  padding: 16px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-.ratio-visual {
-  border: 2px solid var(--accent);
-  background: rgba(255,106,61,.08);
-  border-radius: 6px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11.5px;
-  color: var(--accent-2);
-  font-weight: 700;
-}
+.mat-btn:hover { color: var(--text); }
+.mat-btn-active { border-color: var(--accent); color: var(--text); background: rgba(255,106,61,.08); }
 
 /* ── Stripe mount ────────────────────────────────────────────── */
 .stripe-mount {

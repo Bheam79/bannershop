@@ -333,22 +333,15 @@ public sealed class DesignRequestService : IDesignRequestService
     }
 
     /// <summary>
-    /// Maps a manual-builder aspect ratio (16:9 / 18:9) to a concrete <see cref="BannerSize"/>
-    /// and returns its production cost. Prefers an exact fixed-width match; falls back to a
-    /// custom-width size with the same height; returns 0 / null when no matching size exists
-    /// (so the manual flow degrades to design-fee-only rather than crashing).
+    /// Maps a banner dimension string to a concrete <see cref="BannerSize"/> and returns its
+    /// production cost. Accepts legacy '16:9'/'18:9' strings and the new 'WxH' format (e.g. '250x150').
+    /// Prefers an exact fixed-width match; falls back to a custom-width size with the same height;
+    /// returns 0 / null when no matching size exists so the manual flow degrades to design-fee-only.
     /// </summary>
     private async Task<(decimal PriceNok, int? BannerSizeId, int? CustomWidthCm)> ResolveBannerProductionCostAsync(
         string aspectRatio, CancellationToken ct)
     {
-        // Keep these in sync with `aspectDimensions` in ManualBannerBuilderView.vue
-        // (the customer sees these numbers labelled "ca. X × Y cm" on step 2).
-        var (targetWidthCm, targetHeightCm) = aspectRatio switch
-        {
-            "18:9" => (300, 150),
-            "16:9" => (266, 150),
-            _      => (266, 150),
-        };
+        var (targetWidthCm, targetHeightCm) = ParseDimensions(aspectRatio);
 
         // Prefer an exact fixed-width match — avoids the custom-width surcharge.
         var exact = await _db.BannerSizes
@@ -384,6 +377,29 @@ public sealed class DesignRequestService : IDesignRequestService
             "Falling back to design-fee-only pricing.",
             aspectRatio, targetWidthCm, targetHeightCm);
         return (0m, null, null);
+    }
+
+    /// <summary>
+    /// Parses a dimension string into (widthCm, heightCm).
+    /// Accepts '16:9' (→ 266×150), '18:9' (→ 300×150), or 'WxH' format (e.g. '250x150').
+    /// Falls back to 250×150 for unrecognised values.
+    /// </summary>
+    private static (int Width, int Height) ParseDimensions(string aspectRatio)
+    {
+        if (aspectRatio == "18:9") return (300, 150);
+        if (aspectRatio == "16:9") return (266, 150);
+
+        // WxH format: e.g. "250x150", "270x180"
+        var sep = aspectRatio.IndexOfAny(['x', 'X']);
+        if (sep > 0
+            && int.TryParse(aspectRatio[..sep], out var w)
+            && int.TryParse(aspectRatio[(sep + 1)..], out var h)
+            && w > 0 && h > 0)
+        {
+            return (w, h);
+        }
+
+        return (250, 150); // safe default
     }
 
     public async Task<DesignRequestActionResult> RequestRevisionAsync(int id, int callerUserId, string comment, CancellationToken ct = default)
@@ -750,8 +766,8 @@ public sealed class DesignRequestService : IDesignRequestService
             return;
         }
 
-        // 18:9 (2:1) aspect ratio → 180 cm tall banner; all others → 150 cm.
-        var selectedHeightCm = r.AspectRatio == "18:9" ? 180 : 150;
+        // Derive banner height from the stored aspect ratio / dimension string.
+        var selectedHeightCm = ParseDimensions(r.AspectRatio ?? "250x150").Height;
         var computedWidthCm  = BannerDimensions.ComputeWidthCm(widthPx, heightPx, rotationDegrees: 0, selectedHeightCm);
 
         // Derive a display name from the storage path.
