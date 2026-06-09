@@ -36,10 +36,12 @@ public class DesignRequestsController : ControllerBase
         var result = await _service.CreateManualRequestAsync(userId, req, ct);
         if (!result.Success) return BadRequest(new { error = result.Error });
 
+        // BANNERSH-136: no Stripe PI — ClientSecret is intentionally null.
+        // Payment is collected via cart/checkout after the frontend adds both lines.
         return Ok(new CreateDesignRequestResponseDto
         {
             DesignRequestId = result.DesignRequestId,
-            ClientSecret = result.ClientSecret ?? string.Empty,
+            ClientSecret = null,
             TotalNok = result.TotalNok,
             DesignPriceNok = result.DesignPriceNok,
             BannerPriceNok = result.BannerPriceNok

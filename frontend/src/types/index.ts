@@ -180,4 +180,11 @@ export interface CartItem {
   notes?: string
   /** Optional reference to a BannerDesign uploaded via the banner builder. */
   designId?: number
+  /**
+   * For manual-design cart lines (both the banner line and the designer-fee line),
+   * carries the DesignRequest id so the production team can link them — and so future
+   * cart UI tasks can render the designer-fee line differently from a plain banner.
+   * Set to the same value on both lines of a manual-design order (BANNERSH-136).
+   */
+  designRequestId?: number
 }

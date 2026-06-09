@@ -78,13 +78,23 @@ public class CreateAiDesignRequestDto
     public int? UploadedPhotoBannerDesignId { get; set; }
 }
 
-/// <summary>Response from POST /api/design-requests/manual.</summary>
+/// <summary>
+/// Response from POST /api/design-requests/manual.
+/// BANNERSH-136: <see cref="ClientSecret"/> is now null — no Stripe PaymentIntent is created
+/// upfront. Payment is collected at checkout after the customer adds the banner + designer-fee
+/// cart lines and completes the normal checkout flow.
+/// </summary>
 public class CreateDesignRequestResponseDto
 {
     public int DesignRequestId { get; set; }
-    public string ClientSecret { get; set; } = string.Empty;
 
-    /// <summary>Total amount the customer is being charged (design + banner production).</summary>
+    /// <summary>
+    /// Always null as of BANNERSH-136. Kept in the DTO for backward compatibility with any
+    /// in-flight client code that reads the field; callers should not rely on it.
+    /// </summary>
+    public string? ClientSecret { get; set; }
+
+    /// <summary>Total amount the customer will pay (design + banner production) — for display only.</summary>
     public decimal TotalNok { get; set; }
 
     /// <summary>

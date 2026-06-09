@@ -230,10 +230,10 @@ public class DesignRequestServiceTests
         result.Error.Should().Contain("IP");
     }
 
-    // ── BANNERSH-104: Manual flow charges design fee + banner production cost ──
+    // ── BANNERSH-136: Manual flow no longer creates a Stripe PaymentIntent upfront ──
 
     [Fact]
-    public async Task CreateManualRequestAsync_charges_design_fee_plus_banner_cost_when_catalog_seeded()
+    public async Task CreateManualRequestAsync_does_not_call_stripe_and_returns_price_breakdown_when_catalog_seeded()
     {
         using var db = DbHelper.CreateInMemory();
         await SeedAsync(db);
@@ -251,17 +251,18 @@ public class DesignRequestServiceTests
         result.DesignPriceNok.Should().Be(495m);
         result.BannerPriceNok.Should().BeGreaterThan(0m);
         result.TotalNok.Should().Be(result.DesignPriceNok + result.BannerPriceNok);
+        result.ClientSecret.Should().BeNull();   // BANNERSH-136: no Stripe PI
 
         var saved = db.DesignRequests.Single();
         saved.PriceNok.Should().Be(495m);
         saved.BannerPriceNok.Should().Be(result.BannerPriceNok);
         saved.BannerSizeId.Should().NotBeNull();
+        saved.StripePaymentIntentId.Should().BeNull(); // never set in the new flow
 
-        // The Stripe charge must match the breakdown — this is the regression we're
-        // guarding against (BANNERSH-104: previously only the 495 kr design fee was
-        // charged, leaving the physical-banner production cost uncollected).
+        // BANNERSH-136: no Stripe charge is made upfront.
         stripe.Verify(s => s.CreatePaymentIntentAsync(
-            It.IsAny<int>(), 1, result.TotalNok, It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<decimal>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -282,28 +283,59 @@ public class DesignRequestServiceTests
         result.DesignPriceNok.Should().Be(495m);
         result.BannerPriceNok.Should().Be(0m);
         result.TotalNok.Should().Be(495m);
+        result.ClientSecret.Should().BeNull();   // BANNERSH-136: no Stripe PI
         db.DesignRequests.Single().BannerSizeId.Should().BeNull();
 
+        // BANNERSH-136: no Stripe call even in degraded mode.
         stripe.Verify(s => s.CreatePaymentIntentAsync(
-            It.IsAny<int>(), 1, 495m, It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<decimal>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
-    // ── MarkPaidAndEnqueueAsync: Manual mode (495 kr) still triggers, AI is dead-code ──
+    // ── MarkPaidAndEnqueueAsync: legacy Manual mode still works via dead-code guard ──
 
     [Fact]
-    public async Task MarkPaidAndEnqueueAsync_manual_flips_to_InProgress()
+    public async Task MarkPaidAndEnqueueAsync_manual_legacy_pi_flips_to_InProgress()
     {
+        // Simulate a legacy in-flight Manual request that was created BEFORE BANNERSH-136
+        // and still has a StripePaymentIntentId (the new flow never sets this field, so
+        // this test seeds the PI manually rather than going through CreateManualRequestAsync).
         using var db = DbHelper.CreateInMemory();
         await SeedAsync(db);
         var (svc, _, queue, _) = MakeService(db);
 
-        var manualResult = await svc.CreateManualRequestAsync(1, new CreateManualDesignRequestDto
+        var order = new Order
         {
-            TemplateId = 1, Language = "nb", PersonName = "Ola", TextContent = "Hi",
-            ThemeDescription = "x", AspectRatio = "16:9"
-        });
-        manualResult.Success.Should().BeTrue();
-        // Simulate the prior state — CreateManualRequest sets Pending and StripePaymentIntentId.
+            UserId = 1,
+            OrderType = OrderType.ManualDesign,
+            OrderState = OrderState.Draft,
+            Status = OrderStatus.Draft,
+            TotalNok = 495m,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        db.Orders.Add(order);
+        var legacyRequest = new BannerShop.Core.Entities.DesignRequest
+        {
+            UserId = 1,
+            BannerTemplateId = 1,
+            Mode = DesignRequestMode.Manual,
+            Language = "nb",
+            PersonName = "Ola",
+            TextContent = "Hi",
+            ThemeDescription = "x",
+            AspectRatio = "16:9",
+            Status = DesignRequestStatus.Pending,
+            PriceNok = 495m,
+            StripePaymentIntentId = "pi_test_123",
+            RegenerationsRemaining = 0,
+            Order = order,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        db.DesignRequests.Add(legacyRequest);
+        await db.SaveChangesAsync();
+
         await svc.MarkPaidAndEnqueueAsync("pi_test_123");
 
         var saved = db.DesignRequests.Single();

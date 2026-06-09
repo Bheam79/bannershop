@@ -315,18 +315,14 @@ public sealed class DesignRequestService : IDesignRequestService
         _db.DesignRequests.Add(request);
         await _db.SaveChangesAsync(ct);  // Order + DesignRequest saved in one transaction
 
-        var intent = await _stripe.CreatePaymentIntentAsync(
-            orderId: -request.Id,
-            userId: userId,
-            amountNok: totalNok,
-            ct: ct);
+        // BANNERSH-136: no Stripe PaymentIntent is created upfront. Payment is collected
+        // via the normal cart/checkout pipeline — the frontend adds a banner line + a 495 kr
+        // designer-fee line to the cart after this call returns, then routes to /checkout.
+        // The MarkPaidAndEnqueueAsync webhook path is kept as a dead-code guard for any
+        // legacy in-flight manual PIs (from before this deploy).
 
-        request.StripePaymentIntentId = intent.PaymentIntentId;
-        await _db.SaveChangesAsync(ct);
-
-        return DesignRequestActionResult.Ok(
+        return DesignRequestActionResult.OkNoPayment(
             request.Id,
-            intent.ClientSecret,
             totalNok,
             designPriceNok: ManualPriceNok,
             bannerPriceNok: bannerPriceNok);

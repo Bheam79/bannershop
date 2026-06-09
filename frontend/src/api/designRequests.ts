@@ -64,15 +64,20 @@ export interface RegeneratePaywall402 {
   paywallMetadata: { reason: string }
 }
 
-/** Kept for /design-requests/manual (still Stripe-gated). */
+/**
+ * Response from POST /api/design-requests/manual (BANNERSH-136).
+ * No `clientSecret` — payment is collected via the cart/checkout flow after the
+ * frontend adds the banner + designer-fee lines to the cart.
+ */
 export interface CreateDesignRequestResponse {
   designRequestId: number
-  clientSecret: string
-  /** Total charged to the customer (design fee + banner production cost). */
+  /** Always null as of BANNERSH-136. Kept for backward compatibility; do not use. */
+  clientSecret: string | null
+  /** Total the customer will pay (design fee + banner production cost) — for display only. */
   totalNok: number
-  /** Design fee portion (BANNERSH-104). 495 NOK on the manual flow today. */
+  /** Design fee portion. 495 NOK for the manual flow. */
   designPriceNok: number
-  /** Physical-banner production cost portion (BANNERSH-104). May be 0 in degraded mode. */
+  /** Physical-banner production cost portion. May be 0 in degraded mode. */
   bannerPriceNok: number
 }
 
@@ -237,7 +242,11 @@ export interface CreateManualRequestPayload {
   uploadedPhotoBannerDesignId?: number | null
 }
 
-/** Create a Manual design request (495 kr) and return a Stripe PaymentIntent client secret. */
+/**
+ * Create a Manual design request (495 kr designer fee + banner production cost).
+ * BANNERSH-136: no Stripe PaymentIntent is created — the response carries price
+ * breakdown only. The caller must add both cart lines and route to /checkout.
+ */
 export async function createManualRequest(
   req: CreateManualRequestPayload,
 ): Promise<CreateDesignRequestResponse> {

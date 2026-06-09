@@ -26,7 +26,12 @@ public interface IDesignRequestService
         CreateAiDesignRequestDto req,
         CancellationToken ct = default);
 
-    /// <summary>Creates a Manual <c>DesignRequest</c> + Stripe PaymentIntent (495 NOK).</summary>
+    /// <summary>
+    /// Creates a Manual <c>DesignRequest</c> and a linked Draft <c>Order</c>.
+    /// No Stripe PaymentIntent is created — payment is collected via the normal cart/checkout
+    /// pipeline (BANNERSH-136: banner line + 495 kr designer-fee line added to cart by the
+    /// frontend, then completed via the same checkout flow as custom-upload orders).
+    /// </summary>
     Task<DesignRequestActionResult> CreateManualRequestAsync(int userId, CreateManualDesignRequestDto req, CancellationToken ct = default);
 
     /// <summary>Submits a customer revision comment (Manual flow only, max 1 free revision).</summary>
@@ -125,10 +130,20 @@ public record DesignRequestActionResult(
     /// <paramref name="totalNok"/> must equal <paramref name="designPriceNok"/> +
     /// <paramref name="bannerPriceNok"/> — both are echoed back to the frontend so the
     /// summary panel can render the line items without recomputing them client-side.
+    /// Legacy overload — kept for compatibility; use the no-clientSecret version for new code.
     /// </summary>
     public static DesignRequestActionResult Ok(int id, string clientSecret, decimal totalNok,
         decimal designPriceNok, decimal bannerPriceNok)
         => new(true, null, id, clientSecret, totalNok, null, designPriceNok, bannerPriceNok);
+
+    /// <summary>
+    /// BANNERSH-136: Manual-flow success without a Stripe client secret.
+    /// Payment is collected at checkout via the cart; the frontend adds two lines
+    /// (banner + 495 kr designer fee) after this call succeeds.
+    /// </summary>
+    public static DesignRequestActionResult OkNoPayment(int id, decimal totalNok,
+        decimal designPriceNok, decimal bannerPriceNok)
+        => new(true, null, id, null, totalNok, null, designPriceNok, bannerPriceNok);
 
     public static DesignRequestActionResult Ok(DesignRequestDetailDto detail)
         => new(true, null, detail.Id, null, detail.PriceNok, detail, detail.PriceNok, 0m);
