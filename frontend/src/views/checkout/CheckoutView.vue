@@ -19,6 +19,22 @@ onMounted(() => {
   }
 })
 
+// Also redirect if the cart becomes empty after a removal during checkout.
+watch(
+  () => cart.items.length,
+  (n) => {
+    if (n === 0) router.replace('/')
+  },
+)
+
+// ── Remove item from cart ────────────────────────────────────────────────────
+function removeItem(idx: number) {
+  const item = cart.items[idx]
+  const label = item?.bannerSizeName ?? 'banner'
+  if (!window.confirm(`Fjerne "${label}" fra handlekurven?`)) return
+  cart.removeItem(idx)
+}
+
 // ── Form state (pre-fill from checkout store if user came back) ──────────────
 const recipientName = ref(checkout.recipientName)
 const addressLine1 = ref(checkout.address.line1)
@@ -186,7 +202,7 @@ function formatNok(n: number): string {
               :key="idx"
               class="item-row"
             >
-              <div>
+              <div class="item-info">
                 <div class="item-name">{{ item.bannerSizeName }}</div>
                 <div class="item-sub">
                   {{ item.quantity }} stk × {{ formatNok(item.unitPriceNok + item.eyeletFeeNok) }}
@@ -198,6 +214,15 @@ function formatNok(n: number): string {
               <div class="item-price">
                 {{ formatNok((item.unitPriceNok + item.eyeletFeeNok) * item.quantity) }}
               </div>
+              <button
+                type="button"
+                class="item-remove"
+                :aria-label="`Fjern ${item.bannerSizeName} fra handlekurven`"
+                title="Fjern fra handlekurven"
+                @click="removeItem(idx)"
+              >
+                <i class="fa-solid fa-trash"></i>
+              </button>
             </li>
           </ul>
         </section>
@@ -528,14 +553,39 @@ function formatNok(n: number): string {
 .item-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.75rem;
   padding: 0.75rem 0;
   border-bottom: 1px solid var(--line-soft);
 }
 .item-row:last-child { border-bottom: none; }
+.item-info { flex: 1; min-width: 0; }
 .item-name { font-weight: 600; color: var(--text); }
 .item-sub { font-size: 0.8125rem; color: var(--muted); margin-top: 0.125rem; }
 .item-price { font-weight: 700; color: var(--text); }
+.item-remove {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.item-remove:hover {
+  color: #e05252;
+  border-color: rgba(220, 60, 60, 0.55);
+  background: rgba(220, 60, 60, 0.08);
+}
+.item-remove:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(220, 60, 60, 0.25);
+  border-color: rgba(220, 60, 60, 0.7);
+}
 
 /* ── Form ───────────────────────────────────────────────────── */
 .form-grid {
