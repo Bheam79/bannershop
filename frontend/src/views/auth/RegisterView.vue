@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import apiClient from '@/api/client'
 import type { AuthResponse } from '@/types'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 
 const name = ref('')
@@ -35,7 +36,8 @@ async function handleSubmit() {
       phone: phone.value || null,
     })
     auth.setAuth(data)
-    router.push('/account')
+    const redirect = (route.query.redirect as string) || '/account'
+    router.push(redirect)
   } catch (err: any) {
     error.value = err.response?.data?.error ?? 'Registrering feilet. Prøv igjen.'
   } finally {
@@ -53,7 +55,7 @@ async function handleSubmit() {
       <h1 class="display" style="font-size:28px;margin-bottom:6px;color:var(--text)">Opprett konto</h1>
       <p style="color:var(--muted);font-size:15px;margin-bottom:28px">
         Har du allerede konto?
-        <RouterLink to="/login" style="color:var(--accent);font-weight:600;text-decoration:none">Logg inn</RouterLink>
+        <RouterLink :to="route.query.redirect ? `/login?redirect=${encodeURIComponent(route.query.redirect as string)}` : '/login'" style="color:var(--accent);font-weight:600;text-decoration:none">Logg inn</RouterLink>
       </p>
 
       <form @submit.prevent="handleSubmit" style="display:grid;gap:18px">
