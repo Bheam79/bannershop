@@ -143,11 +143,11 @@ public class DesignRequestsController : ControllerBase
 
     // ── POST /api/design-requests/{id}/approve ───────────────────────────────
     [HttpPost("{id:int}/approve")]
-    public async Task<IActionResult> Approve(int id, CancellationToken ct)
+    public async Task<IActionResult> Approve(int id, [FromBody] ApproveDesignRequestDto? req, CancellationToken ct)
     {
         var userId = GetUserId();
         if (userId == 0) return Unauthorized();
-        var result = await _service.ApproveAsync(id, userId, ct);
+        var result = await _service.ApproveAsync(id, userId, req?.SelectedHeightCm, ct);
         if (!result.Success) return BadRequest(new { error = result.Error });
         return Ok(result.Detail);
     }

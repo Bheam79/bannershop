@@ -43,8 +43,12 @@ public interface IDesignRequestService
     /// <summary>Fetch detail for a single request — returns null when not found or not owned by caller (unless admin).</summary>
     Task<DesignRequestDetailDto?> GetAsync(int id, int callerUserId, bool isAdmin, CancellationToken ct = default);
 
-    /// <summary>Customer marks the AwaitingApproval preview as Approved.</summary>
-    Task<DesignRequestActionResult> ApproveAsync(int id, int callerUserId, CancellationToken ct = default);
+    /// <summary>
+    /// Customer marks the AwaitingApproval preview as Approved.
+    /// Pass <paramref name="selectedHeightCm"/> from the quality/size picker so the resulting
+    /// BannerDesign is created at the height the customer actually chose.
+    /// </summary>
+    Task<DesignRequestActionResult> ApproveAsync(int id, int callerUserId, int? selectedHeightCm = null, CancellationToken ct = default);
 
     /// <summary>
     /// Called after a successful Stripe payment: flips status Pending→InProgress.

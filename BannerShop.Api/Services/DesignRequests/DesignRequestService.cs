@@ -501,7 +501,7 @@ public sealed class DesignRequestService : IDesignRequestService
         return ToDetail(r);
     }
 
-    public async Task<DesignRequestActionResult> ApproveAsync(int id, int callerUserId, CancellationToken ct = default)
+    public async Task<DesignRequestActionResult> ApproveAsync(int id, int callerUserId, int? selectedHeightCm = null, CancellationToken ct = default)
     {
         var r = await _db.DesignRequests
             .Include(x => x.Revisions)
@@ -519,6 +519,17 @@ public sealed class DesignRequestService : IDesignRequestService
         r.CustomerApprovedAt = DateTime.UtcNow;
         r.UpdatedAt = DateTime.UtcNow;
 
+        // If the customer chose a specific print height in the quality/size picker, persist it
+        // so reorders and admin views also see the correct size (BANNERSH-168).
+        if (selectedHeightCm.HasValue && selectedHeightCm.Value > 0)
+        {
+            // Rewrite AspectRatio to WxH so TryCreateFinalBannerDesignAsync picks up the height.
+            // Width is derived from the actual pixel dimensions, so we store a placeholder width
+            // that will be recomputed from the image; the height is the authoritative user choice.
+            var existingWidth = ParseDimensions(r.AspectRatio ?? "360x150").Width;
+            r.AspectRatio = $"{existingWidth}x{selectedHeightCm.Value}";
+        }
+
         // Advance the linked Order state: CustomerApproval → InProduction (BANNERSH-109).
         if (r.OrderId.HasValue)
         {
@@ -533,7 +544,8 @@ public sealed class DesignRequestService : IDesignRequestService
         }
 
         // Create a BannerDesign row so the customer can add the result directly to the print cart.
-        await TryCreateFinalBannerDesignAsync(r, ct);
+        // Pass the customer-chosen height so the print size matches their picker selection.
+        await TryCreateFinalBannerDesignAsync(r, ct, overrideHeightCm: selectedHeightCm);
 
         await _db.SaveChangesAsync(ct);
         return DesignRequestActionResult.Ok(ToDetail(r));
@@ -778,8 +790,13 @@ public sealed class DesignRequestService : IDesignRequestService
     /// If the design request has a final image asset and no BannerDesign row yet,
     /// creates one so the customer can add the design to the print cart.
     /// The caller is responsible for calling <c>SaveChangesAsync</c> afterwards.
+    /// <para>
+    /// Pass <paramref name="overrideHeightCm"/> when the customer has chosen a specific
+    /// print height in the quality/size picker (BANNERSH-168). When null the height is
+    /// derived from the stored <see cref="DesignRequest.AspectRatio"/> for backward compat.
+    /// </para>
     /// </summary>
-    internal async Task TryCreateFinalBannerDesignAsync(DesignRequest r, CancellationToken ct)
+    internal async Task TryCreateFinalBannerDesignAsync(DesignRequest r, CancellationToken ct, int? overrideHeightCm = null)
     {
         if (r.FinalBannerDesignId.HasValue)
             return; // Already created — idempotent.
@@ -815,8 +832,13 @@ public sealed class DesignRequestService : IDesignRequestService
             return;
         }
 
-        // Derive banner height from the stored aspect ratio / dimension string.
-        var selectedHeightCm = ParseDimensions(r.AspectRatio ?? "250x150").Height;
+        // Prefer the customer's explicit picker selection; fall back to the stored AspectRatio.
+        // BANNERSH-168: overrideHeightCm carries the user's choice from the quality/size picker
+        // (high=150 cm, good=180 cm, custom=user-entered) so the BannerDesign is created at the
+        // height the customer actually saw in the UI.
+        var selectedHeightCm = (overrideHeightCm is > 0)
+            ? overrideHeightCm.Value
+            : ParseDimensions(r.AspectRatio ?? "250x150").Height;
         var computedWidthCm  = BannerDimensions.ComputeWidthCm(widthPx, heightPx, rotationDegrees: 0, selectedHeightCm);
 
         // Derive a display name from the storage path.

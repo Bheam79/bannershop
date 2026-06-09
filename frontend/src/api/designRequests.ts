@@ -185,9 +185,16 @@ export async function getDesignRequest(id: number): Promise<DesignRequestDetail>
   return data
 }
 
-/** Customer approves the preview result. Returns the updated design request detail. */
-export async function approveDesignRequest(id: number): Promise<DesignRequestDetail> {
-  const { data } = await apiClient.post<DesignRequestDetail>(`/design-requests/${id}/approve`)
+/**
+ * Customer approves the preview result. Returns the updated design request detail.
+ * Pass `selectedHeightCm` from the quality/size picker so the BannerDesign is created
+ * at the height the customer chose (e.g. 150 = High, 180 = Good, or a custom value).
+ * BANNERSH-168: without this the approve endpoint always uses the stored AspectRatio
+ * and the cart adds 300×150 regardless of picker selection.
+ */
+export async function approveDesignRequest(id: number, selectedHeightCm?: number): Promise<DesignRequestDetail> {
+  const body = selectedHeightCm != null && selectedHeightCm > 0 ? { selectedHeightCm } : {}
+  const { data } = await apiClient.post<DesignRequestDetail>(`/design-requests/${id}/approve`, body)
   return data
 }
 

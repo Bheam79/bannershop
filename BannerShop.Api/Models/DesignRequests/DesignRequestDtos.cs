@@ -44,6 +44,22 @@ public class RequestRevisionDto
     public string Comment { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// Optional body for POST /api/design-requests/{id}/approve.
+/// Carries the customer's size-picker selection so the BannerDesign is created at
+/// the height they actually chose (high=150 cm, good=180 cm, or a custom value).
+/// When omitted the height falls back to the stored AspectRatio (backward-compat).
+/// </summary>
+public class ApproveDesignRequestDto
+{
+    /// <summary>
+    /// Height (cm) the customer selected in the AI quality/size picker.
+    /// Must be a positive integer; values outside [50, 400] are ignored.
+    /// </summary>
+    [Range(50, 400)]
+    public int? SelectedHeightCm { get; set; }
+}
+
 /// <summary>POST /api/design-requests/ai body.</summary>
 public class CreateAiDesignRequestDto
 {
@@ -67,7 +83,8 @@ public class CreateAiDesignRequestDto
     public string ThemeDescription { get; set; } = string.Empty;
 
     [Required]
-    [RegularExpression("^(16:9|18:9)$", ErrorMessage = "AspectRatio must be '16:9' or '18:9'.")]
+    [RegularExpression(@"^(16:9|18:9|\d{1,4}x\d{1,4})$",
+        ErrorMessage = "AspectRatio must be '16:9', '18:9', or a 'WxH' dimension string.")]
     public string AspectRatio { get; set; } = "16:9";
 
     /// <summary>

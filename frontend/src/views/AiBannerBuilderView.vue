@@ -879,7 +879,11 @@ async function approve() {
   approveError.value = null
   approving.value = true
   try {
-    const approved = await approveDesignRequest(designRequestId.value)
+    // BANNERSH-168: pass the customer's chosen print height so the backend creates
+    // the BannerDesign at the correct size (high=150 cm, good=180 cm, or custom).
+    const chosen = selectedDimensions.value
+    const heightForApprove = chosen.height > 0 ? chosen.height : undefined
+    const approved = await approveDesignRequest(designRequestId.value, heightForApprove)
     currentDesignRequest.value = approved
     localStorage.removeItem('ai_banner_draft_id')
 
