@@ -6,6 +6,7 @@ public class BannerSizeDto
     public int? WidthCm { get; set; }
     public int HeightCm { get; set; }
     public bool IsCustomWidth { get; set; }
+    public bool IsCustomHeight { get; set; }
     public string Name { get; set; } = string.Empty;
     public bool IsActive { get; set; }
     public int MaterialId { get; set; }

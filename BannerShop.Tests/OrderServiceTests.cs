@@ -82,7 +82,7 @@ public class OrderServiceTests
                 Express:  new ShippingOption(700m, 1, "SERVICEPAKKE", "Servicepakke")));
 
         // Default pricing mock
-        pricingMock.Setup(p => p.CalculatePriceAsync(It.IsAny<BannerSize>(), It.IsAny<int?>()))
+        pricingMock.Setup(p => p.CalculatePriceAsync(It.IsAny<BannerSize>(), It.IsAny<int?>(), It.IsAny<int?>()))
             .ReturnsAsync(810m);
 
         // Default stripe mock

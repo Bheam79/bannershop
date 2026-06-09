@@ -52,6 +52,7 @@ public class AdminSizesController : ControllerBase
             WidthCm = req.WidthCm,
             HeightCm = req.HeightCm,
             IsCustomWidth = req.IsCustomWidth,
+            IsCustomHeight = req.IsCustomHeight,
             Name = req.Name,
             IsActive = req.IsActive,
             MaterialId = req.MaterialId,
@@ -79,6 +80,7 @@ public class AdminSizesController : ControllerBase
         s.WidthCm = req.WidthCm;
         s.HeightCm = req.HeightCm;
         s.IsCustomWidth = req.IsCustomWidth;
+        s.IsCustomHeight = req.IsCustomHeight;
         s.Name = req.Name;
         s.IsActive = req.IsActive;
         s.MaterialId = req.MaterialId;
@@ -116,6 +118,7 @@ public class AdminSizesController : ControllerBase
         WidthCm = s.WidthCm,
         HeightCm = s.HeightCm,
         IsCustomWidth = s.IsCustomWidth,
+        IsCustomHeight = s.IsCustomHeight,
         Name = s.Name,
         IsActive = s.IsActive,
         MaterialId = s.MaterialId,

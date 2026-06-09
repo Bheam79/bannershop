@@ -12,7 +12,7 @@ public class PricingService : IPricingService
 
     public PricingService(BannerShopDbContext db) => _db = db;
 
-    public async Task<decimal> CalculatePriceAsync(BannerSize size, int? customWidthCm = null)
+    public async Task<decimal> CalculatePriceAsync(BannerSize size, int? customWidthCm = null, int? customHeightCm = null)
     {
         // Fixed-price sizes (e.g. 300×180 cm at 699 NOK) skip the formula AND the panel
         // multiplier — admins set those manually and are expected to bake any gluing
@@ -50,15 +50,18 @@ public class PricingService : IPricingService
                 ?? throw new InvalidOperationException($"Banner size {size.Id} has no WidthCm.");
         }
 
+        // Determine the effective height (may be caller-supplied for custom-height sizes)
+        int heightCm = size.IsCustomHeight ? (customHeightCm ?? 0) : size.HeightCm;
+
         decimal basePrice;
-        if (widthCm <= 0)
+        if (widthCm <= 0 || heightCm <= 0)
         {
-            // No width provided for a custom-width size → return minimum price + surcharges
+            // Missing dimension for a custom size → return minimum price + surcharges
             basePrice = minimumPrice;
         }
         else
         {
-            var areaSqm = (widthCm / 100m) * (size.HeightCm / 100m);
+            var areaSqm = (widthCm / 100m) * (heightCm / 100m);
             basePrice = Math.Max(minimumPrice, areaSqm * basePricePerSqm);
         }
 
@@ -79,13 +82,12 @@ public class PricingService : IPricingService
         // the 150 cm edge along the roll — no panel split needed. Using widthCm alone
         // incorrectly applied ×2/×3 multipliers to landscape banners whose height fits.
         var maxWidthPerPanel = ResolveMaxBannerWidthCm(size.Material);
-        var effectiveDim = widthCm > 0 ? Math.Min(widthCm, size.HeightCm) : 0;
+        var effectiveDim = (widthCm > 0 && heightCm > 0) ? Math.Min(widthCm, heightCm) : 0;
         var panels = PanelsNeeded(effectiveDim, maxWidthPerPanel, panelOverlapCm);
 
-        // The custom-width surcharge is a one-time administrative fee for non-standard
-        // widths — it does NOT scale with the number of panels. Add it after multiplying
-        // the per-panel production cost (basePrice × panels).
-        var surcharge = size.IsCustomWidth ? customSurcharge : 0m;
+        // The custom-width/height surcharge is a one-time administrative fee for
+        // non-standard dimensions — it does NOT scale with the number of panels.
+        var surcharge = (size.IsCustomWidth || size.IsCustomHeight) ? customSurcharge : 0m;
         return basePrice * panels + surcharge;
     }
 

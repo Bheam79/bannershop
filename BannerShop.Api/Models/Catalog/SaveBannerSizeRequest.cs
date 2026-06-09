@@ -11,6 +11,8 @@ public class SaveBannerSizeRequest
 
     public bool IsCustomWidth { get; set; }
 
+    public bool IsCustomHeight { get; set; }
+
     [Required, MaxLength(100)]
     public string Name { get; set; } = string.Empty;
 

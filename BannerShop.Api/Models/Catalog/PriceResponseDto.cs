@@ -4,5 +4,6 @@ public class PriceResponseDto
 {
     public int SizeId { get; set; }
     public int? CustomWidthCm { get; set; }
+    public int? CustomHeightCm { get; set; }
     public decimal PriceNok { get; set; }
 }

@@ -233,6 +233,9 @@ namespace BannerShop.Infrastructure.Data.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
 
+                    b.Property<bool>("IsCustomHeight")
+                        .HasColumnType("tinyint(1)");
+
                     b.Property<bool>("IsCustomWidth")
                         .HasColumnType("tinyint(1)");
 
@@ -262,6 +265,7 @@ namespace BannerShop.Infrastructure.Data.Migrations
                             Id = 1,
                             HeightCm = 150,
                             IsActive = true,
+                            IsCustomHeight = false,
                             IsCustomWidth = false,
                             MaterialId = 1,
                             Name = "300 × 150 cm",
@@ -273,6 +277,7 @@ namespace BannerShop.Infrastructure.Data.Migrations
                             Id = 2,
                             HeightCm = 150,
                             IsActive = true,
+                            IsCustomHeight = false,
                             IsCustomWidth = false,
                             MaterialId = 1,
                             Name = "350 × 150 cm",
@@ -284,6 +289,7 @@ namespace BannerShop.Infrastructure.Data.Migrations
                             Id = 3,
                             HeightCm = 150,
                             IsActive = true,
+                            IsCustomHeight = false,
                             IsCustomWidth = false,
                             MaterialId = 1,
                             Name = "400 × 150 cm",
@@ -295,6 +301,7 @@ namespace BannerShop.Infrastructure.Data.Migrations
                             Id = 4,
                             HeightCm = 150,
                             IsActive = true,
+                            IsCustomHeight = false,
                             IsCustomWidth = false,
                             MaterialId = 1,
                             Name = "450 × 150 cm",
@@ -306,6 +313,7 @@ namespace BannerShop.Infrastructure.Data.Migrations
                             Id = 5,
                             HeightCm = 150,
                             IsActive = true,
+                            IsCustomHeight = false,
                             IsCustomWidth = false,
                             MaterialId = 1,
                             Name = "500 × 150 cm",
@@ -317,6 +325,7 @@ namespace BannerShop.Infrastructure.Data.Migrations
                             Id = 6,
                             HeightCm = 150,
                             IsActive = true,
+                            IsCustomHeight = false,
                             IsCustomWidth = true,
                             MaterialId = 1,
                             Name = "Valgfri bredde × 150 cm",
@@ -328,6 +337,7 @@ namespace BannerShop.Infrastructure.Data.Migrations
                             FixedPrice = 699m,
                             HeightCm = 180,
                             IsActive = true,
+                            IsCustomHeight = false,
                             IsCustomWidth = false,
                             MaterialId = 2,
                             Name = "300 × 180 cm",

@@ -18,6 +18,7 @@ const form = reactive({
   widthCm: null as number | null,
   heightCm: 150,
   isCustomWidth: false,
+  isCustomHeight: false,
   name: '',
   isActive: true,
   materialId: 1,
@@ -48,7 +49,7 @@ function openCreate() {
   isEditing.value = false
   hasFixedPrice.value = false
   Object.assign(form, {
-    id: 0, widthCm: null, heightCm: 150, isCustomWidth: false,
+    id: 0, widthCm: null, heightCm: 150, isCustomWidth: false, isCustomHeight: false,
     name: '', isActive: true, materialId: materials.value[0]?.id ?? 1,
     fixedPrice: null, sortOrder: (sizes.value.length + 1) * 10,
   })
@@ -61,7 +62,8 @@ function openEdit(s: BannerSize) {
   hasFixedPrice.value = s.fixedPrice != null
   Object.assign(form, {
     id: s.id, widthCm: s.widthCm, heightCm: s.heightCm,
-    isCustomWidth: s.isCustomWidth, name: s.name, isActive: s.isActive,
+    isCustomWidth: s.isCustomWidth, isCustomHeight: s.isCustomHeight,
+    name: s.name, isActive: s.isActive,
     materialId: s.materialId, fixedPrice: s.fixedPrice, sortOrder: s.sortOrder,
   })
   modalError.value = ''
@@ -73,8 +75,9 @@ async function save() {
   saving.value = true
   const payload = {
     widthCm: form.isCustomWidth ? null : form.widthCm,
-    heightCm: form.heightCm,
+    heightCm: form.isCustomHeight ? 150 : form.heightCm,
     isCustomWidth: form.isCustomWidth,
+    isCustomHeight: form.isCustomHeight,
     name: form.name,
     isActive: form.isActive,
     materialId: form.materialId,
@@ -175,7 +178,8 @@ onMounted(load)
           <tr v-for="s in sizes" :key="s.id" class="hover:bg-gray-700">
             <td class="px-4 py-3 font-medium text-gray-200">
               {{ s.name }}
-              <span v-if="s.isCustomWidth" class="ml-1 text-xs bg-purple-900/60 text-purple-300 px-1.5 py-0.5 rounded">Custom</span>
+              <span v-if="s.isCustomWidth" class="ml-1 text-xs bg-purple-900/60 text-purple-300 px-1.5 py-0.5 rounded">Custom bredde</span>
+              <span v-if="s.isCustomHeight" class="ml-1 text-xs bg-indigo-900/60 text-indigo-300 px-1.5 py-0.5 rounded">Custom høyde</span>
             </td>
             <td class="px-4 py-3 text-gray-400 text-xs">{{ s.material?.name }}</td>
             <td class="px-4 py-3 text-gray-300">
@@ -219,9 +223,15 @@ onMounted(load)
               <input v-model="form.name" type="text" required class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
 
-            <div class="flex items-center gap-2">
-              <input v-model="form.isCustomWidth" type="checkbox" id="customWidth" class="rounded" />
-              <label for="customWidth" class="text-sm text-gray-300">Valgfri bredde</label>
+            <div class="flex items-center gap-4 flex-wrap">
+              <div class="flex items-center gap-2">
+                <input v-model="form.isCustomWidth" type="checkbox" id="customWidth" class="rounded" />
+                <label for="customWidth" class="text-sm text-gray-300">Valgfri bredde</label>
+              </div>
+              <div class="flex items-center gap-2">
+                <input v-model="form.isCustomHeight" type="checkbox" id="customHeight" class="rounded" />
+                <label for="customHeight" class="text-sm text-gray-300">Valgfri høyde</label>
+              </div>
             </div>
 
             <div class="grid grid-cols-2 gap-3">
@@ -233,7 +243,11 @@ onMounted(load)
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-300 mb-1">Høyde (cm)</label>
-                <input v-model.number="form.heightCm" type="number" min="1" required class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <input v-model.number="form.heightCm" type="number" min="1"
+                  :required="!form.isCustomHeight"
+                  :disabled="form.isCustomHeight"
+                  :class="form.isCustomHeight ? 'opacity-40' : ''"
+                  class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
 

@@ -20,6 +20,7 @@ export interface BannerSize {
   widthCm: number | null
   heightCm: number
   isCustomWidth: boolean
+  isCustomHeight: boolean
   name: string
   isActive: boolean
   materialId: number

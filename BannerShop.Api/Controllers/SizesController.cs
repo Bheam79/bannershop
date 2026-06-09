@@ -19,9 +19,11 @@ public class SizesController : ControllerBase
         _pricing = pricing;
     }
 
-    // ── GET /api/sizes?customWidthCm=X ────────────────────────────────────────
+    // ── GET /api/sizes?customWidthCm=X&customHeightCm=Y ──────────────────────
     [HttpGet]
-    public async Task<IActionResult> GetSizes([FromQuery] int? customWidthCm = null)
+    public async Task<IActionResult> GetSizes(
+        [FromQuery] int? customWidthCm = null,
+        [FromQuery] int? customHeightCm = null)
     {
         var sizes = await _db.BannerSizes
             .Include(s => s.Material)
@@ -32,7 +34,7 @@ public class SizesController : ControllerBase
         var result = new List<BannerSizeDto>(sizes.Count);
         foreach (var s in sizes)
         {
-            var price = await _pricing.CalculatePriceAsync(s, customWidthCm);
+            var price = await _pricing.CalculatePriceAsync(s, customWidthCm, customHeightCm);
             result.Add(ToDto(s, price));
         }
 
@@ -51,9 +53,12 @@ public class SizesController : ControllerBase
         return Ok(new { pricePerEyeletNok = pricePerEyelet });
     }
 
-    // ── GET /api/sizes/{id}/price?customWidthCm=X ─────────────────────────────
+    // ── GET /api/sizes/{id}/price?customWidthCm=X&customHeightCm=Y ───────────
     [HttpGet("{id:int}/price")]
-    public async Task<IActionResult> GetPrice(int id, [FromQuery] int? customWidthCm = null)
+    public async Task<IActionResult> GetPrice(
+        int id,
+        [FromQuery] int? customWidthCm = null,
+        [FromQuery] int? customHeightCm = null)
     {
         // Include Material so PricingService can apply the multi-panel multiplier
         // (BANNERSH-88) when the requested width exceeds Material.MaxBannerWidthCm.
@@ -64,12 +69,15 @@ public class SizesController : ControllerBase
 
         if (size.IsCustomWidth && customWidthCm is null)
             return BadRequest(new { error = "customWidthCm is required for custom-width banner sizes." });
+        if (size.IsCustomHeight && customHeightCm is null)
+            return BadRequest(new { error = "customHeightCm is required for custom-height banner sizes." });
 
-        var price = await _pricing.CalculatePriceAsync(size, customWidthCm);
+        var price = await _pricing.CalculatePriceAsync(size, customWidthCm, customHeightCm);
         return Ok(new PriceResponseDto
         {
             SizeId = size.Id,
             CustomWidthCm = customWidthCm,
+            CustomHeightCm = customHeightCm,
             PriceNok = price
         });
     }
@@ -82,6 +90,7 @@ public class SizesController : ControllerBase
         WidthCm = s.WidthCm,
         HeightCm = s.HeightCm,
         IsCustomWidth = s.IsCustomWidth,
+        IsCustomHeight = s.IsCustomHeight,
         Name = s.Name,
         IsActive = s.IsActive,
         MaterialId = s.MaterialId,

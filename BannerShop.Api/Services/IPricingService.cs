@@ -8,9 +8,10 @@ public interface IPricingService
     /// <summary>
     /// Calculate the base banner price (excluding optional eyelet addon).
     /// For custom-width sizes, pass <paramref name="customWidthCm"/> to get an accurate quote;
+    /// for custom-height sizes, pass <paramref name="customHeightCm"/>;
     /// when omitted the minimum price is used as a lower-bound estimate.
     /// </summary>
-    Task<decimal> CalculatePriceAsync(BannerSize size, int? customWidthCm = null);
+    Task<decimal> CalculatePriceAsync(BannerSize size, int? customWidthCm = null, int? customHeightCm = null);
 
     /// <summary>
     /// Calculate the total eyelet (malje) addon fee for a single banner of the given dimensions.
