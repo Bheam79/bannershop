@@ -260,8 +260,11 @@ public sealed class OpenAiImageService : IAiImageService
             prompt,
             quality,
             size = size.AsApiString(),
-            n = 1,
-            response_format = "b64_json"
+            n = 1
+            // response_format is not supported by gpt-image-* models; they always
+            // return b64_json by default.  Older DALL-E endpoints accepted this
+            // parameter, but sending it to gpt-image-1/gpt-image-2 causes a 400
+            // "Unknown parameter" error.
         };
 
         using var resp = await _http.PostAsJsonAsync("/v1/images/generations", payload, Json, ct);
@@ -280,7 +283,8 @@ public sealed class OpenAiImageService : IAiImageService
         content.Add(new StringContent(quality), "quality");
         content.Add(new StringContent(size.AsApiString()), "size");
         content.Add(new StringContent("1"), "n");
-        content.Add(new StringContent("b64_json"), "response_format");
+        // response_format omitted — gpt-image-* models always return b64_json and
+        // reject the parameter with a 400 "Unknown parameter" error.
 
         var bytes = await File.ReadAllBytesAsync(referenceAbsolutePath, ct);
         var imagePart = new ByteArrayContent(bytes);
