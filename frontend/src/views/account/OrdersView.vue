@@ -9,6 +9,7 @@ const router = useRouter()
 // ── Unified item type ─────────────────────────────────────────────────────────
 interface UnifiedItem {
   id: number
+  displayId: string           // e.g. 'O-3', 'AI-4', 'D-2' — unique across kinds
   kind: 'order' | 'design'
   typeLabel: string           // 'Eget' | 'AI' | 'Designer'
   typeBadgeClass: string
@@ -92,6 +93,7 @@ async function load() {
 
     const orderItems: UnifiedItem[] = ordersResult.items.map(o => ({
       id: o.id,
+      displayId: `O-${o.id}`,
       kind: 'order' as const,
       typeLabel: 'Eget',
       typeBadgeClass: 'badge-type-order',
@@ -107,6 +109,7 @@ async function load() {
 
     const drItems: UnifiedItem[] = drList.map(dr => ({
       id: dr.id,
+      displayId: dr.mode === 'Ai' ? `AI-${dr.id}` : `D-${dr.id}`,
       kind: 'design' as const,
       typeLabel: dr.mode === 'Ai' ? 'AI' : 'Designer',
       typeBadgeClass: dr.mode === 'Ai' ? 'badge-type-ai' : 'badge-type-designer',
@@ -225,7 +228,7 @@ function formatDate(iso: string): string {
                   </div>
                 </div>
               </td>
-              <td class="td td--id">#{{ item.id }}</td>
+              <td class="td td--id">#{{ item.displayId }}</td>
               <td class="td">
                 <span class="type-chip" :class="item.typeBadgeClass">
                   {{ item.typeLabel }}
@@ -277,7 +280,7 @@ function formatDate(iso: string): string {
             <div class="mobile-row__body">
               <div class="mobile-row__top">
                 <span class="type-chip" :class="item.typeBadgeClass">{{ item.typeLabel }}</span>
-                <span class="mobile-row__id">#{{ item.id }}</span>
+                <span class="mobile-row__id">#{{ item.displayId }}</span>
               </div>
               <div class="mobile-row__sub">{{ formatDate(item.date) }}</div>
               <div class="mobile-row__badges">
