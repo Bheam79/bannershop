@@ -835,11 +835,20 @@ onMounted(async () => {
   await loadCreditsBalance()
   await loadPastDesigns()
 
+  // BANNERSH-105: when arriving from a front-page category card the matching
+  // template has already been pre-selected by loadTemplates(); skip the
+  // template-picker step and drop the user straight into "Tilpass".
+  const categoryParam = (route.query.category as string | undefined)?.trim()
+
   // Resume a pending AI design from a previous session.
   // Common case: anonymous user generated a banner, registered/logged in, and was
   // redirected back here.  The design-id was stored in localStorage before they left.
+  //
+  // BANNERSH-124: skip draft resumption when the user arrived via a front-page
+  // category card (?category=…) — that signifies explicit intent to start a new
+  // banner, so we should NOT redirect them back to the previous draft.
   const draftIdStr = localStorage.getItem('ai_banner_draft_id')
-  if (draftIdStr && auth.isLoggedIn) {
+  if (draftIdStr && auth.isLoggedIn && !categoryParam) {
     const draftId = parseInt(draftIdStr, 10)
     if (!isNaN(draftId) && draftId > 0) {
       step.value = 3
@@ -849,10 +858,6 @@ onMounted(async () => {
     }
   }
 
-  // BANNERSH-105: when arriving from a front-page category card the matching
-  // template has already been pre-selected by loadTemplates(); skip the
-  // template-picker step and drop the user straight into "Tilpass".
-  const categoryParam = (route.query.category as string | undefined)?.trim()
   if (categoryParam && selectedTemplateId.value !== null) {
     step.value = 2
   }
