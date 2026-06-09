@@ -139,6 +139,12 @@ export interface AdminOrderFilter {
    * <c>orderType</c>=<c>CreditPack</c> explicitly overrides this.
    */
   includeCreditPacks?: boolean
+  /**
+   * BANNERSH-169: when true (default), AI banner orders with TotalNok == 0 are excluded
+   * from the admin list. These are free-first design-tracking orders with no items to
+   * produce. Set to false to show them (e.g. for design-review workflows).
+   */
+  excludeZeroValueAiOrders?: boolean
 }
 
 export async function listAdminOrders(filter: AdminOrderFilter = {}): Promise<OrdersPage> {
@@ -152,6 +158,8 @@ export async function listAdminOrders(filter: AdminOrderFilter = {}): Promise<Or
   if (filter.page) params.page = filter.page
   if (filter.pageSize) params.pageSize = filter.pageSize
   if (filter.includeCreditPacks) params.includeCreditPacks = true
+  // Only send if explicitly set to false (server default is true, so skip when true)
+  if (filter.excludeZeroValueAiOrders === false) params.excludeZeroValueAiOrders = false
   const { data } = await apiClient.get<OrdersPage>('/admin/orders', { params })
   return data
 }

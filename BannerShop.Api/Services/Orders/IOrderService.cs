@@ -107,4 +107,13 @@ public class AdminOrderFilter
     /// to <c>CreditPack</c> explicitly overrides this filter (the type filter wins).
     /// </summary>
     public bool IncludeCreditPacks { get; init; } = false;
+
+    /// <summary>
+    /// BANNERSH-169: when <c>true</c> (default), AI banner orders with <c>TotalNok == 0</c>
+    /// are excluded from the admin list. These are free-first design-tracking orders created
+    /// by the AI pipeline — they have no order items and no price, so they only confuse the
+    /// production team. Set to <c>false</c> (or apply a <see cref="Status"/> filter) to
+    /// include them.
+    /// </summary>
+    public bool ExcludeZeroValueAiOrders { get; init; } = true;
 }

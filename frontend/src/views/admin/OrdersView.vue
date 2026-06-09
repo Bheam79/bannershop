@@ -16,6 +16,9 @@ const filters = reactive({
   // BANNERSH-139: include AI credit-pack purchases in the list. Defaults to false
   // so the production team isn't distracted by them.
   includeCreditPacks: false,
+  // BANNERSH-169: hide 0-kr AI design-tracking orders by default — they have no
+  // production items and only confuse the fulfilment team.
+  excludeZeroValueAiOrders: true,
 })
 
 // ── Table state ───────────────────────────────────────────────────────────────
@@ -40,6 +43,7 @@ async function load(p = 1) {
       page: p,
       pageSize: PAGE_SIZE,
       includeCreditPacks: filters.includeCreditPacks || undefined,
+      excludeZeroValueAiOrders: filters.excludeZeroValueAiOrders,
     })
     orders.value = result.items
     page.value = result.page
@@ -63,6 +67,7 @@ function clearFilters() {
   filters.toDate = ''
   filters.search = ''
   filters.includeCreditPacks = false
+  filters.excludeZeroValueAiOrders = true
   load(1)
 }
 
@@ -197,9 +202,22 @@ const ALL_ORDER_TYPES = Object.keys(ORDER_TYPE_LABELS)
         >
           Nullstill
         </button>
+        <!-- BANNERSH-169: opt-in toggle to show AI design-tracking orders (0 kr, no items) -->
+        <label
+          class="ml-2 inline-flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none"
+          title="Vis AI designforespørsler som ikke er produksjonsordrer (0 kr, ingen varer)"
+        >
+          <input
+            type="checkbox"
+            :checked="!filters.excludeZeroValueAiOrders"
+            class="accent-cyan-500 w-4 h-4"
+            @change="filters.excludeZeroValueAiOrders = !($event.target as HTMLInputElement).checked; applyFilters()"
+          />
+          Vis AI design-ordrer
+        </label>
         <!-- BANNERSH-139: opt-in toggle to reveal credit-pack purchases -->
         <label
-          class="ml-auto inline-flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none"
+          class="ml-2 inline-flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none"
           title="Vis også AI kreditt-pakke kjøp i listen"
         >
           <input

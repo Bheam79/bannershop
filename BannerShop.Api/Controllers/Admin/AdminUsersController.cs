@@ -1,5 +1,6 @@
 using BannerShop.Api.Models.Admin;
 using BannerShop.Api.Services.AiCredits;
+using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
 using BannerShop.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -187,10 +188,43 @@ public class AdminUsersController : ControllerBase
         // ReferenceId is left null per BANNERSH-86 ("null payment row").
         await _credits.GrantAsync(id, req.Amount, CreditReason.AdminGrant, referenceId: null, ct);
 
+        // BANNERSH-169: create a 0 kr CreditPack Order row so free admin grants are
+        // trackable in the orders/transaction view (visible under "Inkluder AI-kjøp").
+        var now = DateTime.UtcNow;
+        var grantOrder = new Order
+        {
+            UserId       = id,
+            OrderType    = OrderType.CreditPack,
+            OrderState   = OrderState.Paid,
+            Status       = OrderStatus.Paid,
+            DeliveryType = DeliveryType.Pickup,
+            TotalNok     = 0m,
+            CreatedAt    = now,
+            UpdatedAt    = now,
+            Items        = new List<OrderItem>
+            {
+                new OrderItem
+                {
+                    BannerSizeId   = null,
+                    HeightCm       = 0,
+                    Quantity       = 1,
+                    AreaSqm        = 0m,
+                    UnitPriceNok   = 0m,
+                    EyeletOption   = EyeletOption.None,
+                    EyeletCount    = 0,
+                    EyeletFeeNok   = 0m,
+                    LineTotalNok   = 0m,
+                    Notes          = $"Admin tildelt — {req.Amount} AI-kreditter (gratis)"
+                }
+            }
+        };
+        _db.Orders.Add(grantOrder);
+        await _db.SaveChangesAsync(ct);
+
         _log.LogInformation(
-            "Admin {AdminId} granted {Count} AI credits to user {UserId}.",
+            "Admin {AdminId} granted {Count} AI credits to user {UserId} (order #{OrderId}).",
             User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
-            req.Amount, id);
+            req.Amount, id, grantOrder.Id);
 
         // Return the refreshed detail so the UI can update without an extra round-trip.
         return await Get(id, ct);

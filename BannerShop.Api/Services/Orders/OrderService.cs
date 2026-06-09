@@ -373,6 +373,11 @@ public class OrderService : IOrderService
             // production team isn't distracted by them. The opt-in flag (or an explicit
             // OrderType=CreditPack filter) bypasses this.
             query = query.Where(o => o.OrderType != OrderType.CreditPack);
+        // BANNERSH-169: hide free-first AI design-tracking orders (0 kr, no items) unless
+        // the caller opts in. These are created by the AI pipeline to track design-request
+        // progress but have no physical production value.
+        if (filter.ExcludeZeroValueAiOrders && filter.OrderType is null)
+            query = query.Where(o => o.OrderType != OrderType.AiBanner || o.TotalNok > 0);
         if (filter.FromUtc is { } from)
             query = query.Where(o => o.CreatedAt >= from);
         if (filter.ToUtc is { } to)

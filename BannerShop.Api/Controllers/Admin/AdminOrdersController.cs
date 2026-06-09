@@ -33,6 +33,7 @@ public class AdminOrdersController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] bool includeCreditPacks = false,
+        [FromQuery] bool excludeZeroValueAiOrders = true,
         CancellationToken ct = default)
     {
         var paged = await _orders.ListAllAsync(new AdminOrderFilter
@@ -44,7 +45,8 @@ public class AdminOrdersController : ControllerBase
             Search = search,
             Page = page,
             PageSize = pageSize,
-            IncludeCreditPacks = includeCreditPacks
+            IncludeCreditPacks = includeCreditPacks,
+            ExcludeZeroValueAiOrders = excludeZeroValueAiOrders
         }, ct);
         return Ok(paged);
     }
