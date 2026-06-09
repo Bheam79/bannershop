@@ -659,7 +659,7 @@ onBeforeUnmount(() => {
               <p style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px">
                 Slipp bilde her, eller klikk for å velge
               </p>
-              <p style="font-size:12.5px;color:var(--faint)">JPEG, PNG, WEBP – maks 10 MB</p>
+              <p style="font-size:13px;color:var(--faint)">JPEG, PNG, WEBP – maks 10 MB</p>
 
               <!-- Upload progress overlay -->
               <div v-if="photoUploading" class="upload-overlay">
@@ -693,10 +693,10 @@ onBeforeUnmount(() => {
           >
             Neste: Tilpass <i class="fa-solid fa-arrow-right" style="font-size:12px"></i>
           </button>
-          <p v-if="!selectedTemplateId" style="font-size:12px;color:var(--faint)">
+          <p v-if="!selectedTemplateId" style="font-size:13px;color:var(--faint)">
             Velg en mal for å gå videre
           </p>
-          <p v-else-if="!uploadedPhotoBannerDesignId && !photoUploading" style="font-size:12px;color:var(--faint)">
+          <p v-else-if="!uploadedPhotoBannerDesignId && !photoUploading" style="font-size:13px;color:var(--faint)">
             Last opp et portrettfoto for å gå videre
           </p>
         </div>
@@ -754,7 +754,7 @@ onBeforeUnmount(() => {
             style="resize:none"
             placeholder="f.eks. Gratulerer med 50-årsdagen!"
           />
-          <p style="margin-top:5px;font-size:12px;color:var(--faint)">{{ textContent.length }} / 500 tegn</p>
+          <p style="margin-top:5px;font-size:13px;color:var(--faint)">{{ textContent.length }} / 500 tegn</p>
         </div>
 
         <!-- Theme description -->
@@ -832,7 +832,7 @@ onBeforeUnmount(() => {
               <div class="quality-btn-title">Egendefinert</div>
               <div class="quality-btn-sub">Velg kvalitet og størrelse</div>
               <div class="quality-btn-dims">skriv inn mål</div>
-              <div class="quality-btn-price" style="color:var(--faint);font-size:12px">
+              <div class="quality-btn-price" style="color:var(--faint);font-size:13px">
                 <template v-if="customState.loading">
                   <i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i>
                 </template>
@@ -890,7 +890,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </div>
-            <div v-if="customState.comingSoon" style="margin-top:8px;font-size:12.5px;color:var(--gold)">
+            <div v-if="customState.comingSoon" style="margin-top:8px;font-size:13px;color:var(--gold)">
               <i class="fa-solid fa-clock"></i> Denne kombinasjonen er ikke tilgjengelig ennå.
             </div>
           </div>
@@ -1001,7 +1001,7 @@ onBeforeUnmount(() => {
             {{ submittingOrder ? 'Oppretter bestilling…' : 'Legg i handlekurven' }}
           </button>
 
-          <p style="font-size:12.5px;color:var(--faint);text-align:center;display:flex;align-items:center;justify-content:center;gap:6px">
+          <p style="font-size:13px;color:var(--faint);text-align:center;display:flex;align-items:center;justify-content:center;gap:6px">
             <i class="fa-solid fa-shield-halved"></i>
             Ingen betaling nå — du betaler trygt via kassen etter at du har sett over handlekurven.
           </p>
@@ -1091,10 +1091,10 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <p v-if="bannerPriceError" style="font-size:12.5px;color:var(--gold)">
+            <p v-if="bannerPriceError" style="font-size:13px;color:var(--gold)">
               <i class="fa-solid fa-triangle-exclamation"></i> {{ bannerPriceError }}
             </p>
-            <p style="font-size:12.5px;color:var(--faint)">
+            <p style="font-size:13px;color:var(--faint)">
               Inkl. én gratis korrigering og levering innen 2–3 virkedager.
               Frakt kommer i tillegg og beregnes ved kassen.
             </p>
@@ -1143,7 +1143,7 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   flex-shrink: 0;
 }
@@ -1311,12 +1311,12 @@ onBeforeUnmount(() => {
   color: var(--text);
 }
 .quality-btn-sub {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   margin-bottom: 4px;
 }
 .quality-btn-dims {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--faint);
 }
 .quality-btn-price {
@@ -1334,7 +1334,7 @@ onBeforeUnmount(() => {
   background: rgba(231,185,78,.18);
   border: 1px solid rgba(231,185,78,.4);
   color: #e7d08a;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 99px;
@@ -1403,7 +1403,7 @@ onBeforeUnmount(() => {
   color: var(--text);
 }
 .eyelet-btn-sub {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 .eyelet-btn-price {

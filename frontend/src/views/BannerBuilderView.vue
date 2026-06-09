@@ -335,7 +335,7 @@ onMounted(async () => {
               <div style="font-size:15px;color:var(--text);margin-top:4px;font-weight:500">
                 {{ materialLabel }}
               </div>
-              <div v-if="selectedMaterial" style="font-size:12.5px;color:var(--faint);margin-top:2px">
+              <div v-if="selectedMaterial" style="font-size:13px;color:var(--faint);margin-top:2px">
                 Rull-bredde: {{ selectedMaterial.widthCm }} cm
               </div>
             </div>
@@ -358,7 +358,7 @@ onMounted(async () => {
             <div>
               <div class="field-label" style="margin-bottom:8px">
                 Maljer (øyebolter)
-                <span style="font-size:11px;font-weight:400;color:var(--faint);margin-left:4px">tilvalg</span>
+                <span style="font-size:13px;font-weight:400;color:var(--faint);margin-left:4px">tilvalg</span>
               </div>
               <div style="display:grid;gap:8px">
                 <label
@@ -379,7 +379,7 @@ onMounted(async () => {
                   />
                   <div style="flex:1">
                     <div style="font-weight:600;font-size:14px;color:var(--text)">{{ opt.label }}</div>
-                    <div style="font-size:12px;color:var(--faint)">{{ opt.sub }}</div>
+                    <div style="font-size:13px;color:var(--faint)">{{ opt.sub }}</div>
                   </div>
                   <div v-if="opt.value !== 'None' && eyeletPriceNok > 0" style="font-size:13px;color:var(--accent);font-weight:600;white-space:nowrap">
                     +{{ formatNok(countEyelets(computedWidthCm, heightCm, opt.value) * eyeletPriceNok) }}
@@ -391,7 +391,7 @@ onMounted(async () => {
                   </div>
                 </label>
               </div>
-              <p style="font-size:11.5px;color:var(--faint);margin-top:6px">
+              <p style="font-size:13px;color:var(--faint);margin-top:6px">
                 Hem (søm) er ikke mulig på PVC-bannere av denne typen.
               </p>
             </div>
@@ -421,7 +421,7 @@ onMounted(async () => {
                   <span v-else style="color:var(--faint)">–</span>
                 </span>
               </div>
-              <p style="font-size:12.5px;color:var(--faint)">
+              <p style="font-size:13px;color:var(--faint)">
                 Frakt og eventuelt ekspressgebyr beregnes i kassen.
               </p>
             </div>
@@ -503,7 +503,7 @@ onMounted(async () => {
   margin-bottom: 10px;
 }
 .field-label {
-  font-size: 12px;
+  font-size: 13px;
   text-transform: uppercase;
   letter-spacing: .06em;
   color: var(--faint);

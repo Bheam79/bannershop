@@ -103,7 +103,7 @@ async function handleSubmit() {
           <label for="phone" class="field-label">
             <i class="fa-solid fa-phone"></i>
             Telefon
-            <span style="color:var(--faint);font-weight:400;font-size:12px">(valgfritt)</span>
+            <span style="color:var(--faint);font-weight:400;font-size:13px">(valgfritt)</span>
           </label>
           <input
             id="phone"
@@ -205,7 +205,7 @@ async function handleSubmit() {
 }
 .field-label i {
   color: var(--faint);
-  font-size: 12px;
+  font-size: 13px;
   width: 14px;
   text-align: center;
 }

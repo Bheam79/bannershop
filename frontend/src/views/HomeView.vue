@@ -642,7 +642,7 @@ async function handleLogout() {
 }
 .badge-sel {
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--accent-2);
   background: rgba(255,106,61,.12);
@@ -686,7 +686,7 @@ async function handleLogout() {
   bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--faint);
   background: rgba(21,18,14,.7);
   padding: 4px 10px;
@@ -744,7 +744,7 @@ async function handleLogout() {
   position: absolute;
   top: 18px;
   right: 18px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--gold);
   background: rgba(231,185,78,.12);

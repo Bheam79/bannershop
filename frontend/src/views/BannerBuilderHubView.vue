@@ -138,7 +138,7 @@ import { RouterLink } from 'vue-router'
   position: absolute;
   top: 18px;
   right: 18px;
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--accent-2);
   background: rgba(255,106,61,.12);

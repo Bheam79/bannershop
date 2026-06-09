@@ -129,7 +129,7 @@ async function handleSubmit() {
 }
 .field-label i {
   color: var(--faint);
-  font-size: 12px;
+  font-size: 13px;
   width: 14px;
   text-align: center;
 }

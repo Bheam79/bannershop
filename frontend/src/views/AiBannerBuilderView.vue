@@ -1049,6 +1049,48 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
+    <!-- Soft auth hint (anonymous user after creation) — full-width, above the grid -->
+    <div v-if="requiresAuthHint" class="notice-gold" style="margin-bottom:2rem">
+      <i class="fa-solid fa-circle-info" style="margin-top:2px;flex-shrink:0"></i>
+      <span>
+        <strong>Opprett konto for å godkjenne og bestille.</strong>
+        Banneret ditt genereres i bakgrunnen — logg inn for å se og godkjenne resultatet.
+        <RouterLink :to="`/register?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" style="color:var(--accent);font-weight:600">Registrer deg</RouterLink>
+        eller
+        <RouterLink :to="`/login?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" style="color:var(--accent);font-weight:600">logg inn</RouterLink>.
+      </span>
+    </div>
+
+    <!-- Step indicator — full-width, above the two-column grid -->
+    <nav class="step-nav" style="margin-bottom:2rem" aria-label="Steg">
+      <button
+        v-for="(label, idx) in ['Velg mal', 'Tilpass', 'Fullfør']"
+        :key="idx"
+        type="button"
+        class="step-nav-btn"
+        :class="{
+          'step-active': step === idx + 1,
+          'step-done': step > idx + 1,
+          'step-future': step < idx + 1,
+        }"
+        :disabled="idx + 1 > step"
+        @click="idx + 1 < step ? (step = (idx + 1) as 1 | 2 | 3) : undefined"
+      >
+        <span
+          class="step-circle"
+          :class="{
+            'step-circle-active': step === idx + 1,
+            'step-circle-done': step > idx + 1,
+            'step-circle-future': step < idx + 1,
+          }"
+        >
+          <i v-if="step > idx + 1" class="fa-solid fa-check" style="font-size:11px"></i>
+          <span v-else>{{ idx + 1 }}</span>
+        </span>
+        <span class="step-label">{{ label }}</span>
+      </button>
+    </nav>
+
     <!-- ═══════════════════════════════════════════════════════════════════
          TWO-COLUMN LAYOUT: past banners sidebar (left) + wizard (right)
          BANNERSH-145: moved gallery from horizontal strip above wizard to
@@ -1101,48 +1143,6 @@ onBeforeUnmount(() => {
 
       <!-- Right column: main wizard content -->
       <div>
-
-    <!-- Soft auth hint (anonymous user after creation) -->
-    <div v-if="requiresAuthHint" class="notice-gold" style="margin-bottom:2rem">
-      <i class="fa-solid fa-circle-info" style="margin-top:2px;flex-shrink:0"></i>
-      <span>
-        <strong>Opprett konto for å godkjenne og bestille.</strong>
-        Banneret ditt genereres i bakgrunnen — logg inn for å se og godkjenne resultatet.
-        <RouterLink :to="`/register?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" style="color:var(--accent);font-weight:600">Registrer deg</RouterLink>
-        eller
-        <RouterLink :to="`/login?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" style="color:var(--accent);font-weight:600">logg inn</RouterLink>.
-      </span>
-    </div>
-
-    <!-- Step indicator -->
-    <nav class="step-nav" style="margin-bottom:2rem" aria-label="Steg">
-      <button
-        v-for="(label, idx) in ['Velg mal', 'Tilpass', 'Fullfør']"
-        :key="idx"
-        type="button"
-        class="step-nav-btn"
-        :class="{
-          'step-active': step === idx + 1,
-          'step-done': step > idx + 1,
-          'step-future': step < idx + 1,
-        }"
-        :disabled="idx + 1 > step"
-        @click="idx + 1 < step ? (step = (idx + 1) as 1 | 2 | 3) : undefined"
-      >
-        <span
-          class="step-circle"
-          :class="{
-            'step-circle-active': step === idx + 1,
-            'step-circle-done': step > idx + 1,
-            'step-circle-future': step < idx + 1,
-          }"
-        >
-          <i v-if="step > idx + 1" class="fa-solid fa-check" style="font-size:11px"></i>
-          <span v-else>{{ idx + 1 }}</span>
-        </span>
-        <span class="step-label">{{ label }}</span>
-      </button>
-    </nav>
 
     <!-- ═══════════════════════════════════════════════════════════════════
          STEP 1: Choose template + upload photo + language
@@ -1238,7 +1238,7 @@ onBeforeUnmount(() => {
         <div>
           <label for="textContent" class="field-label">Tekst på banneret <span style="color:var(--accent)">*</span></label>
           <textarea id="textContent" v-model="textContent" rows="3" maxlength="500" class="dark-input" style="resize:none" :placeholder="textContentPlaceholder" />
-          <p style="margin-top:5px;font-size:12px;color:var(--faint)">{{ textContent.length }} / 500 tegn</p>
+          <p style="margin-top:5px;font-size:13px;color:var(--faint)">{{ textContent.length }} / 500 tegn</p>
         </div>
         <div>
           <label for="themeDescription" class="field-label">Tema / stil <span style="color:var(--accent)">*</span></label>
@@ -1248,7 +1248,7 @@ onBeforeUnmount(() => {
         <!-- Portrait photo upload (moved here from step 1) -->
         <div>
           <div class="field-label" style="margin-bottom:4px">
-            Portrettfoto <span style="font-size:12px;font-weight:400;color:var(--faint)">(valgfritt)</span>
+            Portrettfoto <span style="font-size:13px;font-weight:400;color:var(--faint)">(valgfritt)</span>
           </div>
           <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
             Last opp et bilde av personen som feires — AI-en vil inkorporere det i banneret.
@@ -1282,7 +1282,7 @@ onBeforeUnmount(() => {
               <input ref="photoFileInput" type="file" style="display:none" accept="image/jpeg,image/png,image/webp" @change="onPhotoFileChange" />
               <i class="fa-solid fa-user-circle" style="font-size:36px;color:var(--faint);margin-bottom:10px"></i>
               <p style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px">Slipp bilde her, eller klikk for å velge</p>
-              <p style="font-size:12.5px;color:var(--faint)">JPEG, PNG, WEBP – maks 10 MB</p>
+              <p style="font-size:13px;color:var(--faint)">JPEG, PNG, WEBP – maks 10 MB</p>
               <div v-if="photoUploading" class="upload-overlay">
                 <div style="width:66%;max-width:260px">
                   <div style="font-size:14px;font-weight:600;color:var(--text);text-align:center;margin-bottom:10px">Laster opp… {{ photoUploadProgress }}%</div>
@@ -1303,11 +1303,11 @@ onBeforeUnmount(() => {
           <div style="display:flex;gap:12px;flex-wrap:wrap">
             <button type="button" class="ratio-btn" :class="{ 'ratio-btn-active': aspectRatio === '16:9' }" @click="aspectRatio = '16:9'">
               <div style="font-weight:700;margin-bottom:2px">16:9 (Standard)</div>
-              <div style="font-size:12px;opacity:.7">ca. 266 × 150 cm</div>
+              <div style="font-size:13px;opacity:.7">ca. 266 × 150 cm</div>
             </button>
             <button type="button" class="ratio-btn" :class="{ 'ratio-btn-active': aspectRatio === '18:9' }" @click="aspectRatio = '18:9'">
               <div style="font-weight:700;margin-bottom:2px">18:9 (Bred)</div>
-              <div style="font-size:12px;opacity:.7">ca. 300 × 150 cm</div>
+              <div style="font-size:13px;opacity:.7">ca. 300 × 150 cm</div>
             </button>
           </div>
           <div class="size-preview" style="margin-top:16px">
@@ -1316,7 +1316,7 @@ onBeforeUnmount(() => {
             </div>
             <div>
               <div style="font-size:14.5px;font-weight:700;color:var(--text)">Ca. {{ aspectDimensions.width }} × {{ aspectDimensions.height }} cm</div>
-              <div style="font-size:12.5px;color:var(--faint);margin-top:2px">
+              <div style="font-size:13px;color:var(--faint);margin-top:2px">
                 {{ aspectRatio === '16:9' ? 'Standard panoramabanner – passer de fleste anledninger' : 'Bredere format – flott for lange vegger og rekkverk' }}
               </div>
             </div>
@@ -1363,7 +1363,7 @@ onBeforeUnmount(() => {
               Logg inn
             </RouterLink>
           </div>
-          <p v-if="designRequestId" style="margin-top:16px;font-size:12px;color:var(--faint)">
+          <p v-if="designRequestId" style="margin-top:16px;font-size:13px;color:var(--faint)">
             Design-ID: {{ designRequestId }}
           </p>
         </div>
@@ -1533,7 +1533,7 @@ onBeforeUnmount(() => {
               <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
               {{ generateButtonLabel }}
             </button>
-            <p style="font-size:12.5px;color:var(--faint);text-align:center;display:flex;align-items:center;justify-content:center;gap:6px">
+            <p style="font-size:13px;color:var(--faint);text-align:center;display:flex;align-items:center;justify-content:center;gap:6px">
               <i class="fa-solid fa-shield-halved"></i>
               {{ generateButtonSubtitle }}
             </p>
@@ -1635,7 +1635,7 @@ onBeforeUnmount(() => {
             Logg inn
           </RouterLink>
         </div>
-        <p v-if="designRequestId" style="margin-top:20px;font-size:12px;color:var(--faint)">
+        <p v-if="designRequestId" style="margin-top:20px;font-size:13px;color:var(--faint)">
           Design-ID: {{ designRequestId }} — lagret lokalt, tilgjengelig etter innlogging.
         </p>
       </div>
@@ -1794,7 +1794,7 @@ onBeforeUnmount(() => {
                   <span class="tpl-ico" style="width:34px;height:34px;font-size:15px">
                     <i :class="['fa-solid', categoryIconClass[t.category] ?? 'fa-star']"></i>
                   </span>
-                  <span style="font-size:12px;font-weight:600;color:var(--text);text-align:center;line-height:1.3">
+                  <span style="font-size:13px;font-weight:600;color:var(--text);text-align:center;line-height:1.3">
                     {{ language === 'en' ? t.nameEn : t.nameNb }}
                   </span>
                 </button>
@@ -1811,7 +1811,7 @@ onBeforeUnmount(() => {
             <div>
               <label for="editTextContent" class="field-label">Tekst på banneret <span style="color:var(--accent)">*</span></label>
               <textarea id="editTextContent" v-model="textContent" rows="3" maxlength="500" class="dark-input" style="resize:none" />
-              <p style="margin-top:4px;font-size:12px;color:var(--faint)">{{ textContent.length }} / 500 tegn</p>
+              <p style="margin-top:4px;font-size:13px;color:var(--faint)">{{ textContent.length }} / 500 tegn</p>
             </div>
 
             <!-- Theme -->
@@ -1923,9 +1923,9 @@ onBeforeUnmount(() => {
             <div>
               <div class="field-label" style="margin-bottom:4px">
                 Maljer (øyebolter)
-                <span style="font-size:11px;font-weight:400;color:var(--faint);margin-left:4px">tilvalg</span>
+                <span style="font-size:13px;font-weight:400;color:var(--faint);margin-left:4px">tilvalg</span>
               </div>
-              <p style="font-size:12.5px;color:var(--faint);margin:0">
+              <p style="font-size:13px;color:var(--faint);margin:0">
                 Hem (søm) er ikke mulig på PVC-bannere — kun maljer tilbys.
               </p>
             </div>
@@ -1948,7 +1948,7 @@ onBeforeUnmount(() => {
                 />
                 <div style="flex:1">
                   <div style="font-weight:600;font-size:14.5px;color:var(--text)">{{ opt.label }}</div>
-                  <div style="font-size:12.5px;color:var(--faint)">{{ opt.sub }}</div>
+                  <div style="font-size:13px;color:var(--faint)">{{ opt.sub }}</div>
                 </div>
                 <div
                   v-if="opt.value !== 'None' && tilpassEyeletPriceNok > 0"
@@ -1979,7 +1979,7 @@ onBeforeUnmount(() => {
               <span style="font-weight:700;color:var(--text)">Sum</span>
               <span style="font-weight:800;color:var(--accent)">{{ formatNok(tilpassTotalNok) }}</span>
             </div>
-            <p style="font-size:12.5px;color:var(--faint);margin:0">
+            <p style="font-size:13px;color:var(--faint);margin:0">
               Frakt og eventuelt ekspressgebyr beregnes i kassen.
             </p>
           </div>
@@ -2237,7 +2237,7 @@ onBeforeUnmount(() => {
               <i class="fa-solid fa-lock" style="font-size:12px"></i>
               Betal {{ formatNok(packDetails.priceNok) }}
             </button>
-            <p style="font-size:12px;color:var(--faint);text-align:center;margin-top:10px">
+            <p style="font-size:13px;color:var(--faint);text-align:center;margin-top:10px">
               <i class="fa-solid fa-shield-halved"></i> Sikret av Stripe. Vi lagrer ikke kortinformasjon.
             </p>
           </div>
@@ -2302,7 +2302,7 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   flex-shrink: 0;
   transition: background 0.15s;
@@ -2399,7 +2399,7 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 .selected-template-eyebrow {
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--faint);
   text-transform: uppercase;
@@ -2537,7 +2537,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--accent-2);
   font-weight: 700;
 }
@@ -2765,12 +2765,12 @@ onBeforeUnmount(() => {
   color: var(--accent);
   border-radius: 99px;
   padding: 2px 9px;
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 700;
   flex-shrink: 0;
 }
 .past-sub {
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--muted);
   margin: 0 0 12px;
   line-height: 1.4;
@@ -2778,7 +2778,7 @@ onBeforeUnmount(() => {
 .past-sidebar-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 13px;
 }
 @media (max-width: 820px) {
   .past-sidebar {
@@ -2840,9 +2840,11 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  /* 10% more lightness than --surface-2 (#2a251e ≈ hsl(35,17%,14%)) */
+  background: hsl(35 17% 24%);
 }
 .past-name {
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text);
   white-space: nowrap;
@@ -2850,7 +2852,7 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
 }
 .past-theme {
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -2858,7 +2860,7 @@ onBeforeUnmount(() => {
 }
 .past-status {
   margin-top: 3px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--faint);
   display: flex;
   align-items: center;
@@ -2891,7 +2893,7 @@ onBeforeUnmount(() => {
   display: block;
 }
 .past-mini-name {
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--text);
   padding: 0 8px 7px;
