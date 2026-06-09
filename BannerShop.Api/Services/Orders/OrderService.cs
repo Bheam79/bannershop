@@ -3,6 +3,7 @@ using System.Net;
 using System.Text;
 using BannerShop.Api.Models.Orders;
 using BannerShop.Api.Services.AiCredits;
+using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Api.Services.Email;
 using BannerShop.Api.Services.Orders.Stripe;
 using BannerShop.Api.Services.Shipping;
@@ -52,6 +53,7 @@ public class OrderService : IOrderService
     private readonly IStripePaymentService _stripe;
     private readonly IEmailService _email;
     private readonly IAiCreditService _aiCredits;
+    private readonly BannerFileStorage _storage;
     private readonly ILogger<OrderService> _logger;
 
     public OrderService(
@@ -62,6 +64,7 @@ public class OrderService : IOrderService
         IStripePaymentService stripe,
         IEmailService email,
         IAiCreditService aiCredits,
+        BannerFileStorage storage,
         ILogger<OrderService> logger)
     {
         _db = db;
@@ -71,6 +74,7 @@ public class OrderService : IOrderService
         _stripe = stripe;
         _email = email;
         _aiCredits = aiCredits;
+        _storage = storage;
         _logger = logger;
     }
 
@@ -300,24 +304,17 @@ public class OrderService : IOrderService
 
         var query = _db.Orders.AsNoTracking().Where(o => o.UserId == userId);
         var total = await query.CountAsync(ct);
-        var rows = await query
+        var orders = await query
             .OrderByDescending(o => o.CreatedAt)
             .Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(o => new OrderListItemDto
-            {
-                Id = o.Id,
-                Status = o.Status.ToString(),
-                OrderType = o.OrderType.ToString(),
-                OrderState = o.OrderState.ToString(),
-                DeliveryType = o.DeliveryType.ToString(),
-                TotalNok = o.TotalNok,
-                ItemCount = o.Items.Count,
-                CreatedAt = o.CreatedAt,
-                EstimatedDelivery = o.EstimatedDelivery,
-                CustomerName = o.User.Name,
-                CustomerEmail = o.User.Email
-            })
+            .Include(o => o.User)
+            .Include(o => o.Items).ThenInclude(i => i.BannerSize).ThenInclude(s => s!.Material)
+            .Include(o => o.Items).ThenInclude(i => i.BannerDesign)
+            .AsSplitQuery()
             .ToListAsync(ct);
+
+        var drs = await LoadDesignRequestsForOrdersAsync(orders.Select(o => o.Id).ToList(), ct);
+        var rows = orders.Select(o => ToListItemDto(o, drs.GetValueOrDefault(o.Id))).ToList();
 
         return new PagedResult<OrderListItemDto>
         {
@@ -329,7 +326,8 @@ public class OrderService : IOrderService
     {
         var o = await LoadFullOrderAsync(orderId, ct);
         if (o is null || o.UserId != userId) return null;
-        return ToDetailDto(o);
+        var dr = await LoadDesignRequestForOrderAsync(orderId, ct);
+        return ToDetailDto(o, dr);
     }
 
     public async Task<OrderActionResult> CancelMineAsync(int userId, int orderId, CancellationToken ct = default)
@@ -349,7 +347,8 @@ public class OrderService : IOrderService
             await _stripe.CancelPaymentIntentAsync(order.StripePaymentIntentId, ct);
 
         var full = await LoadFullOrderAsync(orderId, ct);
-        return OrderActionResult.Ok(ToDetailDto(full!));
+        var drCancel = await LoadDesignRequestForOrderAsync(orderId, ct);
+        return OrderActionResult.Ok(ToDetailDto(full!, drCancel));
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -380,24 +379,17 @@ public class OrderService : IOrderService
         }
 
         var total = await query.CountAsync(ct);
-        var rows = await query
+        var orders = await query
             .OrderByDescending(o => o.CreatedAt)
             .Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(o => new OrderListItemDto
-            {
-                Id = o.Id,
-                Status = o.Status.ToString(),
-                OrderType = o.OrderType.ToString(),
-                OrderState = o.OrderState.ToString(),
-                DeliveryType = o.DeliveryType.ToString(),
-                TotalNok = o.TotalNok,
-                ItemCount = o.Items.Count,
-                CreatedAt = o.CreatedAt,
-                EstimatedDelivery = o.EstimatedDelivery,
-                CustomerName = o.User.Name,
-                CustomerEmail = o.User.Email
-            })
+            .Include(o => o.User)
+            .Include(o => o.Items).ThenInclude(i => i.BannerSize).ThenInclude(s => s!.Material)
+            .Include(o => o.Items).ThenInclude(i => i.BannerDesign)
+            .AsSplitQuery()
             .ToListAsync(ct);
+
+        var drs = await LoadDesignRequestsForOrdersAsync(orders.Select(o => o.Id).ToList(), ct);
+        var rows = orders.Select(o => ToListItemDto(o, drs.GetValueOrDefault(o.Id))).ToList();
 
         return new PagedResult<OrderListItemDto>
         {
@@ -408,7 +400,9 @@ public class OrderService : IOrderService
     public async Task<OrderDetailDto?> GetAnyAsync(int orderId, CancellationToken ct = default)
     {
         var o = await LoadFullOrderAsync(orderId, ct);
-        return o is null ? null : ToDetailDto(o);
+        if (o is null) return null;
+        var dr = await LoadDesignRequestForOrderAsync(orderId, ct);
+        return ToDetailDto(o, dr);
     }
 
     public async Task<OrderActionResult> UpdateStatusAsync(int orderId, OrderStatus status, CancellationToken ct = default)
@@ -449,7 +443,8 @@ public class OrderService : IOrderService
 
         await _db.SaveChangesAsync(ct);
         var full = await LoadFullOrderAsync(orderId, ct);
-        return OrderActionResult.Ok(ToDetailDto(full!));
+        var drStatus = await LoadDesignRequestForOrderAsync(orderId, ct);
+        return OrderActionResult.Ok(ToDetailDto(full!, drStatus));
     }
 
     public async Task<OrderActionResult> UpdateProductionAsync(int orderId, int itemId, ProductionStage stage, string? notes, CancellationToken ct = default)
@@ -496,7 +491,8 @@ public class OrderService : IOrderService
 
         await _db.SaveChangesAsync(ct);
         var full = await LoadFullOrderAsync(orderId, ct);
-        return OrderActionResult.Ok(ToDetailDto(full!));
+        var drProd = await LoadDesignRequestForOrderAsync(orderId, ct);
+        return OrderActionResult.Ok(ToDetailDto(full!, drProd));
     }
 
     public async Task<OrderActionResult> SetShippingAsync(int orderId, SetShippingRequest req, CancellationToken ct = default)
@@ -543,7 +539,8 @@ public class OrderService : IOrderService
         var full = await LoadFullOrderAsync(orderId, ct);
         if (full is not null)
             await TrySendShipmentDispatchedAsync(full, ct);
-        return OrderActionResult.Ok(ToDetailDto(full!));
+        var drShip = await LoadDesignRequestForOrderAsync(orderId, ct);
+        return OrderActionResult.Ok(ToDetailDto(full!, drShip));
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -684,7 +681,8 @@ public class OrderService : IOrderService
 
         await _db.SaveChangesAsync(ct);
         var full = await LoadFullOrderAsync(orderId, ct);
-        return OrderActionResult.Ok(ToDetailDto(full!));
+        var drAdvance = await LoadDesignRequestForOrderAsync(orderId, ct);
+        return OrderActionResult.Ok(ToDetailDto(full!, drAdvance));
     }
 
     /// <inheritdoc />
@@ -725,7 +723,9 @@ public class OrderService : IOrderService
             orderId, callerUserId);
 
         var full = await LoadFullOrderAsync(orderId, ct);
-        return OrderActionResult.Ok(ToDetailDto(full!));
+        // Reload dr (after SaveChangesAsync the tracked entity reflects the approved state)
+        var drApproved = await LoadDesignRequestForOrderAsync(orderId, ct);
+        return OrderActionResult.Ok(ToDetailDto(full!, drApproved));
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -747,76 +747,185 @@ public class OrderService : IOrderService
             .Include(o => o.User)
             .Include(o => o.ShippingAddress)
             .Include(o => o.ShipmentTracking)
-            .Include(o => o.Items).ThenInclude(i => i.BannerSize)
+            .Include(o => o.Items).ThenInclude(i => i.BannerSize).ThenInclude(s => s!.Material)
+            .Include(o => o.Items).ThenInclude(i => i.BannerDesign)
             .Include(o => o.Items).ThenInclude(i => i.ProductionStatuses)
             .AsSplitQuery()
             .FirstOrDefaultAsync(o => o.Id == orderId, ct);
 
-    private static OrderDetailDto ToDetailDto(Order o) => new()
+    /// <summary>
+    /// Returns the single DesignRequest linked to this order (if any), loading via
+    /// the <c>DesignRequest.OrderId</c> FK. Returns null for CustomBanner orders or
+    /// when no DesignRequest has been linked yet.
+    /// </summary>
+    private Task<DesignRequest?> LoadDesignRequestForOrderAsync(int orderId, CancellationToken ct)
+        => _db.DesignRequests.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.OrderId == orderId, ct);
+
+    /// <summary>
+    /// Batch-loads DesignRequests for a set of order IDs, keyed by OrderId.
+    /// Orders with no linked DesignRequest will have no entry in the result dictionary.
+    /// </summary>
+    private async Task<Dictionary<int, DesignRequest>> LoadDesignRequestsForOrdersAsync(
+        IReadOnlyList<int> orderIds, CancellationToken ct)
     {
-        Id = o.Id,
-        UserId = o.UserId,
-        CustomerName = o.User?.Name,
-        CustomerEmail = o.User?.Email,
-        Status = o.Status.ToString(),
-        OrderType = o.OrderType.ToString(),
-        OrderState = o.OrderState.ToString(),
-        DeliveryType = o.DeliveryType.ToString(),
-        ShippingCostNok = o.ShippingCostNok,
-        ExpressFeeNok = o.ExpressFeeNok,
-        AiActivationFeeNok = o.AiActivationFeeNok,
-        TotalNok = o.TotalNok,
-        StripePaymentIntentId = o.StripePaymentIntentId,
-        CreatedAt = o.CreatedAt,
-        UpdatedAt = o.UpdatedAt,
-        EstimatedDelivery = o.EstimatedDelivery,
-        ShippingAddress = o.ShippingAddress is null ? null : new OrderAddressDto
+        if (orderIds.Count == 0) return new Dictionary<int, DesignRequest>();
+        var list = await _db.DesignRequests.AsNoTracking()
+            .Where(r => r.OrderId.HasValue && orderIds.Contains(r.OrderId!.Value))
+            .ToListAsync(ct);
+        // In the unlikely case of multiple DesignRequests per order, keep the first one.
+        return list
+            .GroupBy(r => r.OrderId!.Value)
+            .ToDictionary(g => g.Key, g => g.First());
+    }
+
+    /// <summary>Builds a list-item DTO from a loaded Order entity + optional linked DesignRequest.</summary>
+    private OrderListItemDto ToListItemDto(Order o, DesignRequest? dr)
+    {
+        var (customBanner, aiBanner, manualDesign) = BuildTypeSpecificDetails(o, dr);
+        return new OrderListItemDto
         {
-            Line1 = o.ShippingAddress.Line1,
-            Line2 = o.ShippingAddress.Line2,
-            PostalCode = o.ShippingAddress.PostalCode,
-            City = o.ShippingAddress.City,
-            Country = o.ShippingAddress.Country
-        },
-        Items = o.Items.OrderBy(i => i.Id).Select(i => new OrderItemDto
+            Id = o.Id,
+            Status = o.Status.ToString(),
+            OrderType = o.OrderType.ToString(),
+            OrderState = o.OrderState.ToString(),
+            DeliveryType = o.DeliveryType.ToString(),
+            TotalNok = o.TotalNok,
+            ItemCount = o.Items.Count,
+            CreatedAt = o.CreatedAt,
+            EstimatedDelivery = o.EstimatedDelivery,
+            CustomerName = o.User?.Name,
+            CustomerEmail = o.User?.Email,
+            CustomBanner = customBanner,
+            AiBanner = aiBanner,
+            ManualDesign = manualDesign
+        };
+    }
+
+    /// <summary>
+    /// Builds the three type-specific detail sub-objects from the loaded Order and its
+    /// linked DesignRequest (when present). Exactly one of the three returned values
+    /// is non-null, matching the order's <see cref="OrderType"/>.
+    /// </summary>
+    private (CustomBannerDetailDto?, AiBannerDetailDto?, ManualDesignDetailDto?) BuildTypeSpecificDetails(
+        Order o, DesignRequest? dr)
+    {
+        switch (o.OrderType)
         {
-            Id = i.Id,
-            BannerSizeId = i.BannerSizeId,
-            BannerSizeName = i.BannerSize?.Name,
-            CustomWidthCm = i.CustomWidthCm,
-            HeightCm = i.HeightCm,
-            Quantity = i.Quantity,
-            AreaSqm = i.AreaSqm,
-            UnitPriceNok = i.UnitPriceNok,
-            EyeletOption = i.EyeletOption.ToString(),
-            EyeletCount = i.EyeletCount,
-            EyeletFeeNok = i.EyeletFeeNok,
-            LineTotalNok = i.LineTotalNok,
-            Notes = i.Notes,
-            BannerDesignId = i.BannerDesignId,
-            DesignRequestId = i.DesignRequestId,
-            CurrentProductionStage = (i.ProductionStatuses.OrderByDescending(p => p.UpdatedAt).FirstOrDefault()?.Stage
-                                      ?? ProductionStage.Queued).ToString(),
-            ProductionStatusHistory = i.ProductionStatuses
-                .OrderBy(p => p.UpdatedAt)
-                .Select(p => new ProductionStatusDto
+            case OrderType.CustomBanner:
+            {
+                var firstItem = o.Items.OrderBy(i => i.Id).FirstOrDefault();
+                var previewPath = firstItem?.BannerDesign?.PreviewStoragePath
+                               ?? firstItem?.BannerDesign?.StoragePath;
+                return (new CustomBannerDetailDto
                 {
-                    Id = p.Id,
-                    Stage = p.Stage.ToString(),
-                    UpdatedAt = p.UpdatedAt,
-                    Notes = p.Notes
-                }).ToList()
-        }).ToList(),
-        ShipmentTracking = o.ShipmentTracking is null ? null : new ShipmentTrackingDto
-        {
-            Carrier = o.ShipmentTracking.Carrier,
-            TrackingNumber = o.ShipmentTracking.TrackingNumber,
-            TrackingUrl = o.ShipmentTracking.TrackingUrl,
-            ShippedAt = o.ShipmentTracking.ShippedAt,
-            EstimatedArrival = o.ShipmentTracking.EstimatedArrival,
-            DeliveredAt = o.ShipmentTracking.DeliveredAt
+                    PreviewUrl = previewPath is null ? null : _storage.PublicUrlFor(previewPath),
+                    BannerSizeName = firstItem?.BannerSize?.Name,
+                    MaterialName = firstItem?.BannerSize?.Material?.Name
+                }, null, null);
+            }
+            case OrderType.AiBanner:
+            {
+                if (dr is null) return (null, new AiBannerDetailDto(), null);
+                var previewPath = dr.AiPreviewPath
+                               ?? dr.FinalCroppedStoragePath
+                               ?? dr.AiResultStoragePath;
+                return (null, new AiBannerDetailDto
+                {
+                    PreviewUrl = previewPath is null ? null : _storage.PublicUrlFor(previewPath),
+                    ThemeDescription = dr.ThemeDescription,
+                    PersonName = dr.PersonName,
+                    RevisionCount = dr.RevisionCount
+                }, null);
+            }
+            case OrderType.ManualDesign:
+            {
+                if (dr is null) return (null, null, new ManualDesignDetailDto());
+                var previewPath = dr.DesignerPreviewPath ?? dr.FinalCroppedStoragePath;
+                return (null, null, new ManualDesignDetailDto
+                {
+                    PreviewUrl = previewPath is null ? null : _storage.PublicUrlFor(previewPath),
+                    AspectRatio = dr.AspectRatio,
+                    DesignerNotes = dr.DesignerNotes
+                });
+            }
+            default:
+                return (null, null, null);
         }
-    };
+    }
+
+    private OrderDetailDto ToDetailDto(Order o, DesignRequest? dr = null)
+    {
+        var (customBanner, aiBanner, manualDesign) = BuildTypeSpecificDetails(o, dr);
+        return new OrderDetailDto
+        {
+            Id = o.Id,
+            UserId = o.UserId,
+            CustomerName = o.User?.Name,
+            CustomerEmail = o.User?.Email,
+            Status = o.Status.ToString(),
+            OrderType = o.OrderType.ToString(),
+            OrderState = o.OrderState.ToString(),
+            DeliveryType = o.DeliveryType.ToString(),
+            ShippingCostNok = o.ShippingCostNok,
+            ExpressFeeNok = o.ExpressFeeNok,
+            AiActivationFeeNok = o.AiActivationFeeNok,
+            TotalNok = o.TotalNok,
+            StripePaymentIntentId = o.StripePaymentIntentId,
+            CreatedAt = o.CreatedAt,
+            UpdatedAt = o.UpdatedAt,
+            EstimatedDelivery = o.EstimatedDelivery,
+            ShippingAddress = o.ShippingAddress is null ? null : new OrderAddressDto
+            {
+                Line1 = o.ShippingAddress.Line1,
+                Line2 = o.ShippingAddress.Line2,
+                PostalCode = o.ShippingAddress.PostalCode,
+                City = o.ShippingAddress.City,
+                Country = o.ShippingAddress.Country
+            },
+            Items = o.Items.OrderBy(i => i.Id).Select(i => new OrderItemDto
+            {
+                Id = i.Id,
+                BannerSizeId = i.BannerSizeId,
+                BannerSizeName = i.BannerSize?.Name,
+                CustomWidthCm = i.CustomWidthCm,
+                HeightCm = i.HeightCm,
+                Quantity = i.Quantity,
+                AreaSqm = i.AreaSqm,
+                UnitPriceNok = i.UnitPriceNok,
+                EyeletOption = i.EyeletOption.ToString(),
+                EyeletCount = i.EyeletCount,
+                EyeletFeeNok = i.EyeletFeeNok,
+                LineTotalNok = i.LineTotalNok,
+                Notes = i.Notes,
+                BannerDesignId = i.BannerDesignId,
+                DesignRequestId = i.DesignRequestId,
+                CurrentProductionStage = (i.ProductionStatuses.OrderByDescending(p => p.UpdatedAt).FirstOrDefault()?.Stage
+                                          ?? ProductionStage.Queued).ToString(),
+                ProductionStatusHistory = i.ProductionStatuses
+                    .OrderBy(p => p.UpdatedAt)
+                    .Select(p => new ProductionStatusDto
+                    {
+                        Id = p.Id,
+                        Stage = p.Stage.ToString(),
+                        UpdatedAt = p.UpdatedAt,
+                        Notes = p.Notes
+                    }).ToList()
+            }).ToList(),
+            ShipmentTracking = o.ShipmentTracking is null ? null : new ShipmentTrackingDto
+            {
+                Carrier = o.ShipmentTracking.Carrier,
+                TrackingNumber = o.ShipmentTracking.TrackingNumber,
+                TrackingUrl = o.ShipmentTracking.TrackingUrl,
+                ShippedAt = o.ShipmentTracking.ShippedAt,
+                EstimatedArrival = o.ShipmentTracking.EstimatedArrival,
+                DeliveredAt = o.ShipmentTracking.DeliveredAt
+            },
+            CustomBanner = customBanner,
+            AiBanner = aiBanner,
+            ManualDesign = manualDesign
+        };
+    }
 
     private static CreateOrderDraftResult Fail(string error) => new(
         Success: false,

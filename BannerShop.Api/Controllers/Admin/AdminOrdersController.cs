@@ -104,4 +104,23 @@ public class AdminOrdersController : ControllerBase
                 : NotFound(new { error = result.Error });
         return Ok(result.Order);
     }
+
+    // ── POST /api/admin/orders/{id}/advance-state ────────────────────────────
+    /// <summary>
+    /// Unified orders API variant of the advance endpoint. Accepts <c>{ toState }</c>
+    /// in the request body (matching the BANNERSH-110 API surface) and delegates to
+    /// the same <see cref="IOrderService.AdvanceStateAsync"/> implementation.
+    /// Returns 422 when the transition is not permitted.
+    /// </summary>
+    [HttpPost("{id:int}/advance-state")]
+    public async Task<IActionResult> AdvanceState(int id, [FromBody] AdvanceOrderStateByToStateRequest req, CancellationToken ct)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        var result = await _orders.AdvanceStateAsync(id, req.ToState, ct);
+        if (!result.Success)
+            return result.ErrorType == InvalidTransition
+                ? UnprocessableEntity(new { error = result.Error })
+                : NotFound(new { error = result.Error });
+        return Ok(result.Order);
+    }
 }

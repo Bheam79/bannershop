@@ -1,6 +1,7 @@
 using BannerShop.Api.Models.Orders;
 using BannerShop.Api.Services;
 using BannerShop.Api.Services.AiCredits;
+using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Api.Services.Email;
 using BannerShop.Api.Services.Orders;
 using BannerShop.Api.Services.Orders.Stripe;
@@ -10,6 +11,7 @@ using BannerShop.Core.Enums;
 using BannerShop.Tests.Helpers;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
@@ -100,10 +102,12 @@ public class OrderServiceTests
             .Returns(Task.CompletedTask);
 
         var parcels = new ParcelCalculator(db);
+        var storage = new BannerFileStorage(Options.Create(new FileStorageOptions()));
         var service = new OrderService(db, pricingMock.Object, shippingMock.Object,
                                         parcels, stripeMock.Object,
                                         emailMock.Object,
                                         aiCreditsMock.Object,
+                                        storage,
                                         NullLogger<OrderService>.Instance);
 
         return (service, db, pricingMock, shippingMock, stripeMock, emailMock, aiCreditsMock);

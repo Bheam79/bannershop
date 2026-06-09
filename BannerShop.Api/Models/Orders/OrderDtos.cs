@@ -83,6 +83,16 @@ public class AdvanceOrderStateRequest
     public OrderState Next { get; set; }
 }
 
+/// <summary>
+/// Request body for <c>POST /api/admin/orders/{id}/advance-state</c>.
+/// Uses <c>toState</c> as the property name for consistency with the unified orders API design.
+/// </summary>
+public class AdvanceOrderStateByToStateRequest
+{
+    [Required]
+    public OrderState ToState { get; set; }
+}
+
 public class UpdateProductionRequest
 {
     [Required]
@@ -126,6 +136,52 @@ public class OrderPriceBreakdownDto
     public decimal TotalNok            { get; set; }
 }
 
+// ── Type-specific order detail sub-objects ───────────────────────────────────
+
+/// <summary>
+/// Type-specific details for a <see cref="BannerShop.Core.Enums.OrderType.CustomBanner"/> order.
+/// Populated from the first order item's BannerSize + Material.
+/// </summary>
+public class CustomBannerDetailDto
+{
+    /// <summary>Public URL of the uploaded design preview (if any).</summary>
+    public string? PreviewUrl { get; set; }
+    /// <summary>Display name of the selected banner size.</summary>
+    public string? BannerSizeName { get; set; }
+    /// <summary>Display name of the banner material.</summary>
+    public string? MaterialName { get; set; }
+}
+
+/// <summary>
+/// Type-specific details for an <see cref="BannerShop.Core.Enums.OrderType.AiBanner"/> order.
+/// Populated from the linked <c>DesignRequest</c>.
+/// </summary>
+public class AiBannerDetailDto
+{
+    /// <summary>Customer-visible preview URL of the AI-generated banner (low-res when available).</summary>
+    public string? PreviewUrl { get; set; }
+    /// <summary>Free-text theme / style description the customer entered.</summary>
+    public string? ThemeDescription { get; set; }
+    /// <summary>Name of the person the banner is for.</summary>
+    public string? PersonName { get; set; }
+    /// <summary>Number of AI re-generations the customer has requested so far.</summary>
+    public int RevisionCount { get; set; }
+}
+
+/// <summary>
+/// Type-specific details for a <see cref="BannerShop.Core.Enums.OrderType.ManualDesign"/> order.
+/// Populated from the linked <c>DesignRequest</c>.
+/// </summary>
+public class ManualDesignDetailDto
+{
+    /// <summary>Public URL of the designer's uploaded preview (if any).</summary>
+    public string? PreviewUrl { get; set; }
+    /// <summary>Customer-selected aspect ratio ("16:9" or "18:9").</summary>
+    public string? AspectRatio { get; set; }
+    /// <summary>Internal notes from the designer / admin.</summary>
+    public string? DesignerNotes { get; set; }
+}
+
 public class OrderListItemDto
 {
     public int Id { get; set; }
@@ -139,6 +195,14 @@ public class OrderListItemDto
     public DateTime? EstimatedDelivery { get; set; }
     public string? CustomerName { get; set; }
     public string? CustomerEmail { get; set; }
+
+    // ── Type-specific sub-objects ─────────────────────────────────────────────
+    /// <summary>Populated only when <see cref="OrderType"/> is "CustomBanner".</summary>
+    public CustomBannerDetailDto? CustomBanner { get; set; }
+    /// <summary>Populated only when <see cref="OrderType"/> is "AiBanner".</summary>
+    public AiBannerDetailDto? AiBanner { get; set; }
+    /// <summary>Populated only when <see cref="OrderType"/> is "ManualDesign".</summary>
+    public ManualDesignDetailDto? ManualDesign { get; set; }
 }
 
 public class OrderDetailDto
@@ -164,6 +228,14 @@ public class OrderDetailDto
     public OrderAddressDto? ShippingAddress { get; set; }
     public List<OrderItemDto> Items { get; set; } = new();
     public ShipmentTrackingDto? ShipmentTracking { get; set; }
+
+    // ── Type-specific sub-objects ─────────────────────────────────────────────
+    /// <summary>Populated only when <see cref="OrderType"/> is "CustomBanner".</summary>
+    public CustomBannerDetailDto? CustomBanner { get; set; }
+    /// <summary>Populated only when <see cref="OrderType"/> is "AiBanner".</summary>
+    public AiBannerDetailDto? AiBanner { get; set; }
+    /// <summary>Populated only when <see cref="OrderType"/> is "ManualDesign".</summary>
+    public ManualDesignDetailDto? ManualDesign { get; set; }
 }
 
 public class OrderAddressDto

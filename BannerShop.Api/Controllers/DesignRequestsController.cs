@@ -110,11 +110,19 @@ public class DesignRequestsController : ControllerBase
     }
 
     // ── GET /api/design-requests ─────────────────────────────────────────────
+    /// <summary>
+    /// Deprecated: use <c>GET /api/orders</c> instead (BANNERSH-110).
+    /// Returns design requests for the authenticated user. This endpoint is kept for
+    /// backward compatibility but will be removed in a future version.
+    /// </summary>
     [HttpGet]
+    [Obsolete("Use GET /api/orders instead.")]
     public async Task<IActionResult> ListMine(CancellationToken ct)
     {
         var userId = GetUserId();
         if (userId == 0) return Unauthorized();
+        Response.Headers.Append("Deprecation", "true");
+        Response.Headers.Append("Link", "</api/orders>; rel=\"successor-version\"");
         var rows = await _service.ListMineAsync(userId, ct);
         return Ok(rows);
     }
