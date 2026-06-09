@@ -89,11 +89,12 @@ public sealed class OpenAiImageService : IAiImageService
         }
 
         var apiKey = apiKeyOpt.Value;
+        var liveOpts = _optsMonitor.CurrentValue;
         _log.LogInformation(
             "OpenAI image generation: invoking real API. KeySource={Source} KeyPrefix={Prefix} " +
-            "Model={Model} HasPortrait={HasPortrait} AspectRatio={AspectRatio}",
+            "Model={Model} Quality={Quality} HasPortrait={HasPortrait} AspectRatio={AspectRatio}",
             apiKey.Source, MaskKey(apiKey.Key),
-            _optsMonitor.CurrentValue.ImageModel,
+            liveOpts.ImageModel, liveOpts.ImageQuality,
             !string.IsNullOrWhiteSpace(request.ReferenceImagePath) && File.Exists(request.ReferenceImagePath),
             request.AspectRatio);
 

@@ -282,11 +282,18 @@ builder.Services.AddSwaggerGen(c =>
 // ─── Build ────────────────────────────────────────────────────────────────────
 var app = builder.Build();
 
-// ─── BANNERSH-98: loud OpenAI-key state log at startup ───────────────────────
+// ─── BANNERSH-98 / BANNERSH-127: loud OpenAI-key state log at startup ────────
 // Operators were unsure whether appsettings.Local.json was being picked up at
 // all. We dump the resolved working directory, which appsettings files are on
 // disk next to the dll, and the resolved OpenAi:ApiKey state (masked) so the
 // answer is in journalctl from the first line of every boot.
+//
+// BANNERSH-127: also walk EACH configuration provider in the chain and print
+// what (if anything) each contributes for OpenAi:ApiKey / OpenAi:ImageQuality
+// so that "I changed the file but it didn't take effect" is immediately
+// diagnosable from the log — you can SEE which provider "won". Likewise probe
+// the DB system_settings row (which OpenAiImageService prefers over appsettings)
+// so a stale admin-panel value overriding the file is obvious.
 {
     var startupLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup.OpenAi");
     var cwd = Directory.GetCurrentDirectory();
@@ -302,7 +309,10 @@ var app = builder.Build();
     var fileStates = candidateFiles
         .Select(name =>
         {
-            var abs = Path.GetFullPath(name);
+            // AddJsonFile resolves paths via the configuration's file provider,
+            // which WebApplicationBuilder roots at ContentRootPath. Use the same
+            // base here so the diagnostic matches where the framework looked.
+            var abs = Path.IsPathRooted(name) ? name : Path.Combine(contentRoot, name);
             return File.Exists(abs)
                 ? $"{name}=present ({abs})"
                 : $"{name}=absent ({abs})";
@@ -311,14 +321,7 @@ var app = builder.Build();
 
     var openAiCfg = app.Configuration.GetSection("OpenAi");
     var rawKey = openAiCfg["ApiKey"];
-    string keyState = rawKey switch
-    {
-        null => "missing",
-        "" => "empty",
-        var k when k.StartsWith("sk-REPLACE", StringComparison.OrdinalIgnoreCase) => $"placeholder({Mask(k)})",
-        var k when k.StartsWith("REPLACE_", StringComparison.OrdinalIgnoreCase) => $"placeholder({Mask(k)})",
-        var k => $"set({Mask(k)}, {k.Length} chars)",
-    };
+    string keyState = DescribeKeyState(rawKey);
 
     startupLog.LogInformation(
         "Boot config: Environment={Env} ContentRoot={ContentRoot} CWD={Cwd}",
@@ -331,6 +334,73 @@ var app = builder.Build();
         openAiCfg["ImageModel"] ?? "(default)",
         openAiCfg["ImageQuality"] ?? "(default)",
         openAiCfg["BaseUrl"] ?? "(default)");
+
+    // BANNERSH-127: per-provider trace. Walk the configuration chain and print
+    // what (if anything) each provider contributes for OpenAi:ApiKey /
+    // OpenAi:ImageQuality. Providers are listed in load order — LATER providers
+    // win, so the last one with a value is what the app actually sees. If
+    // appsettings.Local.json appears in this list and contains the key but it
+    // is still being overridden, something is very wrong; if it does NOT appear
+    // here at all, the file isn't being loaded.
+    if (app.Configuration is IConfigurationRoot cfgRoot)
+    {
+        var providerDescriptions = new List<string>();
+        var index = 0;
+        foreach (var provider in cfgRoot.Providers)
+        {
+            index++;
+            var providerName = provider.GetType().Name;
+            // JsonConfigurationProvider exposes its Source.Path — surface it so
+            // we know which JSON file each Json* entry corresponds to.
+            var providerPath = provider switch
+            {
+                Microsoft.Extensions.Configuration.Json.JsonConfigurationProvider j => j.Source.Path,
+                Microsoft.Extensions.Configuration.FileConfigurationProvider f => f.Source.Path,
+                _ => null,
+            };
+
+            var providerKey = provider.TryGet("OpenAi:ApiKey", out var keyVal) ? keyVal : null;
+            var providerQuality = provider.TryGet("OpenAi:ImageQuality", out var qVal) ? qVal : null;
+
+            providerDescriptions.Add(
+                $"#{index} {providerName}{(providerPath is null ? "" : $"({providerPath})")} " +
+                $"ApiKey={(providerKey is null ? "<not contributing>" : DescribeKeyState(providerKey))} " +
+                $"ImageQuality={(providerQuality is null ? "<not contributing>" : $"\"{providerQuality}\"")}");
+        }
+        startupLog.LogInformation(
+            "Boot config: configuration providers (load order — last value wins):\n  {Providers}",
+            string.Join("\n  ", providerDescriptions));
+    }
+    else
+    {
+        startupLog.LogWarning(
+            "Boot config: app.Configuration is not IConfigurationRoot ({Type}); cannot enumerate providers.",
+            app.Configuration.GetType().FullName);
+    }
+
+    // BANNERSH-127: probe the DB system_settings row for openai_api_key.
+    // OpenAiImageService prefers this over appsettings — a stale value left from
+    // an admin-panel edit will silently override any change to
+    // appsettings.Local.json, which is exactly the "still not working" symptom
+    // this task reports.
+    try
+    {
+        using var scope = app.Services.CreateScope();
+        var settings = scope.ServiceProvider
+            .GetRequiredService<BannerShop.Api.Services.SystemSettings.ISystemSettingsService>();
+        var dbKey = await settings.GetValueAsync("openai_api_key");
+        var dbModel = await settings.GetValueAsync("openai_image_model");
+        startupLog.LogInformation(
+            "Boot config: DB system_settings 'openai_api_key'={DbKeyState} 'openai_image_model'={DbModelState} " +
+            "(DB takes precedence over appsettings in OpenAiImageService — clear via admin panel if stale)",
+            DescribeKeyState(dbKey),
+            string.IsNullOrWhiteSpace(dbModel) ? "<unset>" : $"\"{dbModel}\"");
+    }
+    catch (Exception ex)
+    {
+        startupLog.LogWarning(ex,
+            "Boot config: could not read DB system_settings (DB may be unreachable at startup).");
+    }
 
     // Verify the IAiImageService implementation that DI resolves — the type
     // name confirms whether real OpenAI or a fallback is wired in. Wrapped so
@@ -349,12 +419,22 @@ var app = builder.Build();
             "Boot config: failed to resolve IAiImageService — DI is broken.");
     }
 
-    static string Mask(string key)
+    static string Mask(string? key)
     {
         if (string.IsNullOrEmpty(key)) return "(empty)";
         if (key.Length <= 10) return new string('*', key.Length);
         return key[..6] + "…" + key[^4..];
     }
+
+    static string DescribeKeyState(string? key) => key switch
+    {
+        null => "missing",
+        "" => "empty",
+        var k when string.IsNullOrWhiteSpace(k) => "whitespace",
+        var k when k.StartsWith("sk-REPLACE", StringComparison.OrdinalIgnoreCase) => $"placeholder({Mask(k)})",
+        var k when k.StartsWith("REPLACE_", StringComparison.OrdinalIgnoreCase) => $"placeholder({Mask(k)})",
+        var k => $"set({Mask(k)}, {k.Length} chars)",
+    };
 }
 
 // ─── Middleware pipeline ──────────────────────────────────────────────────────
