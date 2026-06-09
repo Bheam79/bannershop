@@ -11,8 +11,10 @@ public class CreateOrderDraftRequest
     [Required]
     public DeliveryType DeliveryType { get; set; } = DeliveryType.Standard;
 
-    [Required]
-    public AddressInputDto ShippingAddress { get; set; } = new();
+    /// <summary>
+    /// Required for Standard and Express delivery. Omit (or set to null) for Pickup orders.
+    /// </summary>
+    public AddressInputDto? ShippingAddress { get; set; }
 
     [Required, MinLength(1)]
     public List<OrderItemInputDto> Items { get; set; } = new();

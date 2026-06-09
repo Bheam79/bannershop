@@ -84,7 +84,11 @@ const STATUS_CLASSES: Record<string, string> = {
 }
 function statusLabel(s: string) { return STATUS_LABELS[s] ?? s }
 function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'bg-gray-100 text-gray-600' }
-function deliveryLabel(d: string) { return d === 'Express' ? 'Ekspress' : 'Standard' }
+function deliveryLabel(d: string) {
+  if (d === 'Express') return 'Ekspress'
+  if (d === 'Pickup') return 'Henting'
+  return 'Standard'
+}
 
 const ALL_STATUSES = Object.keys(STATUS_LABELS)
 </script>

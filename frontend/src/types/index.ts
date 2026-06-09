@@ -75,7 +75,7 @@ export type OrderStatus =
   | 'Delivered'
   | 'Cancelled'
 
-export type DeliveryType = 'Standard' | 'Express'
+export type DeliveryType = 'Standard' | 'Express' | 'Pickup'
 
 export type ProductionStage = 'Queued' | 'Printing' | 'Finishing' | 'ReadyToShip'
 

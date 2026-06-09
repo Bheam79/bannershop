@@ -83,6 +83,10 @@ public class OrderService : IOrderService
         if (req.Items is null || req.Items.Count == 0)
             return Fail("Order must contain at least one item.");
 
+        // Shipping address is required for all delivery types except Pickup
+        if (req.DeliveryType != DeliveryType.Pickup && req.ShippingAddress is null)
+            return Fail("ShippingAddress is required for Standard and Express delivery types.");
+
         // ── Validate BannerDesignIds (if any) in one round-trip ──
         var requestedDesignIds = req.Items
             .Where(i => i.BannerDesignId.HasValue)
@@ -182,23 +186,27 @@ public class OrderService : IOrderService
         }
 
         // ── Calculate shipping (sum of per-line parcel quotes) ──
+        // Pickup orders skip carrier shipping entirely — cost and carrier days are both 0.
         decimal shippingCost = 0m;
         int maxCarrierDays = 0;
-        try
+        if (req.DeliveryType != DeliveryType.Pickup)
         {
-            foreach (var input in req.Items)
+            try
             {
-                var size = sizes[input.BannerSizeId];
-                var parcel = await _parcels.CalculateAsync(size, input.CustomWidthCm, input.Quantity, ct);
-                var quote = await _shipping.CalculateAsync(req.ShippingAddress.PostalCode, req.ShippingAddress.City, parcel, ct);
-                shippingCost += quote.Standard.CostNok;
-                if (quote.Standard.EstimatedDays > maxCarrierDays)
-                    maxCarrierDays = quote.Standard.EstimatedDays;
+                foreach (var input in req.Items)
+                {
+                    var size = sizes[input.BannerSizeId];
+                    var parcel = await _parcels.CalculateAsync(size, input.CustomWidthCm, input.Quantity, ct);
+                    var quote = await _shipping.CalculateAsync(req.ShippingAddress!.PostalCode, req.ShippingAddress.City, parcel, ct);
+                    shippingCost += quote.Standard.CostNok;
+                    if (quote.Standard.EstimatedDays > maxCarrierDays)
+                        maxCarrierDays = quote.Standard.EstimatedDays;
+                }
             }
-        }
-        catch (ShippingUnavailableException ex)
-        {
-            return Fail($"Shipping cost unavailable: {ex.Message}");
+            catch (ShippingUnavailableException ex)
+            {
+                return Fail($"Shipping cost unavailable: {ex.Message}");
+            }
         }
 
         // ── Express fee + AI activation fee + lead-time params ──
@@ -222,16 +230,21 @@ public class OrderService : IOrderService
         var estimatedDelivery = DateTime.UtcNow.Date.AddDays(productionLeadDays + Math.Max(0, maxCarrierDays));
 
         // ── Persist Address (always create a fresh snapshot row for this order) ──
-        var address = new Address
+        // Pickup orders have no shipping address — ShippingAddress stays null on the order.
+        Address? address = null;
+        if (req.DeliveryType != DeliveryType.Pickup && req.ShippingAddress is not null)
         {
-            UserId     = userId,
-            Line1      = req.ShippingAddress.Line1.Trim(),
-            Line2      = string.IsNullOrWhiteSpace(req.ShippingAddress.Line2) ? null : req.ShippingAddress.Line2.Trim(),
-            PostalCode = req.ShippingAddress.PostalCode.Trim(),
-            City       = req.ShippingAddress.City.Trim(),
-            Country    = string.IsNullOrWhiteSpace(req.ShippingAddress.Country) ? "NO" : req.ShippingAddress.Country.Trim()
-        };
-        _db.Addresses.Add(address);
+            address = new Address
+            {
+                UserId     = userId,
+                Line1      = req.ShippingAddress.Line1.Trim(),
+                Line2      = string.IsNullOrWhiteSpace(req.ShippingAddress.Line2) ? null : req.ShippingAddress.Line2.Trim(),
+                PostalCode = req.ShippingAddress.PostalCode.Trim(),
+                City       = req.ShippingAddress.City.Trim(),
+                Country    = string.IsNullOrWhiteSpace(req.ShippingAddress.Country) ? "NO" : req.ShippingAddress.Country.Trim()
+            };
+            _db.Addresses.Add(address);
+        }
 
         var order = new Order
         {
@@ -788,7 +801,10 @@ public class OrderService : IOrderService
         sb.Append("<h3>Sammendrag</h3>");
         sb.Append("<table cellpadding=\"4\" cellspacing=\"0\" border=\"0\">");
         sb.Append($"<tr><td>Delsum varer</td><td style=\"text-align:right;\">{FormatNok(itemsSubtotal)}</td></tr>");
-        sb.Append($"<tr><td>Frakt</td><td style=\"text-align:right;\">{FormatNok(o.ShippingCostNok)}</td></tr>");
+        if (o.DeliveryType == DeliveryType.Pickup)
+            sb.Append("<tr><td>Levering</td><td style=\"text-align:right;\">Henting (gratis)</td></tr>");
+        else
+            sb.Append($"<tr><td>Frakt</td><td style=\"text-align:right;\">{FormatNok(o.ShippingCostNok)}</td></tr>");
         if (o.ExpressFeeNok > 0m)
             sb.Append($"<tr><td>Ekspressgebyr</td><td style=\"text-align:right;\">{FormatNok(o.ExpressFeeNok)}</td></tr>");
         if (o.AiActivationFeeNok > 0m)
@@ -796,8 +812,16 @@ public class OrderService : IOrderService
         sb.Append($"<tr><td><strong>Totalsum</strong></td><td style=\"text-align:right;\"><strong>{FormatNok(o.TotalNok)}</strong></td></tr>");
         sb.Append("</table>");
 
-        sb.Append($"<p>Estimert leveringsdato: <strong>{Esc(estimatedDelivery)}</strong>.</p>");
-        sb.Append("<p>Vi gir beskjed igjen så snart pakken er sendt fra oss.</p>");
+        if (o.DeliveryType == DeliveryType.Pickup)
+        {
+            sb.Append("<p>Bestillingen kan hentes i <strong>Rigedalen 43, 4626 Kristiansand</strong> mellom kl. 09–15 ukedager, eller etter avtale.</p>");
+            sb.Append("<p>Vi tar kontakt når bestillingen er klar for henting.</p>");
+        }
+        else
+        {
+            sb.Append($"<p>Estimert leveringsdato: <strong>{Esc(estimatedDelivery)}</strong>.</p>");
+            sb.Append("<p>Vi gir beskjed igjen så snart pakken er sendt fra oss.</p>");
+        }
         sb.Append("<p>Vennlig hilsen,<br/>BannerShop</p>");
         sb.Append("</body></html>");
         return sb.ToString();

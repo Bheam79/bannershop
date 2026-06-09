@@ -74,6 +74,7 @@ watch(city, () => {
 const subtotal = computed(() => cart.subtotal)
 
 const shippingCost = computed(() => {
+  if (deliveryType.value === 'Pickup') return 0
   if (!shippingEstimate.value) return 0
   return deliveryType.value === 'Express'
     ? shippingEstimate.value.express.costNok
@@ -107,9 +108,11 @@ const formErrors = ref<Record<string, string>>({})
 function validate(): boolean {
   const errs: Record<string, string> = {}
   if (!recipientName.value.trim()) errs.recipientName = 'Navn er påkrevd'
-  if (!addressLine1.value.trim()) errs.addressLine1 = 'Adresse er påkrevd'
-  if (!/^\d{4}$/.test(postalCode.value.trim())) errs.postalCode = 'Ugyldig postnummer (4 siffer)'
-  if (!city.value.trim()) errs.city = 'Poststed er påkrevd'
+  if (deliveryType.value !== 'Pickup') {
+    if (!addressLine1.value.trim()) errs.addressLine1 = 'Adresse er påkrevd'
+    if (!/^\d{4}$/.test(postalCode.value.trim())) errs.postalCode = 'Ugyldig postnummer (4 siffer)'
+    if (!city.value.trim()) errs.city = 'Poststed er påkrevd'
+  }
   formErrors.value = errs
   return Object.keys(errs).length === 0
 }
@@ -117,7 +120,7 @@ function validate(): boolean {
 // ── Proceed to payment ───────────────────────────────────────────────────────
 function proceed() {
   if (!validate()) return
-  if (!shippingEstimate.value) {
+  if (deliveryType.value !== 'Pickup' && !shippingEstimate.value) {
     formErrors.value.postalCode = 'Beregn frakt før du fortsetter'
     return
   }
@@ -195,11 +198,15 @@ function formatNok(n: number): string {
 
         <!-- Delivery address -->
         <section class="panel">
-          <h2 class="section-title">Leveringsadresse</h2>
+          <h2 class="section-title">
+            {{ deliveryType === 'Pickup' ? 'Kontaktinformasjon' : 'Leveringsadresse' }}
+          </h2>
           <div class="form-grid">
-            <!-- Recipient name -->
+            <!-- Recipient name (always required) -->
             <div class="form-field full">
-              <label class="field-label" for="recipientName">Mottaker</label>
+              <label class="field-label" for="recipientName">
+                {{ deliveryType === 'Pickup' ? 'Navn (for å identifisere bestillingen)' : 'Mottaker' }}
+              </label>
               <input
                 id="recipientName"
                 v-model="recipientName"
@@ -214,58 +221,61 @@ function formatNok(n: number): string {
               </p>
             </div>
 
-            <!-- Address line 1 -->
-            <div class="form-field full">
-              <label class="field-label" for="addressLine1">Gateadresse</label>
-              <input
-                id="addressLine1"
-                v-model="addressLine1"
-                type="text"
-                autocomplete="address-line1"
-                placeholder="Gatenavn og husnummer"
-                class="field-input"
-                :class="{ 'field-input--error': formErrors.addressLine1 }"
-              />
-              <p v-if="formErrors.addressLine1" class="field-error">
-                {{ formErrors.addressLine1 }}
-              </p>
-            </div>
+            <!-- Address fields — only shown for Standard / Express delivery -->
+            <template v-if="deliveryType !== 'Pickup'">
+              <!-- Address line 1 -->
+              <div class="form-field full">
+                <label class="field-label" for="addressLine1">Gateadresse</label>
+                <input
+                  id="addressLine1"
+                  v-model="addressLine1"
+                  type="text"
+                  autocomplete="address-line1"
+                  placeholder="Gatenavn og husnummer"
+                  class="field-input"
+                  :class="{ 'field-input--error': formErrors.addressLine1 }"
+                />
+                <p v-if="formErrors.addressLine1" class="field-error">
+                  {{ formErrors.addressLine1 }}
+                </p>
+              </div>
 
-            <!-- Postal code -->
-            <div class="form-field">
-              <label class="field-label" for="postalCode">Postnummer</label>
-              <input
-                id="postalCode"
-                v-model="postalCode"
-                type="text"
-                inputmode="numeric"
-                maxlength="4"
-                autocomplete="postal-code"
-                placeholder="0000"
-                class="field-input"
-                :class="{ 'field-input--error': formErrors.postalCode }"
-              />
-              <p v-if="formErrors.postalCode" class="field-error">
-                {{ formErrors.postalCode }}
-              </p>
-            </div>
+              <!-- Postal code -->
+              <div class="form-field">
+                <label class="field-label" for="postalCode">Postnummer</label>
+                <input
+                  id="postalCode"
+                  v-model="postalCode"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="4"
+                  autocomplete="postal-code"
+                  placeholder="0000"
+                  class="field-input"
+                  :class="{ 'field-input--error': formErrors.postalCode }"
+                />
+                <p v-if="formErrors.postalCode" class="field-error">
+                  {{ formErrors.postalCode }}
+                </p>
+              </div>
 
-            <!-- City -->
-            <div class="form-field">
-              <label class="field-label" for="city">Poststed</label>
-              <input
-                id="city"
-                v-model="city"
-                type="text"
-                autocomplete="address-level2"
-                placeholder="Oslo"
-                class="field-input"
-                :class="{ 'field-input--error': formErrors.city }"
-              />
-              <p v-if="formErrors.city" class="field-error">
-                {{ formErrors.city }}
-              </p>
-            </div>
+              <!-- City -->
+              <div class="form-field">
+                <label class="field-label" for="city">Poststed</label>
+                <input
+                  id="city"
+                  v-model="city"
+                  type="text"
+                  autocomplete="address-level2"
+                  placeholder="Oslo"
+                  class="field-input"
+                  :class="{ 'field-input--error': formErrors.city }"
+                />
+                <p v-if="formErrors.city" class="field-error">
+                  {{ formErrors.city }}
+                </p>
+              </div>
+            </template>
           </div>
         </section>
 
@@ -338,9 +348,37 @@ function formatNok(n: number): string {
                 </div>
               </div>
             </button>
+
+            <!-- Pickup -->
+            <button
+              type="button"
+              class="delivery-btn delivery-btn--pickup"
+              :class="{ 'delivery-btn--active': deliveryType === 'Pickup' }"
+              @click="deliveryType = 'Pickup'"
+            >
+              <div class="delivery-btn__inner">
+                <div class="delivery-btn__icon delivery-btn__icon--pickup">
+                  <i class="fa-solid fa-store"></i>
+                </div>
+                <div class="delivery-btn__body">
+                  <div class="delivery-btn__title">
+                    Henting
+                    <span class="badge-pickup">Gratis</span>
+                  </div>
+                  <div class="delivery-btn__sub">Rigedalen 43, 4626 Kristiansand</div>
+                  <div class="delivery-btn__sub">Mandag–fredag kl. 09–15, eller etter avtale</div>
+                  <div class="delivery-btn__price delivery-btn__price--pickup">0 kr</div>
+                </div>
+                <div class="delivery-btn__radio">
+                  <div class="radio-outer" :class="{ 'radio-outer--active': deliveryType === 'Pickup' }">
+                    <div v-if="deliveryType === 'Pickup'" class="radio-inner"></div>
+                  </div>
+                </div>
+              </div>
+            </button>
           </div>
 
-          <p v-if="shippingError" class="alert-error">
+          <p v-if="shippingError && deliveryType !== 'Pickup'" class="alert-error">
             <i class="fa-solid fa-circle-exclamation"></i>
             {{ shippingError }}
           </p>
@@ -360,10 +398,12 @@ function formatNok(n: number): string {
 
             <div class="summary-row">
               <dt class="summary-label">
-                Frakt ({{ deliveryType === 'Express' ? 'ekspress' : 'standard' }})
+                <template v-if="deliveryType === 'Pickup'">Henting</template>
+                <template v-else>Frakt ({{ deliveryType === 'Express' ? 'ekspress' : 'standard' }})</template>
               </dt>
               <dd class="summary-value">
-                <span v-if="shippingLoading" class="summary-faint">Beregner…</span>
+                <span v-if="deliveryType === 'Pickup'" class="summary-free">Gratis</span>
+                <span v-else-if="shippingLoading" class="summary-faint">Beregner…</span>
                 <span v-else-if="shippingEstimate">{{ formatNok(shippingCost) }}</span>
                 <span v-else class="summary-faint">–</span>
               </dd>
@@ -386,7 +426,7 @@ function formatNok(n: number): string {
             </div>
           </dl>
 
-          <div v-if="estimatedDeliveryText && shippingEstimate" class="alert-delivery">
+          <div v-if="estimatedDeliveryText && shippingEstimate && deliveryType !== 'Pickup'" class="alert-delivery">
             <i class="fa-solid fa-truck"></i>
             <div>
               <div class="alert-delivery__label">Estimert levering</div>
@@ -394,7 +434,7 @@ function formatNok(n: number): string {
             </div>
           </div>
 
-          <p v-if="!shippingEstimate" class="summary-hint">
+          <p v-if="deliveryType !== 'Pickup' && !shippingEstimate" class="summary-hint">
             Skriv inn leveringsadresse for å se fraktkostnader.
           </p>
 
@@ -543,6 +583,10 @@ function formatNok(n: number): string {
   grid-template-columns: 1fr 1fr;
   gap: 0.75rem;
 }
+/* Pickup spans full width as it's the 3rd option */
+.delivery-btn--pickup {
+  grid-column: 1 / -1;
+}
 @media (max-width: 640px) { .delivery-grid { grid-template-columns: 1fr; } }
 
 .delivery-btn {
@@ -594,6 +638,12 @@ function formatNok(n: number): string {
   border-color: var(--gold);
   color: var(--gold);
 }
+.delivery-btn__icon--pickup { color: #4ec984; }
+.delivery-btn--active .delivery-btn__icon--pickup {
+  background: rgba(78, 201, 132, 0.15);
+  border-color: #4ec984;
+  color: #4ec984;
+}
 
 .delivery-btn__body { flex: 1; min-width: 0; }
 .delivery-btn__title {
@@ -644,6 +694,16 @@ function formatNok(n: number): string {
   padding: 1px 7px;
   border-radius: 99px;
 }
+.badge-pickup {
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: rgba(78, 201, 132, 0.18);
+  color: #4ec984;
+  border: 1px solid rgba(78, 201, 132, 0.35);
+  padding: 1px 7px;
+  border-radius: 99px;
+}
+.delivery-btn__price--pickup { color: #4ec984; }
 
 .delivery-btn__radio { flex-shrink: 0; margin-top: 2px; }
 .radio-outer {
@@ -714,6 +774,7 @@ function formatNok(n: number): string {
 .summary-label { color: var(--muted); }
 .summary-value { font-weight: 600; color: var(--text); }
 .summary-faint { color: var(--faint); font-size: 0.8125rem; }
+.summary-free { color: #4ec984; font-weight: 600; }
 .summary-divider {
   border-top: 1px solid var(--line-soft);
   padding-top: 0.75rem;

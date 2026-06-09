@@ -5,7 +5,8 @@ import type { DeliveryType, EyeletOption } from '@/types'
 
 export interface OrderDraftRequest {
   deliveryType: DeliveryType
-  shippingAddress: {
+  /** Required for Standard/Express delivery. Omit for Pickup. */
+  shippingAddress?: {
     line1: string
     postalCode: string
     city: string

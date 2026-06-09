@@ -125,12 +125,12 @@ async function confirmMockPayment() {
   try {
     const resp = await createOrderDraft({
       deliveryType: checkout.deliveryType,
-      shippingAddress: {
+      shippingAddress: checkout.deliveryType !== 'Pickup' ? {
         line1: checkout.address.line1,
         postalCode: checkout.address.postalCode,
         city: checkout.address.city,
         country: 'NO',
-      },
+      } : undefined,
       items: cart.items
         .filter((item) => item.bannerSizeId != null)
         .map((item) => ({
@@ -191,12 +191,12 @@ async function pay() {
   try {
     const resp = await createOrderDraft({
       deliveryType: checkout.deliveryType,
-      shippingAddress: {
+      shippingAddress: checkout.deliveryType !== 'Pickup' ? {
         line1: checkout.address.line1,
         postalCode: checkout.address.postalCode,
         city: checkout.address.city,
         country: 'NO',
-      },
+      } : undefined,
       items: cart.items
         .filter((item) => item.bannerSizeId != null)
         .map((item) => ({
@@ -287,14 +287,28 @@ async function pay() {
           </div>
           <address class="addr-block">
             <div class="addr-name">{{ checkout.recipientName }}</div>
-            <div>{{ checkout.address.line1 }}</div>
-            <div>{{ checkout.address.postalCode }} {{ checkout.address.city }}</div>
+            <template v-if="checkout.deliveryType !== 'Pickup'">
+              <div>{{ checkout.address.line1 }}</div>
+              <div>{{ checkout.address.postalCode }} {{ checkout.address.city }}</div>
+            </template>
+            <template v-else>
+              <div style="color: var(--muted); font-size: 0.875rem; margin-top: 4px;">
+                Henting: Rigedalen 43, 4626 Kristiansand
+              </div>
+              <div style="color: var(--faint); font-size: 0.8125rem;">
+                Mandag–fredag kl. 09–15, eller etter avtale
+              </div>
+            </template>
           </address>
           <div class="addr-delivery">
-            <i class="fa-solid fa-truck"></i>
+            <i :class="checkout.deliveryType === 'Pickup' ? 'fa-solid fa-store' : 'fa-solid fa-truck'"></i>
             Levering:
             <span class="addr-delivery__type">
-              {{ checkout.deliveryType === 'Express' ? 'Ekspress (3 dager)' : 'Standard (2 uker)' }}
+              {{
+                checkout.deliveryType === 'Express' ? 'Ekspress (3 dager)' :
+                checkout.deliveryType === 'Pickup' ? 'Henting (gratis)' :
+                'Standard (2 uker)'
+              }}
             </span>
           </div>
         </section>

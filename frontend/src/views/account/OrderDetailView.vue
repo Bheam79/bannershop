@@ -93,8 +93,11 @@ const isShipped = computed(() =>
   order.value?.status === 'Shipped' || order.value?.status === 'Delivered'
 )
 
-const deliveryLabel = computed(() =>
-  order.value?.deliveryType === 'Express' ? 'Ekspress' : 'Standard'
+const deliveryLabel = computed(() => {
+  if (order.value?.deliveryType === 'Express') return 'Ekspress'
+  if (order.value?.deliveryType === 'Pickup') return 'Henting'
+  return 'Standard'
+}
 )
 </script>
 

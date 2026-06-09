@@ -73,7 +73,11 @@ const STATUS_CLASSES: Record<string, string> = {
 
 function statusLabel(s: string) { return STATUS_LABELS[s] ?? s }
 function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'badge-draft' }
-function deliveryLabel(d: string) { return d === 'Express' ? 'Ekspress' : 'Standard' }
+function deliveryLabel(d: string) {
+  if (d === 'Express') return 'Ekspress'
+  if (d === 'Pickup') return 'Henting'
+  return 'Standard'
+}
 
 const hasPrev = computed(() => page.value > 1)
 const hasNext = computed(() => page.value < totalPages.value)

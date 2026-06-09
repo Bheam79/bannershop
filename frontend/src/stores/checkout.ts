@@ -23,11 +23,15 @@ export const useCheckoutStore = defineStore('checkout', () => {
   const shippingCostNok = ref(0)
   const expressFeeNok = ref(0)
 
-  const isReady = () =>
-    !!recipientName.value.trim() &&
-    !!address.value.line1.trim() &&
-    /^\d{4}$/.test(address.value.postalCode) &&
-    !!address.value.city.trim()
+  const isReady = () => {
+    if (!recipientName.value.trim()) return false
+    if (deliveryType.value === 'Pickup') return true
+    return (
+      !!address.value.line1.trim() &&
+      /^\d{4}$/.test(address.value.postalCode) &&
+      !!address.value.city.trim()
+    )
+  }
 
   function setCheckout(state: CheckoutState) {
     recipientName.value = state.recipientName

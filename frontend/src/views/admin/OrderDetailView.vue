@@ -196,9 +196,11 @@ function formatDateTime(iso: string | null | undefined): string {
   return new Date(iso).toLocaleString('nb-NO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-const deliveryLabel = computed(() =>
-  order.value?.deliveryType === 'Express' ? 'Ekspress' : 'Standard'
-)
+const deliveryLabel = computed(() => {
+  if (order.value?.deliveryType === 'Express') return 'Ekspress'
+  if (order.value?.deliveryType === 'Pickup') return 'Henting'
+  return 'Standard'
+})
 </script>
 
 <template>
