@@ -293,10 +293,18 @@ config: secrets publish
 	'  }' \
 	'}' > $(APP_DIR)/appsettings.Production.json
 	@if [ -f $(ROOT_DIR)/BannerShop.Api/appsettings.Local.json ]; then \
+		echo ">>> Validating appsettings.Local.json (JSON parse check)..."; \
+		node -e "JSON.parse(require('fs').readFileSync('$(ROOT_DIR)/BannerShop.Api/appsettings.Local.json','utf8'))" \
+		  || { echo "" >&2; echo "ERROR: BannerShop.Api/appsettings.Local.json is not valid JSON." >&2; \
+		       echo "       Fix the syntax error shown above and re-run 'make up'." >&2; exit 1; }; \
 		echo ">>> Copying appsettings.Local.json → $(APP_DIR)/"; \
 		umask 077 && cp $(ROOT_DIR)/BannerShop.Api/appsettings.Local.json $(APP_DIR)/appsettings.Local.json; \
 	elif [ -f $(APP_DIR)/appsettings.Local.json ]; then \
-		echo ">>> No source-side appsettings.Local.json — keeping existing deployed copy at $(APP_DIR)/appsettings.Local.json"; \
+		echo ">>> No source-side appsettings.Local.json — validating deployed copy at $(APP_DIR)/..."; \
+		node -e "JSON.parse(require('fs').readFileSync('$(APP_DIR)/appsettings.Local.json','utf8'))" \
+		  || { echo "" >&2; echo "ERROR: Deployed appsettings.Local.json at $(APP_DIR)/ is not valid JSON." >&2; \
+		       echo "       Fix the syntax error shown above and re-run 'make up'." >&2; exit 1; }; \
+		echo ">>> Keeping existing deployed copy at $(APP_DIR)/appsettings.Local.json"; \
 	else \
 		echo ">>> No appsettings.Local.json in source tree or deployed dir — skipping."; \
 	fi
