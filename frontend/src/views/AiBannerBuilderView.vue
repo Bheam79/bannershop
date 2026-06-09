@@ -6,7 +6,7 @@ import type { Stripe, StripeCardElement } from '@stripe/stripe-js'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
 import { uploadBannerFile, getBannerDesign } from '@/api/bannerBuilder'
-import { fetchSizes, fetchEyeletPriceNok } from '@/api/shop'
+import { fetchSizes, fetchPrice, fetchEyeletPriceNok } from '@/api/shop'
 import type { BannerSize, EyeletOption } from '@/types'
 import { countEyelets } from '@/types'
 import {
@@ -60,7 +60,26 @@ const personName = ref('')
 const personAge = ref<number | null>(null)
 const textContent = ref('')
 const themeDescription = ref('')
-const aspectRatio = ref<'16:9' | '18:9'>('16:9')
+
+// ── Step 2: Quality / size selection (mirrors ManualBannerBuilderView) ────────
+type QualityOption = 'high' | 'good' | 'custom'
+const selectedQuality = ref<QualityOption>('high')
+
+const customWidth = ref<number | null>(null)
+const customHeight = ref<number | null>(null)
+const customMaterialGsm = ref<400 | 680>(400)
+
+const sizes = ref<BannerSize[]>([])
+const sizesLoaded = ref(false)
+
+interface OptionPriceState {
+  price: number | null
+  loading: boolean
+  comingSoon: boolean
+}
+const option1State = ref<OptionPriceState>({ price: null, loading: false, comingSoon: false })
+const option2State = ref<OptionPriceState>({ price: null, loading: false, comingSoon: false })
+const customState  = ref<OptionPriceState>({ price: null, loading: false, comingSoon: false })
 
 // ── Step 3: Generation state ──────────────────────────────────────────────────
 // BANNERSH-133: `tilpass` is a post-approval phase where the customer picks an
@@ -146,19 +165,33 @@ const templateName = computed(() => {
   return language.value === 'en' ? t.nameEn : t.nameNb
 })
 
-const aspectDimensions = computed(() => {
-  if (aspectRatio.value === '18:9') return { width: 300, height: 150 }
-  return { width: 266, height: 150 }
+// Dimensions for the currently selected quality option
+const selectedDimensions = computed(() => {
+  if (selectedQuality.value === 'high') return { width: 360, height: 150 }
+  if (selectedQuality.value === 'good') return { width: 300, height: 180 }
+  return { width: customWidth.value ?? 0, height: customHeight.value ?? 0 }
+})
+
+// Aspect ratio string sent to the backend
+const aspectRatioForBackend = computed(() => {
+  const { width, height } = selectedDimensions.value
+  if (width > 0 && height > 0) return `${width}x${height}`
+  return '360x150'
 })
 
 const step1Valid = computed(() => selectedTemplateId.value !== null)
 
-const step2Valid = computed(
-  () =>
-    personName.value.trim().length > 0 &&
-    textContent.value.trim().length > 0 &&
-    themeDescription.value.trim().length > 0,
-)
+const step2Valid = computed(() => {
+  if (
+    personName.value.trim().length === 0 ||
+    textContent.value.trim().length === 0 ||
+    themeDescription.value.trim().length === 0
+  ) return false
+  if (selectedQuality.value === 'custom') {
+    return (customWidth.value ?? 0) > 0 && (customHeight.value ?? 0) > 0
+  }
+  return true
+})
 
 // Effective paywall options: use last-known from API, or sensible defaults
 const effectivePaywallOptions = computed<PaywallOptions>(() => ({
@@ -173,6 +206,78 @@ const effectivePaywallOptions = computed<PaywallOptions>(() => ({
   manualDesignerUrl: paywallData.value?.paywallOptions?.manualDesignerUrl ?? '/banner-builder/manual',
   uploadOwnUrl: paywallData.value?.paywallOptions?.uploadOwnUrl ?? '/banner-builder',
 }))
+
+// ── Banner size / price helpers (quality selector) ───────────────────────────
+function pickBannerSize(
+  catalog: BannerSize[],
+  targetWidthCm: number,
+  targetHeightCm: number,
+  materialGsm?: number,
+): { size: BannerSize; customWidthCm?: number } | null {
+  const exact = catalog.find(
+    (s) =>
+      s.isActive &&
+      !s.isCustomWidth &&
+      s.widthCm === targetWidthCm &&
+      s.heightCm === targetHeightCm &&
+      (materialGsm == null || s.material?.weightGsm === materialGsm),
+  )
+  if (exact) return { size: exact }
+  const custom = catalog.find(
+    (s) =>
+      s.isActive &&
+      s.isCustomWidth &&
+      s.heightCm === targetHeightCm &&
+      (materialGsm == null || s.material?.weightGsm === materialGsm),
+  )
+  if (custom) return { size: custom, customWidthCm: targetWidthCm }
+  return null
+}
+
+function isComingSoon(size: BannerSize): boolean {
+  if (!size.availableFrom) return false
+  return new Date(size.availableFrom) > new Date()
+}
+
+async function computeOptionPrice(
+  targetWidth: number,
+  targetHeight: number,
+  state: OptionPriceState,
+  materialGsm?: number,
+) {
+  state.loading = true
+  state.price = null
+  state.comingSoon = false
+  try {
+    const picked = pickBannerSize(sizes.value, targetWidth, targetHeight, materialGsm)
+    if (!picked) { state.price = null; return }
+    state.comingSoon = isComingSoon(picked.size)
+    state.price = await fetchPrice(picked.size.id, picked.customWidthCm)
+  } catch {
+    state.price = null
+  } finally {
+    state.loading = false
+  }
+}
+
+async function refreshAllPrices() {
+  if (!sizesLoaded.value) return
+  await Promise.all([
+    computeOptionPrice(360, 150, option1State.value),
+    computeOptionPrice(300, 180, option2State.value),
+  ])
+}
+
+async function refreshCustomPrice() {
+  const w = customWidth.value ?? 0
+  const h = customHeight.value ?? 0
+  if (!sizesLoaded.value || w <= 0 || h <= 0) { customState.value.price = null; return }
+  await computeOptionPrice(w, h, customState.value, customMaterialGsm.value)
+}
+
+watch([customWidth, customHeight, customMaterialGsm], () => {
+  if (sizesLoaded.value) void refreshCustomPrice()
+})
 
 // BANNERSH-87: mirror the local creditsRemaining ref into the shared store so
 // the navbar credit badge updates the instant a generation succeeds, without
@@ -346,7 +451,12 @@ async function selectPastDesign(item: DesignRequestListItem) {
     themeDescription.value = detail.themeDescription
     selectedTemplateId.value = detail.bannerTemplateId
     language.value = detail.language === 'en' ? 'en' : 'nb'
-    aspectRatio.value = detail.aspectRatio === '18:9' ? '18:9' : '16:9'
+    // Map legacy aspect ratio to quality option (best effort)
+    if (detail.aspectRatio === '18:9' || detail.aspectRatio?.startsWith('300x')) {
+      selectedQuality.value = 'good'
+    } else {
+      selectedQuality.value = 'high'
+    }
 
     step.value = 2
     if (detail.status === 'AwaitingApproval' || detail.status === 'Approved' || detail.status === 'Final') {
@@ -504,7 +614,7 @@ async function generateBanner() {
         personAge: personAge.value ?? undefined,
         textContent: textContent.value.trim(),
         themeDescription: themeDescription.value.trim(),
-        aspectRatio: aspectRatio.value,
+        aspectRatio: aspectRatioForBackend.value,
         uploadedPhotoBannerDesignId: uploadedPhotoBannerDesignId.value ?? undefined,
       },
       integrity,
@@ -961,6 +1071,15 @@ onMounted(async () => {
   await loadCreditsBalance()
   await loadPastDesigns()
 
+  // Load banner sizes for quality option price display
+  try {
+    sizes.value = await fetchSizes()
+    sizesLoaded.value = true
+    await refreshAllPrices()
+  } catch {
+    // Non-critical — prices just won't display
+  }
+
   // BANNERSH-105: when arriving from a front-page category card the matching
   // template has already been pre-selected by loadTemplates(); skip the
   // template-picker step and drop the user straight into "Tilpass".
@@ -980,7 +1099,11 @@ onMounted(async () => {
         personAge.value = detail.personAge ?? null
         textContent.value = detail.textContent
         themeDescription.value = detail.themeDescription
-        aspectRatio.value = detail.aspectRatio === '18:9' ? '18:9' : '16:9'
+        if (detail.aspectRatio === '18:9' || detail.aspectRatio?.startsWith('300x')) {
+          selectedQuality.value = 'good'
+        } else {
+          selectedQuality.value = 'high'
+        }
         step.value = 2
       } catch {
         // Non-critical — just keep defaults and let the user fill in manually.
@@ -1298,27 +1421,126 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
+        <!-- Quality / size selection -->
         <div>
-          <div class="field-label" style="margin-bottom:10px">Størrelsesformat</div>
-          <div style="display:flex;gap:12px;flex-wrap:wrap">
-            <button type="button" class="ratio-btn" :class="{ 'ratio-btn-active': aspectRatio === '16:9' }" @click="aspectRatio = '16:9'">
-              <div style="font-weight:700;margin-bottom:2px">16:9 (Standard)</div>
-              <div style="font-size:13px;opacity:.7">ca. 266 × 150 cm</div>
-            </button>
-            <button type="button" class="ratio-btn" :class="{ 'ratio-btn-active': aspectRatio === '18:9' }" @click="aspectRatio = '18:9'">
-              <div style="font-weight:700;margin-bottom:2px">18:9 (Bred)</div>
-              <div style="font-size:13px;opacity:.7">ca. 300 × 150 cm</div>
-            </button>
-          </div>
-          <div class="size-preview" style="margin-top:16px">
-            <div class="ratio-visual" :style="aspectRatio === '16:9' ? { width: '96px', height: '54px' } : { width: '108px', height: '54px' }">
-              {{ aspectRatio }}
-            </div>
-            <div>
-              <div style="font-size:14.5px;font-weight:700;color:var(--text)">Ca. {{ aspectDimensions.width }} × {{ aspectDimensions.height }} cm</div>
-              <div style="font-size:13px;color:var(--faint);margin-top:2px">
-                {{ aspectRatio === '16:9' ? 'Standard panoramabanner – passer de fleste anledninger' : 'Bredere format – flott for lange vegger og rekkverk' }}
+          <div class="field-label" style="margin-bottom:12px">Velg kvalitet og størrelse</div>
+          <div class="quality-grid">
+
+            <!-- Option 1: Høykvalitet -->
+            <button
+              type="button"
+              class="quality-btn"
+              :class="{ 'quality-btn-active': selectedQuality === 'high' }"
+              @click="selectedQuality = 'high'"
+            >
+              <span v-if="option1State.comingSoon" class="coming-soon-pill">Kommer snart</span>
+              <div class="quality-btn-title">Høykvalitet</div>
+              <div class="quality-btn-sub">3 års fargegaranti</div>
+              <div class="quality-btn-dims">ca. 360 × 150 cm</div>
+              <div class="quality-btn-price">
+                <template v-if="option1State.loading">
+                  <i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i>
+                </template>
+                <template v-else-if="option1State.price !== null">
+                  {{ formatNok(option1State.price) }}
+                </template>
+                <template v-else>–</template>
               </div>
+            </button>
+
+            <!-- Option 2: God kvalitet -->
+            <button
+              type="button"
+              class="quality-btn"
+              :class="{ 'quality-btn-active': selectedQuality === 'good' }"
+              @click="selectedQuality = 'good'"
+            >
+              <span v-if="option2State.comingSoon" class="coming-soon-pill">Kommer snart</span>
+              <div class="quality-btn-title">God kvalitet</div>
+              <div class="quality-btn-sub">3 måneders fargegaranti</div>
+              <div class="quality-btn-dims">ca. 300 × 180 cm</div>
+              <div class="quality-btn-price">
+                <template v-if="option2State.loading">
+                  <i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i>
+                </template>
+                <template v-else-if="option2State.price !== null">
+                  {{ formatNok(option2State.price) }}
+                </template>
+                <template v-else>–</template>
+              </div>
+            </button>
+
+            <!-- Option 3: Custom -->
+            <button
+              type="button"
+              class="quality-btn"
+              :class="{ 'quality-btn-active': selectedQuality === 'custom' }"
+              @click="selectedQuality = 'custom'"
+            >
+              <span v-if="customState.comingSoon" class="coming-soon-pill">Kommer snart</span>
+              <div class="quality-btn-title">Egendefinert</div>
+              <div class="quality-btn-sub">Velg kvalitet og størrelse</div>
+              <div class="quality-btn-dims">skriv inn mål</div>
+              <div class="quality-btn-price" style="color:var(--faint);font-size:13px">
+                <template v-if="customState.loading">
+                  <i class="fa-solid fa-circle-notch fa-spin" style="font-size:11px"></i>
+                </template>
+                <template v-else-if="customState.price !== null">
+                  {{ formatNok(customState.price) }}
+                </template>
+                <template v-else>–</template>
+              </div>
+            </button>
+
+          </div>
+
+          <!-- Custom option inline form -->
+          <div v-if="selectedQuality === 'custom'" class="custom-size-form">
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+              <div>
+                <label class="field-label" style="margin-bottom:6px">Bredde (cm)</label>
+                <input
+                  v-model.number="customWidth"
+                  type="number"
+                  min="50"
+                  max="2000"
+                  class="dark-input"
+                  style="width:110px"
+                  placeholder="f.eks. 300"
+                />
+              </div>
+              <div>
+                <label class="field-label" style="margin-bottom:6px">Høyde (cm)</label>
+                <input
+                  v-model.number="customHeight"
+                  type="number"
+                  min="50"
+                  max="500"
+                  class="dark-input"
+                  style="width:110px"
+                  placeholder="f.eks. 150"
+                />
+              </div>
+              <div>
+                <label class="field-label" style="margin-bottom:6px">Materialkvalitet</label>
+                <div style="display:flex;gap:8px">
+                  <button
+                    type="button"
+                    class="mat-btn"
+                    :class="{ 'mat-btn-active': customMaterialGsm === 400 }"
+                    @click="customMaterialGsm = 400"
+                  >400g</button>
+                  <button
+                    type="button"
+                    class="mat-btn"
+                    :class="{ 'mat-btn-active': customMaterialGsm === 680 }"
+                    @click="customMaterialGsm = 680"
+                  >680g</button>
+                </div>
+              </div>
+            </div>
+            <div v-if="customState.comingSoon" style="margin-top:8px;font-size:13px;color:var(--gold)">
+              <i class="fa-solid fa-clock"></i> Denne kombinasjonen er ikke tilgjengelig ennå.
             </div>
           </div>
         </div>
@@ -1565,8 +1787,12 @@ onBeforeUnmount(() => {
                 <dd style="color:var(--text)">{{ themeDescription }}</dd>
               </div>
               <div>
-                <dt class="field-label" style="margin-bottom:3px">Format</dt>
-                <dd style="color:var(--text)">{{ aspectRatio }} — ca. {{ aspectDimensions.width }} × {{ aspectDimensions.height }} cm</dd>
+                <dt class="field-label" style="margin-bottom:3px">Størrelse</dt>
+                <dd style="color:var(--text)">
+                  <span v-if="selectedQuality === 'high'">Høykvalitet — ca. 360 × 150 cm</span>
+                  <span v-else-if="selectedQuality === 'good'">God kvalitet — ca. 300 × 180 cm</span>
+                  <span v-else>Egendefinert — {{ customWidth ?? '?' }} × {{ customHeight ?? '?' }} cm</span>
+                </dd>
               </div>
               <div v-if="uploadedPhotoBannerDesignId">
                 <dt class="field-label" style="margin-bottom:3px">Portrettfoto</dt>
@@ -2503,44 +2729,95 @@ onBeforeUnmount(() => {
 .dark-input::placeholder { color: var(--faint); }
 .dark-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,106,61,.18); }
 
-/* ── Aspect ratio buttons ────────────────────────────────────── */
-.ratio-btn {
+/* ── Quality / size selector ─────────────────────────────────── */
+.quality-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+@media (max-width: 560px) { .quality-grid { grid-template-columns: 1fr; } }
+
+.quality-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   border: 2px solid var(--line);
-  border-radius: 12px;
-  padding: 12px 20px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  border-radius: 14px;
+  padding: 14px 16px;
   background: transparent;
-  color: var(--muted);
+  cursor: pointer;
   font-family: var(--font-ui);
+  transition: border-color .15s, background .15s, box-shadow .15s;
   text-align: left;
 }
-.ratio-btn:hover { border-color: var(--line); color: var(--text); }
-.ratio-btn-active { border-color: var(--accent); color: var(--text); background: rgba(255,106,61,.08); }
+.quality-btn:hover { border-color: var(--line-soft); color: var(--text); }
+.quality-btn-active {
+  border-color: var(--accent);
+  background: rgba(255,106,61,.08);
+  color: var(--text);
+  box-shadow: 0 0 0 2px rgba(255,106,61,.2);
+}
+.quality-btn-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+}
+.quality-btn-sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.quality-btn-dims {
+  font-size: 13px;
+  color: var(--faint);
+}
+.quality-btn-price {
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-2);
+}
 
-/* ── Size preview ────────────────────────────────────────────── */
-.size-preview {
+/* "Kommer snart" pill */
+.coming-soon-pill {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(231,185,78,.18);
+  color: var(--gold);
+  border: 1px solid rgba(231,185,78,.35);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  pointer-events: none;
+}
+
+/* Custom size inline form */
+.custom-size-form {
+  margin-top: 14px;
+  padding: 16px;
   background: var(--surface-2);
   border: 1px solid var(--line-soft);
   border-radius: 12px;
-  padding: 16px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
 }
-.ratio-visual {
-  border: 2px solid var(--accent);
-  background: rgba(255,106,61,.08);
-  border-radius: 6px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  color: var(--accent-2);
-  font-weight: 700;
+
+/* Material selector buttons */
+.mat-btn {
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  color: var(--muted);
+  transition: border-color .15s, color .15s, background .15s;
+  font-family: var(--font-ui);
 }
+.mat-btn:hover { color: var(--text); }
+.mat-btn-active { border-color: var(--accent); color: var(--text); background: rgba(255,106,61,.08); }
 
 /* ── Stripe mount ────────────────────────────────────────────── */
 .stripe-mount {
