@@ -8,6 +8,23 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace BannerShop.Api.Controllers;
 
+/// <summary>
+/// Stripe webhook receiver. Register  <c>POST /api/webhooks/stripe</c>  in the
+/// Stripe dashboard (Dashboard → Developers → Webhooks → Add endpoint).
+///
+/// In production the backend runs on port 17080, so the full URL is:
+///   <c>https://&lt;your-domain&gt;/api/webhooks/stripe</c>
+///
+/// The signing secret (<c>whsec_…</c>) must be saved in
+/// <c>system_settings.stripe_webhook_secret</c> via /admin/settings.
+///
+/// For local development use the Stripe CLI:
+///   <c>stripe listen --forward-to localhost:5000/api/webhooks/stripe</c>
+///
+/// Events handled:
+///   <c>payment_intent.succeeded</c>  — banner orders, AI credit packs, manual design requests
+///   <c>payment_intent.payment_failed</c> — marks the linked order as payment-failed
+/// </summary>
 [ApiController]
 [Route("api/webhooks")]
 public class WebhooksController : ControllerBase

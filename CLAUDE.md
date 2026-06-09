@@ -120,6 +120,31 @@ callers).
 - **BANNERSH-162: quality/size picker placement + image-ratio-driven sizing.** In `AiBannerBuilderView`, the "Velg kvalitet og størrelse" block is rendered *below* the generated preview (not above it) and is hidden until `genPhase === 'ready' && currentDesignRequest.previewUrl`. The displayed widths come from `aiImageAspectRatio` (preferred: `aiImageNaturalRatio` captured by the preview `<img>`'s `@load` handler; fallback: parsing `currentDesignRequest.aspectRatio` as `WxH` or `A:B`). High → 150 cm tall × `round(150 × ratio)` wide; Good → 180 cm tall × `round(180 × ratio)` wide; Custom width ↔ height are linked via the same ratio (lock cleared on `nextTick` so Vue's same-value skip doesn't strand the guard). `step2Valid` only requires custom W/H once `genPhase === 'ready'`, since the picker is invisible during the pre-generation form. `aiImageNaturalRatio` is reset in `generateBanner`, `regenerate`, `selectPastDesign`, and `returnToWizardIdle` so the next image's `@load` is authoritative.
 - **BANNERSH-139: credit packs tracked as Orders.** AI credit-pack purchases now write a real `Order` row with `OrderType = CreditPack` (enum value 3) so transaction reports pick them up. The buy endpoint (`AiCreditsController.BuyCreditPack`) creates the Order + a synthetic `OrderItem` *before* asking Stripe for a PaymentIntent, then stamps the PI id on the order. `IStripePaymentService.CreateCreditPackPaymentIntentAsync` now takes an optional `orderId` so the PI metadata includes it. The webhook handler still routes `type=ai_credit_pack` to the credits-grant path, AND additionally calls `OrderService.MarkPaidAsync(pi, orderId)` — `MarkPaidAsync` skips production-row seeding AND the order-confirmation email for `OrderType=CreditPack` orders (those flows don't apply). Admin orders list (`OrderService.ListAllAsync` + `AdminOrderFilter.IncludeCreditPacks` + `GET /api/admin/orders?includeCreditPacks=true`) hides them by default; the type filter overrides the hide. Frontend admin OrdersView has an "Inkluder AI-kjøp" checkbox + a gold `CreditPack` chip; account OrdersView + AccountView label them "AI-pakke" with a matching chip.
 
+## Stripe webhook (BANNERSH-166)
+Yes — the app uses Stripe webhooks. The endpoint is:
+
+```
+POST /api/webhooks/stripe
+```
+
+In production (`make up`) the backend listens on port **17080**, so the URL to register in the Stripe dashboard is:
+
+```
+https://<your-domain>/api/webhooks/stripe
+```
+
+(replace `<your-domain>` with the public hostname/IP pointed at the server, e.g. via nginx/Caddy that proxies `:443` → `:17080`).
+
+Events handled: `payment_intent.succeeded` (banner orders, AI credit packs, manual design requests) and `payment_intent.payment_failed`.
+
+The **webhook signing secret** (`whsec_…`) from the Stripe dashboard must be saved to `system_settings.stripe_webhook_secret` via `/admin/settings` — no appsettings fallback.
+
+For local dev with the Stripe CLI:
+```bash
+stripe listen --forward-to localhost:5000/api/webhooks/stripe
+# Copy the printed "whsec_…" into /admin/settings → Stripe Webhook Secret
+```
+
 ## API keys: DB-only (BANNERSH-161)
 All secret API keys live in `system_settings` and are set via `/admin/settings`. **There is no appsettings fallback.** Affected rows:
 - `openai_api_key` → consumed by `OpenAiImageService` AND `OpenAiPromptRefinementService` (both inject `ISystemSettingsService`; refinement is silently skipped → base prompt if the key is blank)
