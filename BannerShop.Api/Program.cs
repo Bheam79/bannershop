@@ -97,17 +97,15 @@ else
 // ─── Stripe + Orders ──────────────────────────────────────────────────────────
 builder.Services.Configure<StripeOptions>(builder.Configuration.GetSection(StripeOptions.SectionName));
 
-var stripeSection = builder.Configuration.GetSection(StripeOptions.SectionName);
-var stripeKey = stripeSection["SecretKey"];
-var stripeConfigured =
-    !string.IsNullOrWhiteSpace(stripeKey) &&
-    !stripeKey.StartsWith("sk_test_REPLACE_", StringComparison.OrdinalIgnoreCase) &&
-    !stripeKey.StartsWith("REPLACE_", StringComparison.OrdinalIgnoreCase);
-
-if (stripeConfigured)
-    builder.Services.AddScoped<IStripePaymentService, StripePaymentService>();
-else
-    builder.Services.AddScoped<IStripePaymentService, MockStripePaymentService>();
+// Always register the real StripePaymentService — it resolves the API key at call
+// time (DB system setting → appsettings fallback) so the admin can enter or update
+// the key via the settings panel without restarting the service.  Restricted keys
+// (rk_live_… / rk_test_…) are accepted in addition to standard sk_live_… keys.
+// When no key is found at call time the service throws, returning 500 to the caller
+// (appropriate: payment endpoints must not silently succeed without a real key).
+// Tests that need mock payments should override IStripePaymentService in their
+// WebApplicationFactory / unit test setup.
+builder.Services.AddScoped<IStripePaymentService, StripePaymentService>();
 
 builder.Services.AddScoped<IOrderService, OrderService>();
 

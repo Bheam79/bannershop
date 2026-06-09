@@ -49,7 +49,7 @@ public interface IStripePaymentService
     /// Verifies a Stripe webhook signature and returns the parsed event.
     /// Returns null when the signature is invalid.
     /// </summary>
-    StripeWebhookEvent? VerifyAndParseEvent(string requestBody, string signatureHeader);
+    Task<StripeWebhookEvent?> VerifyAndParseEventAsync(string requestBody, string signatureHeader, CancellationToken ct = default);
 }
 
 /// <summary>Provider-agnostic representation of an inbound Stripe webhook event.</summary>

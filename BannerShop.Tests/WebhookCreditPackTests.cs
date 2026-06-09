@@ -72,8 +72,8 @@ public class WebhookCreditPackTests
     {
         var (controller, stripeMock, creditsMock, _, _) = MakeController();
 
-        stripeMock.Setup(s => s.VerifyAndParseEvent(It.IsAny<string>(), It.IsAny<string>()))
-            .Returns(new StripeWebhookEvent(
+        stripeMock.Setup(s => s.VerifyAndParseEventAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StripeWebhookEvent(
                 EventType: "payment_intent.succeeded",
                 PaymentIntentId: "pi_pack_001",
                 OrderIdFromMetadata: null,
@@ -110,8 +110,8 @@ public class WebhookCreditPackTests
             MetadataUserId: 42,
             MetadataCreditCount: 10);
 
-        stripeMock.Setup(s => s.VerifyAndParseEvent(It.IsAny<string>(), It.IsAny<string>()))
-            .Returns(evt);
+        stripeMock.Setup(s => s.VerifyAndParseEventAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(evt);
 
         // Simulate two webhook deliveries
         await controller.Stripe(CancellationToken.None);
@@ -132,8 +132,8 @@ public class WebhookCreditPackTests
     {
         var (controller, stripeMock, creditsMock, _, _) = MakeController();
 
-        stripeMock.Setup(s => s.VerifyAndParseEvent(It.IsAny<string>(), It.IsAny<string>()))
-            .Returns(new StripeWebhookEvent(
+        stripeMock.Setup(s => s.VerifyAndParseEventAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StripeWebhookEvent(
                 EventType: "payment_intent.succeeded",
                 PaymentIntentId: "pi_pack_nouserid",
                 OrderIdFromMetadata: null,
@@ -158,8 +158,8 @@ public class WebhookCreditPackTests
     {
         var (controller, stripeMock, creditsMock, ordersMock, _) = MakeController();
 
-        stripeMock.Setup(s => s.VerifyAndParseEvent(It.IsAny<string>(), It.IsAny<string>()))
-            .Returns(new StripeWebhookEvent(
+        stripeMock.Setup(s => s.VerifyAndParseEventAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StripeWebhookEvent(
                 EventType: "payment_intent.succeeded",
                 PaymentIntentId: "pi_order_001",
                 OrderIdFromMetadata: 5,
@@ -186,8 +186,8 @@ public class WebhookCreditPackTests
         // Pre-BANNERSH-69 orders had no 'type' in metadata; they must still be processed.
         var (controller, stripeMock, creditsMock, ordersMock, _) = MakeController();
 
-        stripeMock.Setup(s => s.VerifyAndParseEvent(It.IsAny<string>(), It.IsAny<string>()))
-            .Returns(new StripeWebhookEvent(
+        stripeMock.Setup(s => s.VerifyAndParseEventAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StripeWebhookEvent(
                 EventType: "payment_intent.succeeded",
                 PaymentIntentId: "pi_legacy_order",
                 OrderIdFromMetadata: 7,
@@ -212,8 +212,8 @@ public class WebhookCreditPackTests
         // ai_design_standalone is a retired flow (BANNERSH-67); should be silently ignored.
         var (controller, stripeMock, creditsMock, ordersMock, _) = MakeController();
 
-        stripeMock.Setup(s => s.VerifyAndParseEvent(It.IsAny<string>(), It.IsAny<string>()))
-            .Returns(new StripeWebhookEvent(
+        stripeMock.Setup(s => s.VerifyAndParseEventAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StripeWebhookEvent(
                 EventType: "payment_intent.succeeded",
                 PaymentIntentId: "pi_legacy_ai",
                 OrderIdFromMetadata: null,
@@ -239,8 +239,8 @@ public class WebhookCreditPackTests
     {
         var (controller, stripeMock, creditsMock, ordersMock, _) = MakeController();
 
-        stripeMock.Setup(s => s.VerifyAndParseEvent(It.IsAny<string>(), It.IsAny<string>()))
-            .Returns(new StripeWebhookEvent(
+        stripeMock.Setup(s => s.VerifyAndParseEventAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StripeWebhookEvent(
                 EventType: "payment_intent.payment_failed",
                 PaymentIntentId: "pi_failed",
                 OrderIdFromMetadata: 3,
@@ -260,8 +260,8 @@ public class WebhookCreditPackTests
     public async Task Webhook_InvalidSignature_Returns400()
     {
         var (controller, stripeMock, _, _, _) = MakeController();
-        stripeMock.Setup(s => s.VerifyAndParseEvent(It.IsAny<string>(), It.IsAny<string>()))
-            .Returns((StripeWebhookEvent?)null);
+        stripeMock.Setup(s => s.VerifyAndParseEventAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StripeWebhookEvent?)null);
 
         var result = await controller.Stripe(CancellationToken.None);
 

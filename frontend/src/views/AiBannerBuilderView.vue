@@ -966,13 +966,31 @@ function goToCheckoutWithDesign() {
   void router.push(id ? `/checkout?designRequestId=${id}` : '/checkout')
 }
 
+// Resolve Stripe publishable key: env var → runtime API fallback
+async function resolveStripePublishableKey(): Promise<string | null> {
+  const envKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined
+  if (envKey && !envKey.startsWith('pk_test_REPLACE') && !envKey.startsWith('REPLACE_')) {
+    return envKey
+  }
+  try {
+    const resp = await fetch('/api/config/stripe')
+    if (resp.ok) {
+      const data: { publishableKey?: string } = await resp.json()
+      if (data.publishableKey && data.publishableKey.length > 0) return data.publishableKey
+    }
+  } catch {
+    // network error — fall through
+  }
+  return null
+}
+
 // Stripe initialisation (lazy)
 async function initStripe(): Promise<boolean> {
   if (stripeRef.value) return true
-  const key = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined
-  if (!key || key.startsWith('pk_test_REPLACE')) {
+  const key = await resolveStripePublishableKey()
+  if (!key) {
     creditPackError.value =
-      'Stripe er ikke konfigurert i dette miljøet. Kortbetaling er ikke tilgjengelig.'
+      'Stripe er ikke konfigurert. Sett stripe_publishable_key i adminpanelet.'
     creditPackPhase.value = 'error'
     return false
   }

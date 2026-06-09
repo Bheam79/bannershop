@@ -33,12 +33,31 @@ const cardMountEl = ref<HTMLDivElement | null>(null)
 const stripeReady = ref(false)
 const stripeError = ref<string | null>(null)
 
+async function resolveStripePublishableKey(): Promise<string | null> {
+  // 1. Build-time env var (still works, preferred for performance)
+  const envKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined
+  if (envKey && !envKey.startsWith('pk_test_REPLACE') && !envKey.startsWith('REPLACE_')) {
+    return envKey
+  }
+  // 2. Runtime API — allows the admin to set the publishable key via the settings panel
+  //    without rebuilding the frontend.
+  try {
+    const resp = await fetch('/api/config/stripe')
+    if (resp.ok) {
+      const data: { publishableKey?: string } = await resp.json()
+      if (data.publishableKey && data.publishableKey.length > 0) return data.publishableKey
+    }
+  } catch {
+    // network error — fall through
+  }
+  return null
+}
+
 async function initStripe() {
-  const key = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined
-  if (!key || key.startsWith('pk_test_REPLACE')) {
+  const key = await resolveStripePublishableKey()
+  if (!key) {
     stripeError.value =
-      'Stripe er ikke konfigurert (mangler VITE_STRIPE_PUBLISHABLE_KEY). ' +
-      'Betalingsfunksjonen er ikke tilgjengelig i denne testmiljøet.'
+      'Stripe er ikke konfigurert. Sett stripe_publishable_key i adminpanelet eller VITE_STRIPE_PUBLISHABLE_KEY i miljøvariabler.'
     return
   }
 

@@ -31,9 +31,9 @@ public class MockStripePaymentService : IStripePaymentService
     public Task CancelPaymentIntentAsync(string paymentIntentId, CancellationToken ct = default)
         => Task.CompletedTask;
 
-    public StripeWebhookEvent? VerifyAndParseEvent(string requestBody, string signatureHeader)
+    public Task<StripeWebhookEvent?> VerifyAndParseEventAsync(string requestBody, string signatureHeader, CancellationToken ct = default)
     {
         _logger.LogWarning("Webhook called against MockStripePaymentService — rejecting.");
-        return null;
+        return Task.FromResult<StripeWebhookEvent?>(null);
     }
 }

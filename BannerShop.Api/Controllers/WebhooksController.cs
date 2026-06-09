@@ -46,7 +46,7 @@ public class WebhooksController : ControllerBase
         if (string.IsNullOrEmpty(signature))
             return BadRequest(new { error = "Missing Stripe-Signature header." });
 
-        var evt = _stripe.VerifyAndParseEvent(body, signature);
+        var evt = await _stripe.VerifyAndParseEventAsync(body, signature, ct);
         if (evt is null)
             return BadRequest(new { error = "Invalid Stripe signature or payload." });
 

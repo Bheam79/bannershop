@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using BannerShop.Api.Services;
+using BannerShop.Api.Services.Orders.Stripe;
 using BannerShop.Api.Services.Shipping;
 using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
@@ -99,6 +100,16 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             foreach (var d in shippingDescriptors)
                 services.Remove(d);
             services.AddScoped<IShippingService, MockShippingService>();
+
+            // ── BANNERSH-160: force MockStripePaymentService in tests ───────────────
+            // StripePaymentService is now always registered (DB-first key resolution).
+            // Tests must not attempt real Stripe API calls — swap it out for the mock.
+            var stripeDescriptors = services
+                .Where(d => d.ServiceType == typeof(IStripePaymentService))
+                .ToList();
+            foreach (var d in stripeDescriptors)
+                services.Remove(d);
+            services.AddScoped<IStripePaymentService, MockStripePaymentService>();
         });
     }
 

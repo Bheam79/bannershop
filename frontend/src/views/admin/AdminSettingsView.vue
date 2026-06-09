@@ -177,6 +177,25 @@ onMounted(load)
           <code class="bg-gray-800 px-1 rounded">auto</code>.
           La stå tom for å bruke standardverdien fra appsettings (<code class="bg-gray-800 px-1 rounded">high</code>).
         </li>
+        <li>
+          <strong class="text-gray-300">stripe_secret_key</strong>: Hemmelig nøkkel fra
+          <a href="https://dashboard.stripe.com/apikeys" target="_blank" class="text-blue-400 hover:underline">
+            dashboard.stripe.com/apikeys
+          </a>. Starter med <code class="bg-gray-800 px-1 rounded">sk_live_</code>,
+          <code class="bg-gray-800 px-1 rounded">sk_test_</code>,
+          <code class="bg-gray-800 px-1 rounded">rk_live_</code> eller
+          <code class="bg-gray-800 px-1 rounded">rk_test_</code> (begrenset nøkkel).
+        </li>
+        <li>
+          <strong class="text-gray-300">stripe_publishable_key</strong>: Offentlig nøkkel brukt av nettleseren.
+          Starter med <code class="bg-gray-800 px-1 rounded">pk_live_</code> eller
+          <code class="bg-gray-800 px-1 rounded">pk_test_</code>. Trenger ikke ombygging av frontend.
+        </li>
+        <li>
+          <strong class="text-gray-300">stripe_webhook_secret</strong>: Webhook-signeringshemmelighet fra
+          Stripe-dashbordet under Developers → Webhooks. Starter med
+          <code class="bg-gray-800 px-1 rounded">whsec_</code>.
+        </li>
       </ul>
     </div>
   </div>
