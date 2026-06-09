@@ -7,6 +7,17 @@ public class Order
     public int Id { get; set; }
     public int UserId { get; set; }
     public OrderStatus Status { get; set; } = OrderStatus.Draft;
+
+    /// <summary>Classifies the fulfilment flow (custom-upload / AI / manual-design).</summary>
+    public OrderType OrderType { get; set; } = OrderType.CustomBanner;
+
+    /// <summary>
+    /// Lifecycle state — a richer superset of the legacy <see cref="Status"/> field.
+    /// Use <see cref="BannerShop.Core.Helpers.OrderStateHelper.ValidSequence"/> to
+    /// enumerate the states applicable for this order's <see cref="OrderType"/>.
+    /// </summary>
+    public OrderState OrderState { get; set; } = OrderState.Draft;
+
     public DeliveryType DeliveryType { get; set; } = DeliveryType.Standard;
     public int? ShippingAddressId { get; set; }
     public decimal ShippingCostNok { get; set; }

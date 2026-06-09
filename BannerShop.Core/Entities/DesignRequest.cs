@@ -129,6 +129,13 @@ public class DesignRequest
     /// </summary>
     public int? FinalBannerDesignId { get; set; }
 
+    /// <summary>
+    /// FK to the <see cref="Order"/> that includes this design request as an item.
+    /// Nullable for now — populated by the migration task that links existing rows.
+    /// When non-null, the design request is part of a full banner order.
+    /// </summary>
+    public int? OrderId { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
@@ -144,6 +151,7 @@ public class DesignRequest
     public BannerTemplate BannerTemplate { get; set; } = null!;
     public BannerDesign? FinalBannerDesign { get; set; }
     public BannerGeneration? CurrentGeneration { get; set; }
+    public Order? Order { get; set; }
     public ICollection<DesignRequestRevision> Revisions { get; set; } = new List<DesignRequestRevision>();
     public ICollection<BannerGeneration> Generations { get; set; } = new List<BannerGeneration>();
 }

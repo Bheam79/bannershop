@@ -153,6 +153,15 @@ public class BannerShopDbContext : DbContext
         {
             e.HasKey(x => x.Id);
             e.Property(x => x.Status).HasConversion<string>();
+            // OrderType and OrderState stored as tinyint for compact storage.
+            e.Property(x => x.OrderType)
+             .HasConversion<byte>()
+             .HasColumnType("tinyint unsigned")
+             .HasDefaultValue(OrderType.CustomBanner);
+            e.Property(x => x.OrderState)
+             .HasConversion<byte>()
+             .HasColumnType("tinyint unsigned")
+             .HasDefaultValue(OrderState.Draft);
             e.Property(x => x.DeliveryType).HasConversion<string>();
             e.Property(x => x.ShippingCostNok).HasColumnType("decimal(10,2)");
             e.Property(x => x.ExpressFeeNok).HasColumnType("decimal(10,2)");
@@ -298,10 +307,19 @@ public class BannerShopDbContext : DbContext
                 .HasForeignKey(x => x.FinalBannerDesignId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // Optional FK to the Order that contains this design request (BANNERSH-107).
+            // Nullable — filled in by a follow-up linking migration; existing rows remain null.
+            e.HasOne(x => x.Order)
+                .WithMany()
+                .HasForeignKey(x => x.OrderId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.SetNull);
+
             e.HasIndex(x => x.UserId);
             e.HasIndex(x => x.StripePaymentIntentId);
             e.HasIndex(x => x.Status);
             e.HasIndex(x => x.IpAddress).HasDatabaseName("IX_DesignRequests_IpAddress");
+            e.HasIndex(x => x.OrderId).HasDatabaseName("IX_DesignRequests_OrderId");
         });
 
         // DesignRequestRevision (correction log per request)
