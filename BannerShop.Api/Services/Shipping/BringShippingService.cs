@@ -115,7 +115,20 @@ public class BringShippingService : IShippingService
         // calculator action; the URL is appended onto the configured BaseUrl.
         var ratesUrl = $"{_options.RatesPath.TrimEnd('/')}/products";
 
+        // Serialise the outgoing request for diagnostics (BANNERSH-143 follow-up).
+        // Logged at Debug level in normal operation; bumped to Warning when the API
+        // returns no usable product so it always appears in production logs.
+        var requestJson = JsonSerializer.Serialize(request, new JsonSerializerOptions { WriteIndented = false });
+
+        _logger.LogDebug(
+            "Bring API outgoing request → POST {Url} | uid={Uid} | customerNumber={CustomerNumber} | body={Body}",
+            ratesUrl,
+            _options.ApiUid,
+            _options.CustomerNumber,
+            requestJson);
+
         BringShipmentResponse? response;
+        string rawResponseBody = string.Empty;
         try
         {
             using var http = new HttpRequestMessage(HttpMethod.Post, ratesUrl);
@@ -127,17 +140,25 @@ public class BringShippingService : IShippingService
             http.Content = JsonContent.Create(request);
 
             using var resp = await _http.SendAsync(http, ct);
+            rawResponseBody = await resp.Content.ReadAsStringAsync(ct);
+
             if (!resp.IsSuccessStatusCode)
             {
-                var body = await resp.Content.ReadAsStringAsync(ct);
                 _logger.LogWarning(
-                    "Bring API returned {Status}: {Body}",
-                    (int)resp.StatusCode, Truncate(body, 500));
+                    "Bring API returned {Status}. Request body: {RequestBody} | Response body: {ResponseBody}",
+                    (int)resp.StatusCode,
+                    requestJson,
+                    rawResponseBody);
                 throw new ShippingUnavailableException(
                     $"Bring API returned HTTP {(int)resp.StatusCode}");
             }
 
-            response = await resp.Content.ReadFromJsonAsync<BringShipmentResponse>(cancellationToken: ct);
+            _logger.LogDebug(
+                "Bring API response ({Status}): {Body}",
+                (int)resp.StatusCode,
+                Truncate(rawResponseBody, 2000));
+
+            response = JsonSerializer.Deserialize<BringShipmentResponse>(rawResponseBody);
         }
         catch (ShippingUnavailableException)
         {
@@ -145,35 +166,73 @@ public class BringShippingService : IShippingService
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex, "Bring API request failed (network).");
+            _logger.LogWarning(ex,
+                "Bring API request failed (network). Request body: {RequestBody}",
+                requestJson);
             throw new ShippingUnavailableException("Could not reach Bring API.", ex);
         }
         catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
         {
-            _logger.LogWarning(ex, "Bring API request timed out.");
+            _logger.LogWarning(ex,
+                "Bring API request timed out. Request body: {RequestBody}",
+                requestJson);
             throw new ShippingUnavailableException("Bring API request timed out.", ex);
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "Bring API returned malformed JSON.");
+            _logger.LogWarning(ex,
+                "Bring API returned malformed JSON. Request body: {RequestBody} | Response body: {ResponseBody}",
+                requestJson, rawResponseBody);
             throw new ShippingUnavailableException("Bring API returned malformed response.", ex);
         }
 
-        var product = ExtractFirstUsableProduct(response)
-            ?? throw new ShippingUnavailableException("Bring API returned no usable shipping product.");
+        var product = ExtractFirstUsableProduct(response);
+        if (product is null)
+        {
+            // Log everything so the operator can diagnose: request JSON, full response JSON,
+            // and a per-product breakdown of why each was skipped (BANNERSH-143 follow-up).
+            var productDiagnostics = response?.Consignments?.SelectMany(c => c.Products ?? Enumerable.Empty<BringProductResult>())
+                .Select(p =>
+                {
+                    var errors = p.Errors is { Count: > 0 }
+                        ? string.Join("; ", p.Errors.Select(e => $"{e.Code}: {e.Description}"))
+                        : "(no errors)";
+                    var hasPrice = !string.IsNullOrWhiteSpace(
+                        p.Price?.ListPrice?.PriceWithoutAdditionalServices?.AmountWithVAT ??
+                        p.Price?.ListPrice?.PriceWithoutAdditionalServices?.AmountWithoutVAT);
+                    return $"  [{p.Id}] errors={errors} hasPrice={hasPrice}";
+                }) ?? Enumerable.Empty<string>();
+
+            _logger.LogWarning(
+                "Bring API returned no usable shipping product.\n" +
+                "Request → POST {Url} uid={Uid} customerNumber={CustomerNumber}\n" +
+                "Request body: {RequestBody}\n" +
+                "Response body: {ResponseBody}\n" +
+                "Product diagnostics:\n{ProductDiagnostics}",
+                ratesUrl,
+                _options.ApiUid,
+                _options.CustomerNumber,
+                requestJson,
+                rawResponseBody,
+                string.Join("\n", productDiagnostics));
+
+            throw new ShippingUnavailableException("Bring API returned no usable shipping product.");
+        }
+
+        var (cost, days, productId, productName) = product.Value;
 
         var standard = new ShippingOption(
-            CostNok: product.Cost,
-            EstimatedDays: product.Days,
-            CarrierProductId: product.ProductId,
-            CarrierProductName: product.ProductName);
+            CostNok: cost,
+            EstimatedDays: days,
+            CarrierProductId: productId,
+            CarrierProductName: productName);
 
         // Express uses the same shipping cost; the express PRODUCTION fee is added on top.
         var express = new ShippingOption(
-            CostNok: product.Cost + expressFeeNok,
-            EstimatedDays: Math.Max(1, product.Days),
-            CarrierProductId: product.ProductId,
-            CarrierProductName: product.ProductName);
+            CostNok: cost + expressFeeNok,
+            EstimatedDays: Math.Max(1, days),
+            CarrierProductId: productId,
+            CarrierProductName: productName);
 
         var quote = new ShippingQuote(standard, express);
         _cache.Set(cacheKey, quote, CacheTtl);
