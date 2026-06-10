@@ -11,8 +11,10 @@ import {
   type DesignRequestDetail,
   type BannerTemplateItem,
   type BannerGenerationHistoryItem,
+  type AiPaywallData,
+  type PaywallOptions,
 } from '@/api/designRequests'
-import { uploadBannerFile, getBannerDesign } from '@/api/bannerBuilder'
+import { getBannerDesign } from '@/api/bannerBuilder'
 import { fetchSizes } from '@/api/shop'
 import { formatNok, formatDateTime } from '@/utils/format'
 import { drStatusCustomerLabel as statusLabel, drStatusClass as statusClass } from '@/utils/orderStatus'
@@ -20,6 +22,8 @@ import { generateRequestIntegrity } from '@/composables/useRequestIntegrity'
 import { getAiCreditsBalance } from '@/api/aiCredits'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
+import { usePhotoUpload } from '@/composables/banner-builder/usePhotoUpload'
+import PaywallModal from '@/components/banner-builder/PaywallModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -161,17 +165,32 @@ const editPersonAge = ref<number | null>(null)
 const editTextContent = ref('')
 const editThemeDescription = ref('')
 
-// Photo override (the request itself does not expose the current photo URL, so we
-// only track a NEW upload here — the server keeps the existing photo unchanged
-// when uploadedPhotoBannerDesignId is undefined).
-const newPhotoBannerDesignId = ref<number | null>(null)
-const newPhotoPreviewUrl = ref<string | null>(null)
-const photoUploading = ref(false)
-const photoUploadProgress = ref(0)
-const photoUploadError = ref<string | null>(null)
-const photoFileInput = ref<HTMLInputElement | null>(null)
-const PHOTO_ACCEPTED = ['image/jpeg', 'image/png', 'image/webp']
-const PHOTO_MAX_BYTES = 10 * 1024 * 1024
+// Photo override — composable handles upload state, progress, validation, preview URL.
+// Aliased to the view's original naming for template compatibility.
+const {
+  uploadedPhotoBannerDesignId: newPhotoBannerDesignId,
+  photoPreviewUrl: newPhotoPreviewUrl,
+  photoUploading,
+  photoUploadProgress,
+  photoUploadError,
+  photoFileInput,
+  openPhotoPicker,
+  onPhotoFileChange,
+  removePhoto: clearNewPhoto,
+} = usePhotoUpload()
+
+// ── Paywall state (shown when a 402 is returned from regenerate) ──────────────
+const paywallOpen = ref(false)
+const paywallData = ref<AiPaywallData | null>(null)
+
+const defaultPaywallOptions: PaywallOptions = {
+  creditPackSmallPriceNok: 29, creditPackSmallCount: 5,
+  creditPackLargePriceNok: 95, creditPackLargeCount: 20,
+  creditPackPriceNok: 29, creditPackCount: 5,
+  bannerOrderActivationFeeNok: 95, bannerOrderCreditBonus: 20,
+  manualDesignerUrl: '/banner-builder/manual',
+  uploadOwnUrl: '/banner-builder',
+}
 
 const regenerating = ref(false)
 const regenerateError = ref<string | null>(null)
@@ -183,55 +202,6 @@ function syncEditBufferFromRequest() {
   editPersonAge.value = request.value.personAge
   editTextContent.value = request.value.textContent
   editThemeDescription.value = request.value.themeDescription
-}
-
-function openPhotoPicker() {
-  if (photoUploading.value) return
-  photoFileInput.value?.click()
-}
-
-function onPhotoFileChange(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (file) void handlePhotoFile(file)
-  if (input) input.value = ''
-}
-
-async function handlePhotoFile(file: File) {
-  photoUploadError.value = null
-  if (!PHOTO_ACCEPTED.includes(file.type)) {
-    photoUploadError.value = `Filtypen ${file.type || 'ukjent'} støttes ikke. Bruk JPEG, PNG eller WEBP.`
-    return
-  }
-  if (file.size > PHOTO_MAX_BYTES) {
-    photoUploadError.value = `Filen er for stor (${(file.size / 1024 / 1024).toFixed(1)} MB). Maks 10 MB.`
-    return
-  }
-  if (newPhotoPreviewUrl.value) URL.revokeObjectURL(newPhotoPreviewUrl.value)
-  newPhotoPreviewUrl.value = URL.createObjectURL(file)
-  photoUploading.value = true
-  photoUploadProgress.value = 0
-  try {
-    const resp = await uploadBannerFile(file, (pct) => (photoUploadProgress.value = pct))
-    newPhotoBannerDesignId.value = resp.designId
-  } catch (e: unknown) {
-    const ex = e as { response?: { data?: { error?: string } }; message?: string }
-    photoUploadError.value = ex.response?.data?.error || ex.message || 'Opplasting feilet. Prøv igjen.'
-    if (newPhotoPreviewUrl.value) {
-      URL.revokeObjectURL(newPhotoPreviewUrl.value)
-      newPhotoPreviewUrl.value = null
-    }
-    newPhotoBannerDesignId.value = null
-  } finally {
-    photoUploading.value = false
-  }
-}
-
-function clearNewPhoto() {
-  if (newPhotoPreviewUrl.value) URL.revokeObjectURL(newPhotoPreviewUrl.value)
-  newPhotoPreviewUrl.value = null
-  newPhotoBannerDesignId.value = null
-  photoUploadError.value = null
 }
 
 async function regenerate() {
@@ -273,8 +243,13 @@ async function regenerate() {
       message?: string
     }
     if (ex.response?.status === 402) {
-      regenerateError.value =
-        'Du har ingen AI-kreditter igjen. Kjøp en kredittpakke fra AI-banner-verktøyet for å fortsette.'
+      const d = ex.response?.data
+      paywallData.value = {
+        reason: d?.paywallMetadata?.reason ?? d?.error ?? 'insufficient_credits',
+        creditsRemaining: d?.creditsRemaining ?? 0,
+        paywallOptions: paywallData.value?.paywallOptions ?? defaultPaywallOptions,
+      }
+      paywallOpen.value = true
     } else if (ex.response?.status === 401) {
       regenerateError.value = 'Du må være innlogget for å generere på nytt.'
     } else {
@@ -362,6 +337,17 @@ async function reorder() {
     reordering.value = false
   }
 }
+
+// ── PaywallModal handlers ─────────────────────────────────────────────────────
+function onPaywallRetryAction() {
+  paywallOpen.value = false
+  void regenerate()
+}
+function onPaywallCreditsUpdated(remaining: number) {
+  creditsRemaining.value = remaining
+}
+function onPaywallNavigateTo(url: string) { void router.push(url) }
+function onPaywallGoToCheckout() { void router.push('/checkout') }
 </script>
 
 <template>
@@ -885,6 +871,20 @@ async function reorder() {
       </RouterLink>
     </template>
   </div>
+
+  <!-- Paywall modal — shown when regenerate returns 402 (no credits) -->
+  <PaywallModal
+    v-if="paywallData"
+    v-model="paywallOpen"
+    :paywall-options="paywallData.paywallOptions"
+    :past-designs="[]"
+    pending-action="regenerate"
+    :design-request-id="requestId"
+    @retry-action="onPaywallRetryAction"
+    @credits-updated="onPaywallCreditsUpdated"
+    @navigate-to="onPaywallNavigateTo"
+    @go-to-checkout="onPaywallGoToCheckout"
+  />
 </template>
 
 <style scoped>

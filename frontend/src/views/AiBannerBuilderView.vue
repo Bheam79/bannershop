@@ -1,91 +1,62 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
-import { loadStripe } from '@stripe/stripe-js'
-import type { Stripe, StripeCardElement } from '@stripe/stripe-js'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
-import { uploadBannerFile, getBannerDesign } from '@/api/bannerBuilder'
-import { fetchSizes, fetchPrice, fetchEyeletPriceNok } from '@/api/shop'
-import type { BannerSize, EyeletOption } from '@/types'
+import { getBannerDesign } from '@/api/bannerBuilder'
+import { fetchSizes, fetchEyeletPriceNok } from '@/api/shop'
+import type { BannerSize, EyeletOption, CartItem } from '@/types'
 import { countEyelets } from '@/types'
 import EyeletPreview from '@/components/shop/EyeletPreview.vue'
 import {
   fetchTemplates,
-  createAiRequest,
-  createManualRequest,
   getDesignRequest,
-  approveDesignRequest,
-  regenerateDesignRequest,
-  listDesignRequests,
   type BannerTemplateItem,
-  type DesignRequestDetail,
   type DesignRequestListItem,
   type AiPaywallData,
   type PaywallOptions,
 } from '@/api/designRequests'
-import type { CartItem } from '@/types'
-import { getAiCreditsBalance, buyCreditPack, type CreditPackTier } from '@/api/aiCredits'
-import { generateRequestIntegrity } from '@/composables/useRequestIntegrity'
+import { getAiCreditsBalance } from '@/api/aiCredits'
 import { useAiCreditsStore } from '@/stores/aiCredits'
 import { formatNok } from '@/utils/format'
 
-// ── Router / auth / cart ──────────────────────────────────────────────────────
+// ── Composables ───────────────────────────────────────────────────────────────
+import { usePhotoUpload } from '@/composables/banner-builder/usePhotoUpload'
+import { usePastDesigns } from '@/composables/banner-builder/usePastDesigns'
+import { useBannerPricing } from '@/composables/banner-builder/useBannerPricing'
+import { useBannerGeneration } from '@/composables/banner-builder/useBannerGeneration'
+import {
+  useManualMode,
+  MANUAL_DESIGN_FEE_NOK,
+  type AspectRatioOption,
+} from '@/composables/banner-builder/useManualMode'
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+import PastBannersGallery from '@/components/banner-builder/PastBannersGallery.vue'
+import PaywallModal from '@/components/banner-builder/PaywallModal.vue'
+
+// ── Router / stores ───────────────────────────────────────────────────────────
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 const cart = useCartStore()
-// Shared credit-badge store (BANNERSH-87) — mirror every local creditsRemaining
-// update into the store so the header pill stays accurate without forcing the
-// user to navigate away from the wizard.
 const creditsStore = useAiCreditsStore()
 
-// ── Mode (BANNERSH-189) ───────────────────────────────────────────────────────
-// Single component, two routes:
-//   /banner-builder/ai     → mode = 'ai'     (calls OpenAI, paywall, credits, …)
-//   /banner-builder/manual → mode = 'manual' (no AI, "Ditt banner" placeholder, no paywall;
-//                                              the designer takes over after checkout)
-// All AI-only UI elements (credit badge, paywall modal, regenerate panel, anon-pending
-// auth nudge, "Generer ny versjon" button) are hidden in manual mode by a `mode === 'ai'`
-// guard. The rest of the wizard (template grid, personalization form, ratio picker,
-// quality picker, eyelet picker / tilpass step) renders the same in both modes.
+// ── Mode ──────────────────────────────────────────────────────────────────────
 const mode = computed<'ai' | 'manual'>(() =>
   route.path.endsWith('/manual') ? 'manual' : 'ai',
 )
 const isManual = computed(() => mode.value === 'manual')
 
-const MANUAL_DESIGN_FEE_NOK = 495
-const MANUAL_SESSION_KEY = 'manual_banner_builder_state'
-
-const manualSubmitting = ref(false)
-const manualSubmitError = ref<string | null>(null)
-/** Design request id created by `createManualRequest` when the user clicks "Gå videre". */
-const manualDesignRequestId = ref<number | null>(null)
-/** Banner production cost portion returned by `createManualRequest`. */
-const manualBannerPriceNok = ref<number>(0)
-/** Design fee portion (495 kr) returned by `createManualRequest`. */
-const manualDesignPriceNok = ref<number>(MANUAL_DESIGN_FEE_NOK)
-/** Data-URL of the canvas-rendered "Ditt banner" placeholder shown in manual mode. */
-const manualPlaceholderUrl = ref<string | null>(null)
-
 // ── Step state ────────────────────────────────────────────────────────────────
 const step = ref<1 | 2 | 3>(1)
 
-// ── Step 1: Template, photo, language ────────────────────────────────────────
+// ── Step 1: Templates + language ──────────────────────────────────────────────
 const templates = ref<BannerTemplateItem[]>([])
 const templatesLoading = ref(true)
 const templatesError = ref<string | null>(null)
 const selectedTemplateId = ref<number | null>(null)
 const language = ref<'nb' | 'en'>('nb')
-
-// Portrait photo upload
-const uploadedPhotoBannerDesignId = ref<number | null>(null)
-const photoPreviewUrl = ref<string | null>(null)
-const photoUploading = ref(false)
-const photoUploadProgress = ref(0)
-const photoUploadError = ref<string | null>(null)
-const photoFileInput = ref<HTMLInputElement | null>(null)
-const photoDragging = ref(false)
 
 // ── Step 2: Personalization ───────────────────────────────────────────────────
 const personName = ref('')
@@ -93,12 +64,8 @@ const personAge = ref<number | null>(null)
 const textContent = ref('')
 const themeDescription = ref('')
 
-// ── Step 2: Aspect ratio selection (BANNERSH-170) ────────────────────────────
-// Ratio buttons shown on one line below the image upload — sets the shape for
-// AI generation BEFORE the banner is produced.
-type AspectRatioOption = '16:9' | '1:2' | '1:1' | '2:1' | '3:1' | '4:1'
+// ── Step 2: Aspect ratio ──────────────────────────────────────────────────────
 const selectedAspectRatio = ref<AspectRatioOption>('16:9')
-
 const ratioOptions = [
   { value: '16:9' as AspectRatioOption, label: '16:9', sub: 'anbefalt', iconW: 28, iconH: 16 },
   { value: '1:2' as AspectRatioOption, label: '1:2', sub: 'loddrett',  iconW: 11, iconH: 22 },
@@ -108,58 +75,16 @@ const ratioOptions = [
   { value: '4:1' as AspectRatioOption, label: '4:1', sub: 'superlangt', iconW: 28, iconH: 7 },
 ] as const
 
-// ── Step 2: Quality / size selection ────────────────────────────────────────
-// BANNERSH-162: quality/size picker only appears AFTER a banner has been
-// generated, and the displayed widths are derived from the actual aspect ratio
-// of the AI image (set via the preview <img>'s @load handler).
-type QualityOption = 'high' | 'good' | 'custom'
-const selectedQuality = ref<QualityOption>('high')
+// ── Credits state (AI only) ───────────────────────────────────────────────────
+const creditsRemaining = ref<number | null>(null)
+const hasUsedFreeGeneration = ref<boolean | null>(null)
 
-const customWidth = ref<number | null>(null)
-const customHeight = ref<number | null>(null)
-const customMaterialGsm = ref<400 | 680>(400)
+// ── Paywall state ─────────────────────────────────────────────────────────────
+const paywallOpen = ref(false)
+const paywallData = ref<AiPaywallData | null>(null)
+const pendingAction = ref<'generate' | 'regenerate'>('generate')
 
-const sizes = ref<BannerSize[]>([])
-const sizesLoaded = ref(false)
-
-interface OptionPriceState {
-  price: number | null
-  loading: boolean
-  comingSoon: boolean
-}
-const option1State = ref<OptionPriceState>({ price: null, loading: false, comingSoon: false })
-const option2State = ref<OptionPriceState>({ price: null, loading: false, comingSoon: false })
-const customState  = ref<OptionPriceState>({ price: null, loading: false, comingSoon: false })
-
-// ── BANNERSH-162: AI image aspect ratio (width / height) ─────────────────────
-// Set when the preview <img> fires @load — derived from the actual rendered
-// image's natural dimensions so the printed banner matches what the user sees.
-// Falls back to parsing currentDesignRequest.aspectRatio when the image hasn't
-// loaded yet (e.g. during selectPastDesign).
-const aiImageNaturalRatio = ref<number | null>(null)
-
-// ── Step 3: Generation state ──────────────────────────────────────────────────
-// BANNERSH-133: `tilpass` is a post-approval phase where the customer picks an
-// eyelet (malje) finishing option before the banner goes into the cart.
-type GenPhase = 'idle' | 'submitting' | 'generating' | 'anon_pending' | 'ready' | 'tilpass' | 'error'
-const genPhase = ref<GenPhase>('idle')
-const currentDesignRequest = ref<DesignRequestDetail | null>(null)
-const designRequestId = ref<number | null>(null)
-const requiresAuthHint = ref(false)    // true when anonymous post returns requiresAuth
-const generateApiError = ref<string | null>(null)
-const approveError = ref<string | null>(null)
-const approving = ref(false)
-const regenerating = ref(false)
-const regenerateError = ref<string | null>(null)
-
-// Edit-and-regenerate panel toggle (shown in 'ready' phase)
-const editExpanded = ref(false)
-
-// ── Reorder (Approved / Final designs) ───────────────────────────────────────
-const reordering = ref(false)
-const reorderError = ref<string | null>(null)
-
-// ── BANNERSH-133: Tilpass (eyelet picker) state ──────────────────────────────
+// ── Tilpass state ─────────────────────────────────────────────────────────────
 const tilpassDesignWidthCm = ref<number>(0)
 const tilpassDesignHeightCm = ref<number>(0)
 const tilpassBannerSize = ref<BannerSize | null>(null)
@@ -169,132 +94,37 @@ const tilpassEyeletPriceNok = ref<number>(0)
 const tilpassLoading = ref(false)
 const tilpassError = ref<string | null>(null)
 
-const tilpassEyeletCount = computed(() =>
-  countEyelets(tilpassDesignWidthCm.value, tilpassDesignHeightCm.value, tilpassEyeletOption.value),
-)
-const tilpassEyeletFeeNok = computed(() =>
-  tilpassEyeletCount.value * tilpassEyeletPriceNok.value,
-)
-const tilpassTotalNok = computed(() =>
-  tilpassBannerPriceNok.value
-  + tilpassEyeletFeeNok.value
-  // BANNERSH-189: in manual mode the cart adds a 495 kr designer-fee line, so the
-  // running total must include it here too — otherwise the summary would
-  // under-report what the customer pays at checkout.
-  + (isManual.value ? manualDesignPriceNok.value : 0),
-)
+// ── Composable: Photo upload ──────────────────────────────────────────────────
+const {
+  uploadedPhotoBannerDesignId, photoPreviewUrl, photoUploading, photoUploadProgress,
+  photoUploadError, photoFileInput, photoDragging,
+  openPhotoPicker, onPhotoFileChange, onPhotoDragOver, onPhotoDragLeave, onPhotoDrop, removePhoto,
+} = usePhotoUpload()
 
-// ── Credits badge (auth users only) ──────────────────────────────────────────
-const creditsRemaining = ref<number | null>(null)
-// BANNERSH-83: track whether the user has spent their free generation. Together with
-// `creditsRemaining`, this lets us label the Generate button accurately ("gratis" vs.
-// "1 kreditt") and surface the paywall *before* hitting the API when we already know
-// the call would 402 — avoiding the confusing "I clicked free and got a popup" flow.
-const hasUsedFreeGeneration = ref<boolean | null>(null)
+// ── Composable: Past designs ──────────────────────────────────────────────────
+const { pastDesigns, loadPastDesigns } = usePastDesigns(() => mode.value)
 
-// ── Past banners (BANNERSH-83) ────────────────────────────────────────────────
-// Auth users only: load their previously-generated AI designs so they can revisit
-// and pick one instead of regenerating.
-const pastDesigns = ref<DesignRequestListItem[]>([])
-const pastDesignsLoading = ref(false)
+// ── Composable: Banner pricing ────────────────────────────────────────────────
+const {
+  sizes, sizesLoaded, selectedQuality, customWidth, customHeight, customMaterialGsm,
+  option1State, option2State, customState,
+  aiImageNaturalRatio, aiImageAspectRatio, currentAspectRatioString,
+  highOptionWidthCm, goodOptionWidthCm, selectedDimensions,
+  pickBannerSize, loadSizesAndPricing, onPreviewImageLoaded,
+  resetForNewGeneration: resetPricing,
+} = useBannerPricing()
 
-// ── Paywall modal ─────────────────────────────────────────────────────────────
-const paywallOpen = ref(false)
-const paywallData = ref<AiPaywallData | null>(null)
-// null = closed, 'generate' = retry initial create, 'regenerate' = retry regenerate
-type PendingAction = 'generate' | 'regenerate'
-const pendingAction = ref<PendingAction>('generate')
-
-type CreditPackPhase = 'menu' | 'loading' | 'card' | 'processing' | 'done' | 'error'
-const creditPackPhase = ref<CreditPackPhase>('menu')
-const creditPackError = ref<string | null>(null)
-const packDetails = ref<{ clientSecret: string; creditCount: number; priceNok: number } | null>(null)
-const stripeCardError = ref<string | null>(null)
-
-// Stripe (lazy – only initialised when user opens credit-pack purchase)
-const stripeRef = ref<Stripe | null>(null)
-const cardElement = ref<StripeCardElement | null>(null)
-const cardMountEl = ref<HTMLDivElement | null>(null)
-
-// ── Computed helpers ──────────────────────────────────────────────────────────
-const selectedTemplate = computed(() =>
-  templates.value.find((t) => t.id === selectedTemplateId.value) ?? null,
-)
-
-const templateName = computed(() => {
-  const t = selectedTemplate.value
-  if (!t) return ''
-  return language.value === 'en' ? t.nameEn : t.nameNb
-})
-
-// BANNERSH-162: effective AI image aspect ratio used to scale the printed banner.
-// Prefer the loaded image's actual w/h; fall back to parsing
-// `currentDesignRequest.aspectRatio` (formats: 'WxH', '16:9', '18:9') for past
-// designs that haven't loaded yet. Returns null if no source is available — in
-// that case the high/good options fall back to their static default widths.
-const aiImageAspectRatio = computed<number | null>(() => {
-  if (aiImageNaturalRatio.value && aiImageNaturalRatio.value > 0) {
-    return aiImageNaturalRatio.value
-  }
-  const raw = currentDesignRequest.value?.aspectRatio
-  if (!raw) return null
-  // 'WxH' (e.g. '360x150')
-  const dimsMatch = /^(\d+)x(\d+)$/i.exec(raw)
-  if (dimsMatch && dimsMatch[1] && dimsMatch[2]) {
-    const w = parseInt(dimsMatch[1], 10)
-    const h = parseInt(dimsMatch[2], 10)
-    if (w > 0 && h > 0) return w / h
-  }
-  // 'A:B' (e.g. '16:9', '18:9')
-  const ratioMatch = /^(\d+):(\d+)$/.exec(raw)
-  if (ratioMatch && ratioMatch[1] && ratioMatch[2]) {
-    const a = parseInt(ratioMatch[1], 10)
-    const b = parseInt(ratioMatch[2], 10)
-    if (a > 0 && b > 0) return a / b
-  }
-  return null
-})
-
-// BANNERSH-162: high-quality option = 150 cm tall, width derived from AI image
-// ratio. Good-quality option = 180 cm tall. Defaults fall back to the legacy
-// 360 × 150 / 300 × 180 dimensions while no image is loaded yet.
-const highOptionWidthCm = computed(() => {
-  const r = aiImageAspectRatio.value
-  return r ? Math.round(150 * r) : 360
-})
-const goodOptionWidthCm = computed(() => {
-  const r = aiImageAspectRatio.value
-  return r ? Math.round(180 * r) : 300
-})
-
-// Dimensions for the currently selected quality option
-const selectedDimensions = computed(() => {
-  if (selectedQuality.value === 'high') return { width: highOptionWidthCm.value, height: 150 }
-  if (selectedQuality.value === 'good') return { width: goodOptionWidthCm.value, height: 180 }
-  return { width: customWidth.value ?? 0, height: customHeight.value ?? 0 }
-})
-
-// Aspect ratio string sent to the backend
-// BANNERSH-170: pre-generation uses the user's chosen ratio button; post-generation
-// (quality picker visible) uses the selected print dimensions.
+// ── Aspect-ratio string for backend (pre-generation: from ratio buttons) ──────
 const aspectRatioForBackend = computed(() => {
-  // Post-generation: derive from the quality/size picker (used by approve(), not generate())
-  if (genPhase.value === 'ready') {
-    const { width, height } = selectedDimensions.value
-    if (width > 0 && height > 0) return `${width}x${height}`
-  }
-  // Pre-generation: derive from the ratio selection buttons
   const parts = selectedAspectRatio.value.split(':')
   const rW = parseInt(parts[0] ?? '0', 10)
   const rH = parseInt(parts[1] ?? '0', 10)
   if (rW > 0 && rH > 0) {
     const ratio = rW / rH
     if (ratio < 1) {
-      // Portrait: anchor height to 180 cm
       const h = 180
       return `${Math.max(1, Math.round(h * ratio))}x${h}`
     } else {
-      // Landscape / square: anchor height to 150 cm
       const h = 150
       return `${Math.round(h * ratio)}x${h}`
     }
@@ -302,14 +132,96 @@ const aspectRatioForBackend = computed(() => {
   return '360x150'
 })
 
-const step1Valid = computed(() => selectedTemplateId.value !== null)
+// ── Composable: Banner generation ─────────────────────────────────────────────
+const {
+  genPhase, currentDesignRequest, designRequestId, requiresAuthHint, generateApiError,
+  approveError, approving, regenerating, regenerateError, editExpanded,
+  reordering, reorderError, startPolling, cleanup: cleanupGeneration,
+  generateBanner: _generateBanner, approve, regenerate: _regenerate,
+  reorderCurrentDesign, selectPastDesign: _selectPastDesign,
+  returnToWizardIdle: _returnToWizardIdle,
+} = useBannerGeneration({
+  getTemplateId: () => selectedTemplateId.value,
+  getLanguage: () => language.value,
+  getPersonName: () => personName.value,
+  getPersonAge: () => personAge.value,
+  getTextContent: () => textContent.value,
+  getThemeDescription: () => themeDescription.value,
+  getAspectRatioForBackend: () => aspectRatioForBackend.value,
+  getUploadedPhotoBannerDesignId: () => uploadedPhotoBannerDesignId.value,
+  getSelectedDimensions: () => selectedDimensions.value,
+  onPaywall: (data, action) => {
+    paywallData.value = data
+    pendingAction.value = action
+    paywallOpen.value = true
+  },
+  onGenerationComplete: () => void loadPastDesigns(),
+  loadTilpassPricing: async (bannerDesignId) => {
+    await loadTilpassPricing(bannerDesignId)
+    step.value = 3
+  },
+  isManual: () => isManual.value,
+})
 
-// BANNERSH-162: the quality picker is now hidden until a banner is generated,
-// so pre-generation validation must NOT require custom width/height. The custom
-// validation only matters after the user has actually selected 'Egendefinert'
-// in the (post-generation) picker — guarded by genPhase === 'ready'.
-// BANNERSH-189: manual mode additionally requires a portrait photo (the designer
-// needs it as reference) — checked once `mode === 'manual'`.
+// ── Composable: Manual mode ───────────────────────────────────────────────────
+const {
+  manualSubmitting, manualSubmitError, manualDesignRequestId, manualBannerPriceNok, manualDesignPriceNok,
+  generateManualPlaceholder: _generateManualPlaceholder,
+  saveManualSessionState, restoreManualSessionState, manualGoVidere, resetManual,
+} = useManualMode({
+  getTemplateId: () => selectedTemplateId.value,
+  getLanguage: () => language.value,
+  getPersonName: () => personName.value,
+  getPersonAge: () => personAge.value,
+  getTextContent: () => textContent.value,
+  getThemeDescription: () => themeDescription.value,
+  getAspectRatioForBackend: () => aspectRatioForBackend.value,
+  getUploadedPhotoBannerDesignId: () => uploadedPhotoBannerDesignId.value,
+  getSelectedAspectRatio: () => selectedAspectRatio.value,
+  getSelectedQuality: () => selectedQuality.value,
+  getCustomWidth: () => customWidth.value,
+  getCustomHeight: () => customHeight.value,
+  getCustomMaterialGsm: () => customMaterialGsm.value,
+  getSizes: () => sizes.value,
+  getSizesLoaded: () => sizesLoaded.value,
+  pickBannerSize,
+  getSelectedDimensions: () => selectedDimensions.value,
+  setTilpassState: (w, h, size, bannerPrice, eyeletPrice) => {
+    tilpassDesignWidthCm.value = w
+    tilpassDesignHeightCm.value = h
+    tilpassBannerSize.value = size
+    tilpassBannerPriceNok.value = bannerPrice
+    tilpassEyeletOption.value = 'None'
+    tilpassEyeletPriceNok.value = eyeletPrice
+    step.value = 3
+    genPhase.value = 'tilpass'
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  },
+  setSelectedTemplateId: (v) => { selectedTemplateId.value = v },
+  setLanguage: (v) => { language.value = v },
+  setUploadedPhotoBannerDesignId: (v) => { uploadedPhotoBannerDesignId.value = v },
+  setPersonName: (v) => { personName.value = v },
+  setPersonAge: (v) => { personAge.value = v },
+  setTextContent: (v) => { textContent.value = v },
+  setThemeDescription: (v) => { themeDescription.value = v },
+  setSelectedAspectRatio: (v) => { selectedAspectRatio.value = v },
+  setSelectedQuality: (v) => { selectedQuality.value = v as typeof selectedQuality.value },
+  setCustomWidth: (v) => { customWidth.value = v },
+  setCustomHeight: (v) => { customHeight.value = v },
+  setCustomMaterialGsm: (v) => { customMaterialGsm.value = v },
+})
+
+// ── Computed helpers ──────────────────────────────────────────────────────────
+const selectedTemplate = computed(() =>
+  templates.value.find((t) => t.id === selectedTemplateId.value) ?? null,
+)
+const templateName = computed(() => {
+  const t = selectedTemplate.value
+  if (!t) return ''
+  return language.value === 'en' ? t.nameEn : t.nameNb
+})
+
+const step1Valid = computed(() => selectedTemplateId.value !== null)
 const step2Valid = computed(() => {
   if (
     personName.value.trim().length === 0 ||
@@ -323,7 +235,6 @@ const step2Valid = computed(() => {
   return true
 })
 
-// Effective paywall options: use last-known from API, or sensible defaults
 const effectivePaywallOptions = computed<PaywallOptions>(() => ({
   creditPackSmallPriceNok: paywallData.value?.paywallOptions?.creditPackSmallPriceNok ?? paywallData.value?.paywallOptions?.creditPackPriceNok ?? 29,
   creditPackSmallCount: paywallData.value?.paywallOptions?.creditPackSmallCount ?? paywallData.value?.paywallOptions?.creditPackCount ?? 5,
@@ -337,176 +248,43 @@ const effectivePaywallOptions = computed<PaywallOptions>(() => ({
   uploadOwnUrl: paywallData.value?.paywallOptions?.uploadOwnUrl ?? '/banner-builder',
 }))
 
-// ── Banner size / price helpers (quality selector) ───────────────────────────
-function pickBannerSize(
-  catalog: BannerSize[],
-  targetWidthCm: number,
-  targetHeightCm: number,
-  materialGsm?: number,
-): { size: BannerSize; customWidthCm?: number } | null {
-  const exact = catalog.find(
-    (s) =>
-      s.isActive &&
-      !s.isCustomWidth &&
-      s.widthCm === targetWidthCm &&
-      s.heightCm === targetHeightCm &&
-      (materialGsm == null || s.material?.weightGsm === materialGsm),
-  )
-  if (exact) return { size: exact }
-  const custom = catalog.find(
-    (s) =>
-      s.isActive &&
-      s.isCustomWidth &&
-      s.heightCm === targetHeightCm &&
-      (materialGsm == null || s.material?.weightGsm === materialGsm),
-  )
-  if (custom) return { size: custom, customWidthCm: targetWidthCm }
-  return null
-}
-
-function isComingSoon(size: BannerSize): boolean {
-  if (!size.availableFrom) return false
-  return new Date(size.availableFrom) > new Date()
-}
-
-async function computeOptionPrice(
-  targetWidth: number,
-  targetHeight: number,
-  state: OptionPriceState,
-  materialGsm?: number,
-  skipSurcharge?: boolean,
-) {
-  state.loading = true
-  state.price = null
-  state.comingSoon = false
-  try {
-    const picked = pickBannerSize(sizes.value, targetWidth, targetHeight, materialGsm)
-    if (!picked) { state.price = null; return }
-    state.comingSoon = isComingSoon(picked.size)
-    state.price = await fetchPrice(picked.size.id, picked.customWidthCm, skipSurcharge)
-  } catch {
-    state.price = null
-  } finally {
-    state.loading = false
-  }
-}
-
-async function refreshAllPrices() {
-  if (!sizesLoaded.value) return
-  // skipSurcharge=true: the High/Good widths are auto-derived from the AI image
-  // ratio, not manually chosen by the customer, so the custom-width fee doesn't apply.
-  await Promise.all([
-    computeOptionPrice(highOptionWidthCm.value, 150, option1State.value, undefined, true),
-    computeOptionPrice(goodOptionWidthCm.value, 180, option2State.value, undefined, true),
-  ])
-}
-
-async function refreshCustomPrice() {
-  const w = customWidth.value ?? 0
-  const h = customHeight.value ?? 0
-  if (!sizesLoaded.value || w <= 0 || h <= 0) { customState.value.price = null; return }
-  // Custom option: surcharge applies (customer explicitly chose a custom dimension)
-  await computeOptionPrice(w, h, customState.value, customMaterialGsm.value)
-}
-
-watch([customWidth, customHeight, customMaterialGsm], () => {
-  if (sizesLoaded.value) void refreshCustomPrice()
+const canGenerateForFree = computed<boolean | null>(() => {
+  if (!auth.isLoggedIn) return null
+  if (hasUsedFreeGeneration.value === null) return null
+  return !hasUsedFreeGeneration.value
 })
-
-// BANNERSH-162: when the AI image's aspect ratio resolves (or changes between
-// generations), re-price the high/good options against the new dynamic widths.
-watch(aiImageAspectRatio, () => {
-  if (sizesLoaded.value) void refreshAllPrices()
-})
-
-// BANNERSH-162: custom width ↔ height are linked via the AI image's aspect
-// ratio — editing one auto-updates the other so the print preserves the
-// generated image's proportions. The lock prevents the linked-update from
-// triggering its own watcher (which would otherwise re-link back the original
-// edit and lock the values). Cleared on nextTick so Vue's same-value skip
-// can't leave the lock stuck (when the paired value happens to round to its
-// current value, the paired watcher never fires).
-let customLinkLock = false
-function releaseCustomLink() {
-  void nextTick(() => { customLinkLock = false })
-}
-watch(customWidth, (w) => {
-  if (customLinkLock) return
-  const r = aiImageAspectRatio.value
-  if (!r || !w || w <= 0) return
-  customLinkLock = true
-  customHeight.value = Math.max(1, Math.round(w / r))
-  releaseCustomLink()
-})
-watch(customHeight, (h) => {
-  if (customLinkLock) return
-  const r = aiImageAspectRatio.value
-  if (!r || !h || h <= 0) return
-  customLinkLock = true
-  customWidth.value = Math.max(1, Math.round(h * r))
-  releaseCustomLink()
-})
-
-// BANNERSH-189: in manual mode, regenerate the placeholder when the user
-// changes the aspect ratio AFTER an initial generation — the placeholder must
-// stay in sync with the customer's chosen ratio (the "Se forhåndsvisning" button
-// is hidden once we're in 'ready' phase to keep the manual flow linear).
-watch(selectedAspectRatio, () => {
-  if (isManual.value && genPhase.value === 'ready' && currentDesignRequest.value) {
-    const parts = selectedAspectRatio.value.split(':')
-    const rW = parseInt(parts[0] ?? '0', 10) || 16
-    const rH = parseInt(parts[1] ?? '0', 10) || 9
-    manualPlaceholderUrl.value = generatePlaceholderDataUrl(rW, rH)
-    aiImageNaturalRatio.value = rW / rH
-    // Mutate the synthetic detail so the <img :src> updates.
-    currentDesignRequest.value = {
-      ...currentDesignRequest.value,
-      previewUrl: manualPlaceholderUrl.value,
-      aspectRatio: aspectRatioForBackend.value,
-    }
-  }
-})
-
-// BANNERSH-162: when the user opens the 'Egendefinert' tab for the first time
-// after a generation, prefill width/height from the high-quality defaults so
-// they have an editable starting point rather than empty fields.
-watch(selectedQuality, (q) => {
-  if (q !== 'custom') return
-  const r = aiImageAspectRatio.value
-  if (!r) return
-  if (customWidth.value == null && customHeight.value == null) {
-    customLinkLock = true
-    customHeight.value = 150
-    customWidth.value = Math.max(1, Math.round(150 * r))
-    releaseCustomLink()
-  }
-})
-
-// BANNERSH-167: when the quality picker becomes visible (genPhase → ready) and
-// the currently-selected option is marked "Kommer snart", auto-switch to the
-// first option that IS available so the default is always a valid choice.
-// Also fires when comingSoon flags update (sizes load asynchronously).
-watch(
-  [() => genPhase.value, () => option1State.value.comingSoon, () => option2State.value.comingSoon],
-  () => {
-    if (genPhase.value !== 'ready') return
-    if (selectedQuality.value === 'high' && option1State.value.comingSoon) {
-      selectedQuality.value = option2State.value.comingSoon ? 'custom' : 'good'
-    } else if (selectedQuality.value === 'good' && option2State.value.comingSoon) {
-      selectedQuality.value = option1State.value.comingSoon ? 'custom' : 'high'
-    }
-  },
+const hasCreditsAvailable = computed<boolean>(() => (creditsRemaining.value ?? 0) > 0)
+const isOutOfGenerations = computed<boolean>(() =>
+  auth.isLoggedIn &&
+  hasUsedFreeGeneration.value === true &&
+  !hasCreditsAvailable.value,
 )
+const generateButtonLabel = computed<string>(() => {
+  if (genPhase.value === 'submitting') return 'Sender…'
+  if (canGenerateForFree.value === true) return 'Generer banner gratis'
+  if (hasCreditsAvailable.value) return `Generer banner (1 kreditt)`
+  if (isOutOfGenerations.value) return 'Kjøp kreditter for å generere'
+  return 'Generer banner gratis'
+})
+const generateButtonSubtitle = computed<string>(() => {
+  if (canGenerateForFree.value === true)
+    return 'Ingen betalingsinformasjon nødvendig for første generering'
+  if (hasCreditsAvailable.value)
+    return `${creditsRemaining.value} forslag igjen — bruker 1 kreditt`
+  if (isOutOfGenerations.value)
+    return 'Du har brukt opp den gratis genereringen — kjøp en kredittpakke for å fortsette'
+  return 'Ingen betalingsinformasjon nødvendig for første generering'
+})
 
-// BANNERSH-162: handler attached to the preview <img>'s @load — captures the
-// generated image's natural dimensions so the printed-banner sizing math has a
-// real ratio (rather than the placeholder 360x150 sent at generation time).
-function onPreviewImageLoaded(e: Event) {
-  const img = e.target as HTMLImageElement
-  if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-    aiImageNaturalRatio.value = img.naturalWidth / img.naturalHeight
-  }
-}
+const tilpassEyeletCount = computed(() =>
+  countEyelets(tilpassDesignWidthCm.value, tilpassDesignHeightCm.value, tilpassEyeletOption.value),
+)
+const tilpassEyeletFeeNok = computed(() => tilpassEyeletCount.value * tilpassEyeletPriceNok.value)
+const tilpassTotalNok = computed(() =>
+  tilpassBannerPriceNok.value
+  + tilpassEyeletFeeNok.value
+  + (isManual.value ? manualDesignPriceNok.value : 0),
+)
 
 // BANNERSH-87: mirror the local creditsRemaining ref into the shared store so
 // the navbar credit badge updates the instant a generation succeeds, without
@@ -531,81 +309,23 @@ watch(designRequestId, (id) => {
   void router.replace({ query })
 })
 
-// ── BANNERSH-83: free-generation eligibility ─────────────────────────────────
-// Logged-in users with no remaining free generation AND zero credits will be hit by
-// the backend's 402 paywall on the very next /design-requests/ai POST.  Detect that
-// up front so the wizard can label the Generate button accurately and surface the
-// paywall modal *before* posting (rather than after).
-//
-// Returns null for users whose status we don't yet know (anonymous callers, or
-// auth callers before /ai-credits/me has resolved).  In that case we keep the
-// original "free first" UX — letting the server be authoritative.
-const canGenerateForFree = computed<boolean | null>(() => {
-  if (!auth.isLoggedIn) return null            // anonymous: trust backend IP check
-  if (hasUsedFreeGeneration.value === null) return null
-  return !hasUsedFreeGeneration.value
-})
-
-const hasCreditsAvailable = computed<boolean>(() =>
-  (creditsRemaining.value ?? 0) > 0,
-)
-
-/** True when an auth user is known to have no free generation left AND no credits. */
-const isOutOfGenerations = computed<boolean>(() =>
-  auth.isLoggedIn &&
-  hasUsedFreeGeneration.value === true &&
-  !hasCreditsAvailable.value,
-)
-
-// Pretty label for the Generate button — reflects what the click will actually do.
-const generateButtonLabel = computed<string>(() => {
-  if (genPhase.value === 'submitting') return 'Sender…'
-  if (canGenerateForFree.value === true) return 'Generer banner gratis'
-  if (hasCreditsAvailable.value) return `Generer banner (1 kreditt)`
-  if (isOutOfGenerations.value) return 'Kjøp kreditter for å generere'
-  return 'Generer banner gratis'
-})
-
-const generateButtonSubtitle = computed<string>(() => {
-  if (canGenerateForFree.value === true)
-    return 'Ingen betalingsinformasjon nødvendig for første generering'
-  if (hasCreditsAvailable.value)
-    return `${creditsRemaining.value} forslag igjen — bruker 1 kreditt`
-  if (isOutOfGenerations.value)
-    return 'Du har brukt opp den gratis genereringen — kjøp en kredittpakke for å fortsette'
-  return 'Ingen betalingsinformasjon nødvendig for første generering'
-})
-
-// ── Category icons (FontAwesome) ──────────────────────────────────────────────
+// ── Category icons / placeholders ─────────────────────────────────────────────
 const categoryIconClass: Record<string, string> = {
-  Birthday: 'fa-cake-candles',
-  Confirmation: 'fa-graduation-cap',
-  Wedding: 'fa-ring',
-  Anniversary: 'fa-champagne-glasses',
-  Christmas: 'fa-tree',
-  NewYear: 'fa-champagne-glasses',
-  Baptism: 'fa-dove',
-  Other: 'fa-gift',
+  Birthday: 'fa-cake-candles', Confirmation: 'fa-graduation-cap',
+  Wedding: 'fa-ring', Anniversary: 'fa-champagne-glasses',
+  Christmas: 'fa-tree', NewYear: 'fa-champagne-glasses',
+  Baptism: 'fa-dove', Other: 'fa-gift',
 }
-
-// BANNERSH-105: per-category placeholder strings for the "Tekst på banneret"
-// field. Birthday is the default fallback when the category is unknown.
 const categoryBannerTextPlaceholder: Record<string, string> = {
-  Birthday: 'f.eks. Gratulerer med dagen',
-  Confirmation: 'f.eks. Gratulerer med konfirmasjonen',
-  Wedding: 'f.eks. Gratulerer med bryllupsdagen',
-  Baptism: 'f.eks. Til lykke med dåpsdagen',
-  Anniversary: 'f.eks. Gratulerer med jubileet',
-  Christmas: 'f.eks. God jul',
-  NewYear: 'f.eks. Godt nytt år',
-  Other: 'f.eks. Velkommen til festen',
+  Birthday: 'f.eks. Gratulerer med dagen', Confirmation: 'f.eks. Gratulerer med konfirmasjonen',
+  Wedding: 'f.eks. Gratulerer med bryllupsdagen', Baptism: 'f.eks. Til lykke med dåpsdagen',
+  Anniversary: 'f.eks. Gratulerer med jubileet', Christmas: 'f.eks. God jul',
+  NewYear: 'f.eks. Godt nytt år', Other: 'f.eks. Velkommen til festen',
 }
-
 const textContentPlaceholder = computed(() => {
   const cat = selectedTemplate.value?.category
   return (cat && categoryBannerTextPlaceholder[cat]) ?? 'f.eks. Gratulerer med dagen'
 })
-
 const themeDescriptionPlaceholder = computed(() => {
   const cat = selectedTemplate.value?.category
   switch (cat) {
@@ -621,16 +341,13 @@ const themeDescriptionPlaceholder = computed(() => {
   }
 })
 
-// ── Load templates ────────────────────────────────────────────────────────────
+// ── Template loading ──────────────────────────────────────────────────────────
 async function loadTemplates() {
   templatesLoading.value = true
   templatesError.value = null
   try {
     templates.value = await fetchTemplates()
     if (templates.value.length > 0 && selectedTemplateId.value === null) {
-      // BANNERSH-105: when the user arrived from a front-page category card
-      // (e.g. /banner-builder/ai?category=Birthday), pre-select the matching
-      // template so they can skip the template-picker step entirely.
       const categoryParam = (route.query.category as string | undefined)?.trim()
       let preselected: BannerTemplateItem | undefined
       if (categoryParam) {
@@ -642,201 +359,112 @@ async function loadTemplates() {
     }
   } catch (e: unknown) {
     const ex = e as { response?: { data?: { error?: string } }; message?: string }
-    templatesError.value =
-      ex.response?.data?.error || ex.message || 'Kunne ikke laste maler.'
+    templatesError.value = ex.response?.data?.error || ex.message || 'Kunne ikke laste maler.'
   } finally {
     templatesLoading.value = false
   }
 }
 
-// ── Credits balance (auth only) ───────────────────────────────────────────────
+// ── Credits balance ───────────────────────────────────────────────────────────
 async function loadCreditsBalance() {
   if (!auth.isLoggedIn) return
   try {
     const balance = await getAiCreditsBalance()
     creditsRemaining.value = balance.creditsRemaining
     hasUsedFreeGeneration.value = balance.hasUsedFreeGeneration
-  } catch {
-    // Non-critical — badge stays hidden
-  }
+  } catch { /* Non-critical */ }
 }
 
-// ── Past designs (auth only, BANNERSH-83) ────────────────────────────────────
-// BANNERSH-189: filter by mode so the AI wizard shows AI designs and the manual
-// wizard shows previously-ordered Manual designs (per the task spec). Manual
-// designs may not have a previewUrl yet (designer hasn't uploaded one) — still
-// surface them with a placeholder thumbnail in that case.
-async function loadPastDesigns() {
-  if (!auth.isLoggedIn) return
-  pastDesignsLoading.value = true
-  try {
-    const all = await listDesignRequests()
-    if (isManual.value) {
-      pastDesigns.value = all.filter((d) => d.mode === 'Manual')
-    } else {
-      pastDesigns.value = all.filter((d) => d.mode === 'Ai' && d.previewUrl !== null)
+// ── View-level wrapper functions ──────────────────────────────────────────────
+
+/** Generate with pre-flight paywall check + credits update */
+async function generateBanner() {
+  if (isOutOfGenerations.value) {
+    paywallData.value = paywallData.value ?? {
+      reason: 'insufficient_credits',
+      creditsRemaining: 0,
+      paywallOptions: effectivePaywallOptions.value,
     }
-  } catch {
-    // Non-critical — gallery just stays empty.
-    pastDesigns.value = []
-  } finally {
-    pastDesignsLoading.value = false
-  }
-}
-
-// ── Pick a past banner: load it into the wizard's "ready" view ───────────────
-async function selectPastDesign(item: DesignRequestListItem) {
-  // BANNERSH-189: in manual mode the wizard's purpose is to start a new order —
-  // a previously-ordered manual design is already in the customer's order
-  // history, so route there instead of trying to "reopen" it in the wizard.
-  if (isManual.value) {
-    void router.push(`/account/design-requests/${item.id}`)
+    pendingAction.value = 'generate'
+    paywallOpen.value = true
     return
   }
-  // Load full detail so all the action-button logic in the ready phase has the
-  // data it expects (status, revisionsRemaining, etc.).
-  try {
-    const detail = await getDesignRequest(item.id)
-    designRequestId.value = item.id
-    currentDesignRequest.value = detail
-    // BANNERSH-162: clear the cached natural ratio so the loaded image's @load
-    // event becomes the authoritative source for the post-generation picker.
-    aiImageNaturalRatio.value = null
-    // Pre-fill the editable fields so "Generer ny versjon" / "Gå tilbake og endre"
-    // start from the same inputs the user picked last time.
+  resetPricing()
+  const result = await _generateBanner()
+  if (result && result.creditsRemaining !== undefined && auth.isLoggedIn) {
+    creditsRemaining.value = result.creditsRemaining
+    hasUsedFreeGeneration.value = true
+  }
+}
+
+/** Regenerate with pricing reset + credits update */
+async function regenerate() {
+  resetPricing()
+  const result = await _regenerate()
+  if (result && result.creditsRemaining !== undefined) {
+    creditsRemaining.value = result.creditsRemaining
+  }
+}
+
+/** Manual-mode "Se forhåndsvisning": generate canvas placeholder + enter ready phase */
+function generateManualPlaceholder() {
+  const result = _generateManualPlaceholder(selectedAspectRatio.value, aspectRatioForBackend.value)
+  currentDesignRequest.value = result.detail
+  aiImageNaturalRatio.value = result.ratio
+  genPhase.value = 'ready'
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+/** Return to idle: composable reset + manual reset + step back */
+function returnToWizardIdle() {
+  _returnToWizardIdle()
+  resetManual()
+  step.value = 2
+}
+
+/** Select a past design: composable call + restore form fields + step navigation */
+async function handleSelectPastDesign(item: DesignRequestListItem) {
+  resetPricing()
+  const detail = await _selectPastDesign(item)
+  if (detail) {
     personName.value = detail.personName
     personAge.value = detail.personAge ?? null
     textContent.value = detail.textContent
     themeDescription.value = detail.themeDescription
     selectedTemplateId.value = detail.bannerTemplateId
     language.value = detail.language === 'en' ? 'en' : 'nb'
-    // Map legacy aspect ratio to quality option (best effort)
     if (detail.aspectRatio === '18:9' || detail.aspectRatio?.startsWith('300x')) {
       selectedQuality.value = 'good'
     } else {
       selectedQuality.value = 'high'
     }
-
     step.value = 2
-    if (detail.status === 'AwaitingApproval' || detail.status === 'Approved' || detail.status === 'Final') {
-      genPhase.value = 'ready'
-    } else if (detail.status === 'InProgress' || detail.status === 'Pending') {
-      startPolling(item.id)
-    } else {
-      genPhase.value = 'error'
-    }
-    editExpanded.value = false
-    // Scroll to top so the loaded banner is immediately visible.
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  } catch {
-    // If detail load fails, fall back to the orders view where the user can drill in.
-    void router.push(`/account/design-requests/${item.id}`)
   }
 }
 
-/** Back to the wizard idle state (keeps inputs so user can refine and generate again). */
-function returnToWizardIdle() {
-  genPhase.value = 'idle'
-  generateApiError.value = null
-  regenerateError.value = null
-  approveError.value = null
-  // The just-generated banner is now in the past-banners gallery; let the user
-  // start a fresh generation (which will hit the paywall if they're out of free /
-  // credits — see `isOutOfGenerations` guard in generateBanner()).
-  currentDesignRequest.value = null
-  designRequestId.value = null
-  // BANNERSH-162: drop the cached natural ratio so the quality picker is
-  // ready for whatever ratio the next generation produces.
-  aiImageNaturalRatio.value = null
-  // BANNERSH-189: drop the manual placeholder so a fresh ratio renders next time.
-  manualPlaceholderUrl.value = null
-  manualSubmitError.value = null
-  localStorage.removeItem('ai_banner_draft_id')
-  step.value = 2
+// ── PaywallModal event handlers ───────────────────────────────────────────────
+function onPaywallRetryAction() {
+  if (pendingAction.value === 'generate') void generateBanner()
+  else void regenerate()
 }
-
-// ── Photo upload ──────────────────────────────────────────────────────────────
-const PHOTO_MAX_BYTES = 10 * 1024 * 1024 // 10 MB
-const PHOTO_ACCEPTED = ['image/jpeg', 'image/png', 'image/webp']
-
-function openPhotoPicker() {
-  if (photoUploading.value) return
-  photoFileInput.value?.click()
+function onPaywallCreditsUpdated(remaining: number, usedFree: boolean) {
+  creditsRemaining.value = remaining
+  hasUsedFreeGeneration.value = usedFree
 }
-
-function onPhotoFileChange(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (file) void handlePhotoFile(file)
-  if (input) input.value = ''
+function onPaywallNavigateTo(url: string) { void router.push(url) }
+function onPaywallSelectPastDesign(item: DesignRequestListItem) {
+  paywallOpen.value = false
+  void handleSelectPastDesign(item)
 }
-
-function onPhotoDragOver(e: DragEvent) {
-  e.preventDefault()
-  photoDragging.value = true
-}
-
-function onPhotoDragLeave() {
-  photoDragging.value = false
-}
-
-function onPhotoDrop(e: DragEvent) {
-  e.preventDefault()
-  photoDragging.value = false
-  const file = e.dataTransfer?.files?.[0]
-  if (file) void handlePhotoFile(file)
-}
-
-async function handlePhotoFile(file: File) {
-  photoUploadError.value = null
-  if (!PHOTO_ACCEPTED.includes(file.type)) {
-    photoUploadError.value = `Filtypen ${file.type || 'ukjent'} støttes ikke. Bruk JPEG, PNG eller WEBP.`
-    return
-  }
-  if (file.size > PHOTO_MAX_BYTES) {
-    photoUploadError.value = `Filen er for stor (${(file.size / 1024 / 1024).toFixed(1)} MB). Maks 10 MB.`
-    return
-  }
-  if (photoPreviewUrl.value) URL.revokeObjectURL(photoPreviewUrl.value)
-  photoPreviewUrl.value = URL.createObjectURL(file)
-
-  photoUploading.value = true
-  photoUploadProgress.value = 0
-  try {
-    const resp = await uploadBannerFile(file, (pct) => {
-      photoUploadProgress.value = pct
-    })
-    uploadedPhotoBannerDesignId.value = resp.designId
-  } catch (e: unknown) {
-    const ex = e as { response?: { status?: number; data?: { error?: string } }; message?: string }
-    if (ex.response?.status === 401) {
-      photoUploadError.value = 'Du må være innlogget for å laste opp et bilde.'
-    } else {
-      photoUploadError.value =
-        ex.response?.data?.error || ex.message || 'Opplasting feilet. Prøv igjen.'
-    }
-    if (photoPreviewUrl.value) {
-      URL.revokeObjectURL(photoPreviewUrl.value)
-      photoPreviewUrl.value = null
-    }
-    uploadedPhotoBannerDesignId.value = null
-  } finally {
-    photoUploading.value = false
-  }
-}
-
-function removePhoto() {
-  if (photoPreviewUrl.value) URL.revokeObjectURL(photoPreviewUrl.value)
-  photoPreviewUrl.value = null
-  uploadedPhotoBannerDesignId.value = null
-  photoUploadError.value = null
+function onPaywallGoToCheckout() {
+  const id = designRequestId.value
+  paywallOpen.value = false
+  void router.push(id ? `/checkout?designRequestId=${id}` : '/checkout')
 }
 
 // ── Clear age when switching to a non-birthday template ──────────────────────
 watch(selectedTemplateId, () => {
-  if (selectedTemplate.value?.category !== 'Birthday') {
-    personAge.value = null
-  }
+  if (selectedTemplate.value?.category !== 'Birthday') personAge.value = null
 })
 
 // ── Step navigation ───────────────────────────────────────────────────────────
@@ -846,201 +474,15 @@ function goToStep(s: 1 | 2 | 3) {
   step.value = s
 }
 
-// ── Generate banner (free-first flow, no Stripe upfront) ─────────────────────
-async function generateBanner() {
-  if (genPhase.value === 'submitting' || genPhase.value === 'generating') return
-  generateApiError.value = null
-  // BANNERSH-162: clear the cached natural ratio so the new image's load event
-  // is the authoritative source for the post-generation quality picker.
-  aiImageNaturalRatio.value = null
-
-  // BANNERSH-83: when we already know this auth user has spent their free generation
-  // and has 0 credits, surface the paywall *before* posting — otherwise the user sees
-  // a confusing "I clicked the FREE button and got a popup" flow. The same paywall
-  // is still wired to the 402 path below for cases we couldn't predict (e.g. the
-  // /ai-credits/me call failed, or the user just consumed their last credit).
-  if (isOutOfGenerations.value) {
-    paywallData.value = paywallData.value ?? {
-      reason: 'insufficient_credits',
-      creditsRemaining: 0,
-      paywallOptions: effectivePaywallOptions.value,
-    }
-    pendingAction.value = 'generate'
-    openPaywallModal()
-    return
-  }
-
-  genPhase.value = 'submitting'
-
-  try {
-    const integrity = await generateRequestIntegrity()
-    const resp = await createAiRequest(
-      {
-        templateId: selectedTemplateId.value!,
-        language: language.value,
-        personName: personName.value.trim(),
-        personAge: personAge.value ?? undefined,
-        textContent: textContent.value.trim(),
-        themeDescription: themeDescription.value.trim(),
-        aspectRatio: aspectRatioForBackend.value,
-        uploadedPhotoBannerDesignId: uploadedPhotoBannerDesignId.value ?? undefined,
-      },
-      integrity,
-    )
-
-    designRequestId.value = resp.designRequestId
-    localStorage.setItem('ai_banner_draft_id', String(resp.designRequestId))
-
-    if (resp.creditsRemaining !== undefined && auth.isLoggedIn) {
-      creditsRemaining.value = resp.creditsRemaining
-      // The backend has now flipped `HasUsedFreeAiGeneration` on this user — record
-      // it locally so the button label updates immediately on the next render.
-      hasUsedFreeGeneration.value = true
-    }
-
-    if (resp.requiresAuth) {
-      requiresAuthHint.value = true
-      // Anonymous user: show "anon_pending" — cannot poll without auth
-      genPhase.value = 'anon_pending'
-    } else {
-      startPolling(resp.designRequestId)
-    }
-  } catch (e: unknown) {
-    const ex = e as {
-      response?: {
-        status?: number
-        data?: AiPaywallData & { error?: string }
-      }
-      message?: string
-    }
-    if (ex.response?.status === 402 && ex.response.data) {
-      const d = ex.response.data
-      paywallData.value = {
-        reason: d.reason ?? 'insufficient_credits',
-        creditsRemaining: d.creditsRemaining ?? 0,
-        paywallOptions: d.paywallOptions ?? {
-          creditPackSmallPriceNok: 29,
-          creditPackSmallCount: 5,
-          creditPackLargePriceNok: 95,
-          creditPackLargeCount: 20,
-          creditPackPriceNok: 29,
-          creditPackCount: 5,
-          bannerOrderActivationFeeNok: 95,
-          bannerOrderCreditBonus: 20,
-          manualDesignerUrl: '/banner-builder/manual',
-          uploadOwnUrl: '/banner-builder',
-        },
-      }
-      pendingAction.value = 'generate'
-      openPaywallModal()
-    } else {
-      generateApiError.value =
-        ex.response?.data?.error ?? ex.message ?? 'Generering feilet. Prøv igjen.'
-    }
-    genPhase.value = 'idle'
-  }
-}
-
-// ── Polling ───────────────────────────────────────────────────────────────────
-let pollTimer: ReturnType<typeof setInterval> | null = null
-const TERMINAL_STATUSES = ['AwaitingApproval', 'Approved', 'Final', 'Failed', 'Cancelled']
-
-function startPolling(id: number) {
-  genPhase.value = 'generating'
-  stopPolling()
-  pollTimer = setInterval(() => void pollOnce(id), 3000)
-  void pollOnce(id)
-}
-
-function stopPolling() {
-  if (pollTimer !== null) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
-}
-
-async function pollOnce(id: number) {
-  try {
-    const detail = await getDesignRequest(id)
-    currentDesignRequest.value = detail
-    if (TERMINAL_STATUSES.includes(detail.status)) {
-      stopPolling()
-      if (
-        detail.status === 'AwaitingApproval' ||
-        detail.status === 'Approved' ||
-        detail.status === 'Final'
-      ) {
-        genPhase.value = 'ready'
-        editExpanded.value = false
-        // Past banners gallery shows this new finished design — refresh asynchronously.
-        void loadPastDesigns()
-      } else {
-        genPhase.value = 'error'
-      }
-    }
-  } catch {
-    // Transient errors — keep polling
-  }
-}
-
-// ── Approve ───────────────────────────────────────────────────────────────────
-// BANNERSH-133: approval no longer jumps straight to /checkout — it transitions
-// the wizard into the `tilpass` phase so the customer can pick an eyelet (malje)
-// option (Ingen / 4 hjørner / Per meter) and see the running total before adding
-// the banner to the cart.
-async function approve() {
-  if (!designRequestId.value || approving.value) return
-  approveError.value = null
-  approving.value = true
-  try {
-    // BANNERSH-168: pass the customer's chosen print height so the backend creates
-    // the BannerDesign at the correct size (high=150 cm, good=180 cm, or custom).
-    const chosen = selectedDimensions.value
-    const heightForApprove = chosen.height > 0 ? chosen.height : undefined
-    const approved = await approveDesignRequest(designRequestId.value, heightForApprove)
-    currentDesignRequest.value = approved
-    localStorage.removeItem('ai_banner_draft_id')
-
-    // Resolve pricing for the produced BannerDesign so the tilpass phase can render
-    // the running total. If the lookup fails, surface an error in the wizard and
-    // let the user retry — never silently route away (that showed a misleading
-    // "Bestillingen er godkjent og sendes i produksjon" page before the customer
-    // had selected eyelets or paid).
-    if (approved.finalBannerDesignId) {
-      try {
-        await loadTilpassPricing(approved.finalBannerDesignId)
-        step.value = 3
-        genPhase.value = 'tilpass'
-        // Scroll to top so the new step is immediately visible.
-        window.scrollTo({ top: 0, behavior: 'smooth' })
-        return
-      } catch {
-        approveError.value = 'Prisberegning er ikke tilgjengelig. Prøv igjen.'
-        return
-      }
-    }
-
-    // finalBannerDesignId is null — the backend could not create a BannerDesign
-    // (e.g. the AI result file is missing). Show an error so the user can retry.
-    approveError.value = 'Designet ble godkjent, men vi kunne ikke opprette bannerdesignet. Prøv igjen eller kontakt support.'
-  } catch (e: unknown) {
-    const ex = e as { response?: { data?: { error?: string } }; message?: string }
-    approveError.value =
-      ex.response?.data?.error || ex.message || 'Godkjenning feilet. Prøv igjen.'
-  } finally {
-    approving.value = false
-  }
-}
-
 // ── Tilpass: load pricing + eyelet info ──────────────────────────────────────
 async function loadTilpassPricing(bannerDesignId: number) {
   tilpassLoading.value = true
   tilpassError.value = null
   try {
     const design = await getBannerDesign(bannerDesignId)
-    const sizes = await fetchSizes(design.computedWidthCm)
-    const pricingSize = sizes.find(
-      (s) => s.isCustomWidth && s.heightCm === design.selectedHeightCm,
+    const designSizes = await fetchSizes(design.computedWidthCm)
+    const pricingSize = designSizes.find(
+      (s: BannerSize) => s.isCustomWidth && s.heightCm === design.selectedHeightCm,
     )
     if (!pricingSize || pricingSize.calculatedPrice == null) {
       throw new Error('Pricing not available for this banner.')
@@ -1049,10 +491,7 @@ async function loadTilpassPricing(bannerDesignId: number) {
     tilpassDesignHeightCm.value = design.selectedHeightCm
     tilpassBannerSize.value = pricingSize
     tilpassBannerPriceNok.value = pricingSize.calculatedPrice
-    // Reset eyelet selection to "Ingen" each time we (re-)enter the tilpass step.
     tilpassEyeletOption.value = 'None'
-
-    // Best-effort eyelet price fetch — falls back to 0 (hidden in the UI).
     try {
       tilpassEyeletPriceNok.value = await fetchEyeletPriceNok()
     } catch {
@@ -1065,12 +504,7 @@ async function loadTilpassPricing(bannerDesignId: number) {
 
 // ── Tilpass: add to cart + go to checkout ────────────────────────────────────
 function addTilpassToCartAndCheckout() {
-  // BANNERSH-189: manual mode uses a different cart-add path (two items: banner
-  // + 495 kr designer-fee line) — dispatch there.
-  if (isManual.value) {
-    addManualToCartAndCheckout()
-    return
-  }
+  if (isManual.value) { addManualToCartAndCheckout(); return }
   const d = currentDesignRequest.value
   const size = tilpassBannerSize.value
   if (!d?.finalBannerDesignId || !size) return
@@ -1087,519 +521,19 @@ function addTilpassToCartAndCheckout() {
     previewUrl: d.previewUrl ?? undefined,
     notes: `AI banner design #${d.finalBannerDesignId}`,
   })
-  router.push('/checkout')
+  void router.push('/checkout')
 }
 
-// ── Tilpass: back to the ready phase ─────────────────────────────────────────
 function backFromTilpass() {
   step.value = 2
   genPhase.value = 'ready'
   tilpassError.value = null
 }
 
-// ── Reorder current Approved / Final design ───────────────────────────────────
-async function reorderCurrentDesign() {
-  const d = currentDesignRequest.value
-  if (!d?.finalBannerDesignId || reordering.value) return
-  reordering.value = true
-  reorderError.value = null
-  try {
-    const design = await getBannerDesign(d.finalBannerDesignId)
-    const sizes = await fetchSizes(design.computedWidthCm)
-    const pricingSize = sizes.find(
-      (s) => s.isCustomWidth && s.heightCm === design.selectedHeightCm,
-    )
-    if (pricingSize && pricingSize.calculatedPrice != null) {
-      cart.addItem({
-        bannerSizeId: pricingSize.id,
-        bannerSizeName: `AI banner ${design.computedWidthCm} × ${design.selectedHeightCm} cm`,
-        customWidthCm: design.computedWidthCm,
-        heightCm: design.selectedHeightCm,
-        quantity: 1,
-        unitPriceNok: pricingSize.calculatedPrice,
-        eyeletOption: 'None',
-        eyeletFeeNok: 0,
-        designId: d.finalBannerDesignId,
-        previewUrl: d.previewUrl ?? design.previewUrl ?? undefined,
-        notes: `AI banner design #${d.finalBannerDesignId}`,
-      })
-      void router.push('/checkout')
-    } else {
-      reorderError.value = 'Kunne ikke finne pris for dette banneret. Prøv igjen.'
-    }
-  } catch {
-    reorderError.value = 'Noe gikk galt ved bestilling. Prøv igjen.'
-  } finally {
-    reordering.value = false
-  }
-}
-
-// ── Re-generate ───────────────────────────────────────────────────────────────
-async function regenerate() {
-  if (!designRequestId.value || regenerating.value) return
-  regenerateError.value = null
-  regenerating.value = true
-  // BANNERSH-162: clear the natural ratio so the re-generated image's load
-  // event resets the quality picker dimensions.
-  aiImageNaturalRatio.value = null
-  try {
-    const integrity = await generateRequestIntegrity()
-    const resp = await regenerateDesignRequest(
-      designRequestId.value,
-      {
-        textContent: textContent.value.trim() || undefined,
-        themeDescription: themeDescription.value.trim() || undefined,
-      },
-      integrity,
-    )
-    creditsRemaining.value = resp.creditsRemaining
-    // When regenerating from an Approved/Final request the backend creates a fresh
-    // DesignRequest (to preserve the approved record).  Switch our active id to the
-    // new entry so all subsequent polling and URL tracking point at the right row.
-    if (resp.newDesignRequestId) {
-      designRequestId.value = resp.newDesignRequestId
-      localStorage.setItem('ai_banner_draft_id', String(resp.newDesignRequestId))
-    }
-    genPhase.value = 'generating'
-    currentDesignRequest.value = null
-    editExpanded.value = false
-    startPolling(designRequestId.value!)
-  } catch (e: unknown) {
-    const ex = e as {
-      response?: {
-        status?: number
-        data?: { error?: string; creditsRemaining?: number; paywallMetadata?: { reason?: string } }
-      }
-      message?: string
-    }
-    if (ex.response?.status === 402) {
-      const d = ex.response?.data
-      // For regenerate 402, the backend doesn't return full paywallOptions —
-      // reuse the last-known paywallData if available.
-      paywallData.value = {
-        reason: d?.paywallMetadata?.reason ?? d?.error ?? 'insufficient_credits',
-        creditsRemaining: d?.creditsRemaining ?? 0,
-        paywallOptions: paywallData.value?.paywallOptions ?? {
-          creditPackSmallPriceNok: 29,
-          creditPackSmallCount: 5,
-          creditPackLargePriceNok: 95,
-          creditPackLargeCount: 20,
-          creditPackPriceNok: 29,
-          creditPackCount: 5,
-          bannerOrderActivationFeeNok: 95,
-          bannerOrderCreditBonus: 20,
-          manualDesignerUrl: '/banner-builder/manual',
-          uploadOwnUrl: '/banner-builder',
-        },
-      }
-      pendingAction.value = 'regenerate'
-      openPaywallModal()
-    } else if (ex.response?.status === 401) {
-      regenerateError.value = 'Du må være innlogget for å generere på nytt.'
-    } else {
-      regenerateError.value =
-        ex.response?.data?.error || ex.message || 'Ny generering feilet. Prøv igjen.'
-    }
-  } finally {
-    regenerating.value = false
-  }
-}
-
-// ── Paywall modal ─────────────────────────────────────────────────────────────
-function openPaywallModal() {
-  creditPackPhase.value = 'menu'
-  creditPackError.value = null
-  stripeCardError.value = null
-  packDetails.value = null
-  paywallOpen.value = true
-}
-
-function closePaywall() {
-  if (creditPackPhase.value === 'processing') return // Don't close mid-payment
-  paywallOpen.value = false
-  creditPackPhase.value = 'menu'
-  cardElement.value?.destroy()
-  cardElement.value = null
-  stripeRef.value = null
-}
-
-async function navigateFromPaywall(url: string) {
-  paywallOpen.value = false
-  await router.push(url)
-}
-
-function goToCheckoutWithDesign() {
-  const id = designRequestId.value
-  paywallOpen.value = false
-  void router.push(id ? `/checkout?designRequestId=${id}` : '/checkout')
-}
-
-// Resolve Stripe publishable key: env var → runtime API fallback
-async function resolveStripePublishableKey(): Promise<string | null> {
-  const envKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined
-  if (envKey && !envKey.startsWith('pk_test_REPLACE') && !envKey.startsWith('REPLACE_')) {
-    return envKey
-  }
-  try {
-    const resp = await fetch('/api/config/stripe')
-    if (resp.ok) {
-      const data: { publishableKey?: string } = await resp.json()
-      if (data.publishableKey && data.publishableKey.length > 0) return data.publishableKey
-    }
-  } catch {
-    // network error — fall through
-  }
-  return null
-}
-
-// Stripe initialisation (lazy)
-async function initStripe(): Promise<boolean> {
-  if (stripeRef.value) return true
-  const key = await resolveStripePublishableKey()
-  if (!key) {
-    creditPackError.value =
-      'Stripe er ikke konfigurert. Sett stripe_publishable_key i adminpanelet.'
-    creditPackPhase.value = 'error'
-    return false
-  }
-  try {
-    const stripe = await loadStripe(key)
-    if (!stripe) {
-      creditPackError.value = 'Stripe kunne ikke lastes. Prøv igjen.'
-      creditPackPhase.value = 'error'
-      return false
-    }
-    stripeRef.value = stripe
-    return true
-  } catch {
-    creditPackError.value = 'Stripe kunne ikke initialiseres.'
-    creditPackPhase.value = 'error'
-    return false
-  }
-}
-
-async function startCreditPackPurchase(pack: 'small' | 'large' = 'small') {
-  if (!auth.isLoggedIn) {
-    void router.push(`/login?redirect=${encodeURIComponent('/banner-builder/ai')}`)
-    return
-  }
-  creditPackPhase.value = 'loading'
-  creditPackError.value = null
-
-  try {
-    packDetails.value = await buyCreditPack(pack)
-    const ok = await initStripe()
-    if (!ok) return
-    creditPackPhase.value = 'card'
-    // Card element will be mounted via watch(cardMountEl) below
-  } catch (e: unknown) {
-    const ex = e as { response?: { data?: { error?: string } }; message?: string }
-    creditPackError.value =
-      ex.response?.data?.error ?? ex.message ?? 'Feil ved oppstart av betaling.'
-    creditPackPhase.value = 'error'
-  }
-}
-
-// Mount Stripe card element when its ref becomes available (phase transitions to 'card')
-watch(cardMountEl, (el) => {
-  if (!el || !stripeRef.value) return
-  if (cardElement.value) {
-    cardElement.value.mount(el)
-    return
-  }
-  const elements = stripeRef.value.elements()
-  const card = elements.create('card', {
-    style: {
-      base: {
-        fontFamily: 'Hanken Grotesk, ui-sans-serif, system-ui, sans-serif',
-        fontSize: '16px',
-        color: '#f4efe8',
-        '::placeholder': { color: '#8a8073' },
-      },
-      invalid: { color: '#ff6a3d' },
-    },
-    hidePostalCode: true,
-  })
-  card.on('change', (event) => {
-    stripeCardError.value = event.error?.message ?? null
-  })
-  card.mount(el)
-  cardElement.value = card
-})
-
-async function confirmCreditPackPayment() {
-  if (!stripeRef.value || !cardElement.value || !packDetails.value) return
-  creditPackPhase.value = 'processing'
-  stripeCardError.value = null
-
-  const { error } = await stripeRef.value.confirmCardPayment(packDetails.value.clientSecret, {
-    payment_method: { card: cardElement.value },
-  })
-
-  if (error) {
-    stripeCardError.value = error.message ?? 'Betalingen feilet. Prøv igjen.'
-    creditPackPhase.value = 'card'
-    return
-  }
-
-  // Payment succeeded — credits are granted by the Stripe webhook asynchronously.
-  // Optimistically refresh balance and close modal, then retry the pending action.
-  creditPackPhase.value = 'done'
-  if (auth.isLoggedIn) {
-    try {
-      const balance = await getAiCreditsBalance()
-      creditsRemaining.value = balance.creditsRemaining
-      hasUsedFreeGeneration.value = balance.hasUsedFreeGeneration
-    } catch {
-      // Non-critical
-    }
-  }
-  // Brief "Betaling godkjent!" pause, then close and retry
-  setTimeout(() => {
-    paywallOpen.value = false
-    cardElement.value?.destroy()
-    cardElement.value = null
-    stripeRef.value = null
-    if (pendingAction.value === 'generate') {
-      void generateBanner()
-    } else {
-      void regenerate()
-    }
-  }, 1400)
-}
-
-// ── Manual mode (BANNERSH-189) ────────────────────────────────────────────────
-// Generate a canvas-based "Ditt banner" placeholder image with the customer's
-// chosen aspect ratio. The placeholder serves three purposes:
-//   1. Gives the customer something visual to confirm the banner shape.
-//   2. Feeds `aiImageNaturalRatio` so the quality/size picker computes widths
-//      against the actual chosen ratio (same code path as AI mode).
-//   3. Lets the existing template render the preview <img> unchanged.
-function generatePlaceholderDataUrl(widthUnits: number, heightUnits: number): string {
-  const targetH = 600
-  const targetW = Math.max(1, Math.round((targetH * widthUnits) / Math.max(1, heightUnits)))
-  const canvas = document.createElement('canvas')
-  canvas.width = targetW
-  canvas.height = targetH
-  const ctx = canvas.getContext('2d')
-  if (!ctx) {
-    // Fallback: 1×1 transparent PNG. The text-less preview still works since the
-    // quality picker uses `aiImageNaturalRatio` (set separately) for dimensions.
-    return canvas.toDataURL('image/png')
-  }
-  // Warm dark gradient background — matches the site palette.
-  const gradient = ctx.createLinearGradient(0, 0, targetW, targetH)
-  gradient.addColorStop(0, '#3a2e22')
-  gradient.addColorStop(1, '#1e1813')
-  ctx.fillStyle = gradient
-  ctx.fillRect(0, 0, targetW, targetH)
-  // Subtle inner border so the empty banner reads as a "frame".
-  ctx.strokeStyle = 'rgba(231, 185, 78, 0.45)'
-  ctx.lineWidth = 4
-  ctx.strokeRect(8, 8, targetW - 16, targetH - 16)
-  // Centred "Ditt banner" title.
-  const titleSize = Math.round(Math.min(targetW, targetH * 1.4) * 0.13)
-  ctx.fillStyle = '#e7b94e'
-  ctx.font = `bold ${titleSize}px Georgia, serif`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('Ditt banner', targetW / 2, targetH / 2 - titleSize * 0.15)
-  // Hint line — small, muted.
-  const subSize = Math.max(12, Math.round(titleSize * 0.32))
-  ctx.fillStyle = 'rgba(244, 239, 232, 0.55)'
-  ctx.font = `${subSize}px Hanken Grotesk, ui-sans-serif, system-ui, sans-serif`
-  ctx.fillText('Designer lager forhåndsvisning innen 2–3 virkedager', targetW / 2, targetH / 2 + titleSize * 0.8)
-  return canvas.toDataURL('image/png')
-}
-
-/**
- * Manual-mode "generate": no API call. Builds a placeholder image at the chosen
- * aspect ratio and synthesises a `DesignRequestDetail`-shaped object so the rest
- * of the wizard template renders unchanged. The real `DesignRequest` row is
- * created later in `manualGoVidere()` (the "Gå videre" button) — that's when we
- * gate auth and persist the customer's inputs server-side.
- */
-function generateManualPlaceholder() {
-  const parts = selectedAspectRatio.value.split(':')
-  const rW = parseInt(parts[0] ?? '0', 10) || 16
-  const rH = parseInt(parts[1] ?? '0', 10) || 9
-  manualPlaceholderUrl.value = generatePlaceholderDataUrl(rW, rH)
-  aiImageNaturalRatio.value = rW / rH
-
-  // Synthesise a minimal DesignRequestDetail so the existing 'ready' phase template
-  // (which keys off `currentDesignRequest.previewUrl` / .status) renders the preview
-  // and the "Gå videre" button without conditional plumbing.
-  currentDesignRequest.value = {
-    id: 0,
-    userId: null,
-    bannerTemplateId: selectedTemplateId.value ?? 0,
-    mode: 'Manual',
-    status: 'AwaitingApproval',
-    language: language.value,
-    personName: personName.value.trim(),
-    personAge: personAge.value ?? null,
-    textContent: textContent.value.trim(),
-    themeDescription: themeDescription.value.trim(),
-    aspectRatio: aspectRatioForBackend.value,
-    revisionCount: 0,
-    regenerationsRemaining: 0,
-    priceNok: 0,
-    stripePaymentIntentId: null,
-    previewUrl: manualPlaceholderUrl.value,
-    finalCroppedUrl: null,
-    finalBannerDesignId: null,
-    currentGenerationId: null,
-    lastError: null,
-    generationHistory: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  }
-  genPhase.value = 'ready'
-  // Scroll to top so the placeholder is immediately visible (mirrors AI flow).
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-}
-
-function saveManualSessionState() {
-  try {
-    sessionStorage.setItem(MANUAL_SESSION_KEY, JSON.stringify({
-      selectedTemplateId: selectedTemplateId.value,
-      language: language.value,
-      uploadedPhotoBannerDesignId: uploadedPhotoBannerDesignId.value,
-      personName: personName.value,
-      personAge: personAge.value,
-      textContent: textContent.value,
-      themeDescription: themeDescription.value,
-      selectedAspectRatio: selectedAspectRatio.value,
-      selectedQuality: selectedQuality.value,
-      customWidth: customWidth.value,
-      customHeight: customHeight.value,
-      customMaterialGsm: customMaterialGsm.value,
-    }))
-  } catch { /* non-fatal */ }
-}
-
-function restoreManualSessionState(): boolean {
-  const saved = sessionStorage.getItem(MANUAL_SESSION_KEY)
-  if (!saved) return false
-  try {
-    const s = JSON.parse(saved) as {
-      selectedTemplateId: number | null
-      language: 'nb' | 'en'
-      uploadedPhotoBannerDesignId: number | null
-      personName: string
-      personAge: number | null
-      textContent: string
-      themeDescription: string
-      selectedAspectRatio?: AspectRatioOption
-      selectedQuality?: QualityOption
-      customWidth?: number | null
-      customHeight?: number | null
-      customMaterialGsm?: 400 | 680
-    }
-    if (s.selectedTemplateId !== null) selectedTemplateId.value = s.selectedTemplateId
-    language.value = s.language
-    uploadedPhotoBannerDesignId.value = s.uploadedPhotoBannerDesignId
-    personName.value = s.personName
-    personAge.value = s.personAge
-    textContent.value = s.textContent
-    themeDescription.value = s.themeDescription
-    if (s.selectedAspectRatio) selectedAspectRatio.value = s.selectedAspectRatio
-    if (s.selectedQuality) selectedQuality.value = s.selectedQuality
-    if (s.customWidth != null) customWidth.value = s.customWidth
-    if (s.customHeight != null) customHeight.value = s.customHeight
-    if (s.customMaterialGsm) customMaterialGsm.value = s.customMaterialGsm
-    sessionStorage.removeItem(MANUAL_SESSION_KEY)
-    return true
-  } catch {
-    sessionStorage.removeItem(MANUAL_SESSION_KEY)
-    return false
-  }
-}
-
-/**
- * Manual-mode "Gå videre" handler — the equivalent of `approve()` in the AI flow.
- * Auth-gates, persists the customer's inputs by creating a real `DesignRequest`
- * via `createManualRequest`, then transitions to the tilpass (eyelet picker) step
- * just like the AI approve flow does.
- */
-async function manualGoVidere() {
-  if (manualSubmitting.value) return
-  manualSubmitError.value = null
-
-  // Auth gate — save form state and bounce through /login, then resume.
-  if (!auth.isLoggedIn) {
-    saveManualSessionState()
-    void router.push('/login?redirect=/banner-builder/manual')
-    return
-  }
-
-  manualSubmitting.value = true
-  try {
-    const resp = await createManualRequest({
-      templateId: selectedTemplateId.value!,
-      language: language.value,
-      personName: personName.value.trim(),
-      personAge: personAge.value ?? undefined,
-      textContent: textContent.value.trim(),
-      themeDescription: themeDescription.value.trim(),
-      aspectRatio: aspectRatioForBackend.value,
-      uploadedPhotoBannerDesignId: uploadedPhotoBannerDesignId.value ?? undefined,
-    })
-    manualDesignRequestId.value = resp.designRequestId
-    manualBannerPriceNok.value = resp.bannerPriceNok
-    manualDesignPriceNok.value = resp.designPriceNok
-
-    // Resolve the BannerSize for the chosen dimensions so the tilpass step can
-    // render the eyelet picker / total. We mirror the AI `loadTilpassPricing`
-    // shape — but without a finalBannerDesignId since the designer hasn't
-    // uploaded the print-ready file yet.
-    const dims = selectedDimensions.value
-    if (dims.width > 0 && dims.height > 0 && sizesLoaded.value) {
-      const picked = pickBannerSize(
-        sizes.value,
-        dims.width,
-        dims.height,
-        selectedQuality.value === 'custom' ? customMaterialGsm.value : undefined,
-      )
-      if (picked) {
-        tilpassDesignWidthCm.value = dims.width
-        tilpassDesignHeightCm.value = dims.height
-        tilpassBannerSize.value = picked.size
-        tilpassBannerPriceNok.value = resp.bannerPriceNok
-        tilpassEyeletOption.value = 'None'
-        try {
-          tilpassEyeletPriceNok.value = await fetchEyeletPriceNok()
-        } catch {
-          tilpassEyeletPriceNok.value = 0
-        }
-        step.value = 3
-        genPhase.value = 'tilpass'
-        window.scrollTo({ top: 0, behavior: 'smooth' })
-        return
-      }
-    }
-    // No matching BannerSize — fall back to the account detail page so the
-    // customer can still complete the order via the legacy path.
-    void router.push(`/account/design-requests/${resp.designRequestId}`)
-  } catch (e: unknown) {
-    const ex = e as { response?: { data?: { error?: string } }; message?: string }
-    manualSubmitError.value =
-      ex.response?.data?.error || ex.message || 'Kunne ikke opprette bestilling. Prøv igjen.'
-  } finally {
-    manualSubmitting.value = false
-  }
-}
-
-/**
- * Manual-mode add-to-cart: drops both the banner line AND the 495 kr designer-fee
- * line into the cart, then navigates to /checkout. Mirrors the legacy
- * legacy ManualBannerBuilderView add-to-cart behaviour (deleted in BANNERSH-189).
- */
 function addManualToCartAndCheckout() {
   const reqId = manualDesignRequestId.value
   const size = tilpassBannerSize.value
   if (!reqId || !size) return
-
   const bannerItem: CartItem = {
     bannerSizeId: size.id,
     bannerSizeName: `Manuelt banner ${tilpassDesignWidthCm.value} × ${tilpassDesignHeightCm.value} cm`,
@@ -1613,7 +547,6 @@ function addManualToCartAndCheckout() {
     designRequestId: reqId,
   }
   cart.addItem(bannerItem)
-
   const designFeeItem: CartItem = {
     bannerSizeId: null,
     bannerSizeName: 'Designer-tjeneste (manuelt banner)',
@@ -1627,7 +560,6 @@ function addManualToCartAndCheckout() {
     designRequestId: reqId,
   }
   cart.addItem(designFeeItem)
-
   void router.push('/checkout')
 }
 
@@ -1641,13 +573,7 @@ onMounted(async () => {
   await loadPastDesigns()
 
   // Load banner sizes for quality option price display
-  try {
-    sizes.value = await fetchSizes()
-    sizesLoaded.value = true
-    await refreshAllPrices()
-  } catch {
-    // Non-critical — prices just won't display
-  }
+  await loadSizesAndPricing()
 
   // BANNERSH-189: restore manual-mode form state saved before a login redirect.
   if (isManual.value && auth.isLoggedIn) {
@@ -1701,7 +627,7 @@ onMounted(async () => {
   if (drParam && !categoryParam) {
     const drId = parseInt(drParam, 10)
     if (!isNaN(drId) && drId > 0) {
-      await selectPastDesign({ id: drId } as DesignRequestListItem)
+      await handleSelectPastDesign({ id: drId } as DesignRequestListItem)
       return
     }
   }
@@ -1736,9 +662,22 @@ onMounted(async () => {
   }
 })
 
+// Sync currentDesignRequest.aspectRatio → currentAspectRatioString so the
+// pricing composable can compute correct banner widths even before the image loads.
+watch(currentDesignRequest, (d) => {
+  currentAspectRatioString.value = d?.aspectRatio ?? null
+})
+
+// Manual mode: regenerate the canvas placeholder when the aspect ratio changes
+// while the user is on the ready phase (they chose a different ratio in the picker).
+watch(selectedAspectRatio, () => {
+  if (isManual.value && genPhase.value === 'ready') {
+    generateManualPlaceholder()
+  }
+})
+
 onBeforeUnmount(() => {
-  stopPolling()
-  cardElement.value?.destroy()
+  cleanupGeneration()
   if (photoPreviewUrl.value) URL.revokeObjectURL(photoPreviewUrl.value)
 })
 </script>
@@ -1825,55 +764,15 @@ onBeforeUnmount(() => {
     ════════════════════════════════════════════════════════════════════════ -->
     <div :class="auth.isLoggedIn && pastDesigns.length > 0 ? 'wizard-with-sidebar' : ''">
 
-      <!-- Left column: past banners sidebar -->
+      <!-- Left column: past banners sidebar (extracted component) -->
       <!-- BANNERSH-189: filtered by mode (Ai vs Manual) in loadPastDesigns(). -->
-      <aside
+      <PastBannersGallery
         v-if="auth.isLoggedIn && pastDesigns.length > 0"
-        class="past-sidebar"
-        :aria-label="isManual ? 'Tidligere manuelle banner' : 'Tidligere genererte banner'"
-      >
-        <div class="past-sidebar-hd">
-          <span class="display past-title">
-            <i class="fa-solid fa-clock-rotate-left"></i>
-            Tidligere
-          </span>
-          <span class="past-count">{{ pastDesigns.length }}</span>
-        </div>
-        <p class="past-sub">
-          <template v-if="isManual">Tidligere manuelle bestillinger — klikk for detaljer.</template>
-          <template v-else>Klikk for å åpne — godkjenn eller bruk som utgangspunkt.</template>
-        </p>
-        <div class="past-sidebar-list">
-          <button
-            v-for="d in pastDesigns"
-            :key="d.id"
-            type="button"
-            class="past-card"
-            :class="{ 'past-card-active': designRequestId === d.id }"
-            @click="selectPastDesign(d)"
-          >
-            <div class="past-thumb">
-              <img v-if="d.previewUrl" :src="d.previewUrl" :alt="`Tidligere banner for ${d.personName}`" />
-              <!-- BANNERSH-189: manual designs may not have a preview yet (designer hasn't uploaded).
-                   Show a palette icon as a neutral placeholder so the card still reads correctly. -->
-              <i v-else class="fa-solid fa-palette" style="font-size:24px;color:var(--faint)"></i>
-            </div>
-            <div class="past-meta">
-              <div class="past-name">{{ d.personName || 'Uten navn' }}</div>
-              <div class="past-theme">{{ d.themeDescription || '—' }}</div>
-              <div class="past-status">
-                <i v-if="d.status === 'Final' || d.status === 'Approved'" class="fa-solid fa-circle-check" style="color:#4ade80"></i>
-                <i v-else-if="d.status === 'AwaitingApproval'" class="fa-solid fa-hourglass-half" style="color:var(--gold)"></i>
-                <i v-else class="fa-solid fa-circle-info" style="color:var(--faint)"></i>
-                {{ d.status === 'AwaitingApproval' ? 'Venter godkjenning'
-                  : d.status === 'Final' ? 'Bestilt'
-                  : d.status === 'Approved' ? 'Godkjent'
-                  : d.status }}
-              </div>
-            </div>
-          </button>
-        </div>
-      </aside>
+        :designs="pastDesigns"
+        :active-id="designRequestId"
+        :is-manual="isManual"
+        @select="handleSelectPastDesign"
+      />
 
       <!-- Right column: main wizard content -->
       <div>
@@ -2388,7 +1287,7 @@ onBeforeUnmount(() => {
             <template v-else-if="auth.isLoggedIn && isOutOfGenerations">
               <i class="fa-solid fa-circle-exclamation" style="color:var(--accent);margin-right:5px"></i>
               Ingen genereringer igjen —
-              <button type="button" style="color:var(--accent);font-weight:600;background:none;border:none;cursor:pointer;padding:0;font-family:var(--font-ui);font-size:13px" @click="pendingAction = 'generate'; openPaywallModal()">kjøp kreditter</button>
+              <button type="button" style="color:var(--accent);font-weight:600;background:none;border:none;cursor:pointer;padding:0;font-family:var(--font-ui);font-size:13px" @click="pendingAction = 'generate'; paywallOpen = true">kjøp kreditter</button>
             </template>
             <template v-else-if="!auth.isLoggedIn">
               <i class="fa-solid fa-shield-halved" style="margin-right:5px"></i>
@@ -2974,233 +1873,21 @@ onBeforeUnmount(() => {
     </div><!-- end wizard-with-sidebar -->
 
     <!-- ═══════════════════════════════════════════════════════════════════
-         PAYWALL MODAL
+         PAYWALL MODAL (extracted component)
     ════════════════════════════════════════════════════════════════════════ -->
-    <Teleport to="body">
-      <div v-if="paywallOpen" class="modal-backdrop" @click.self="closePaywall">
-        <div class="modal-box" role="dialog" aria-modal="true" aria-label="Generer flere AI-banner">
+    <PaywallModal
+      v-model="paywallOpen"
+      :paywall-options="effectivePaywallOptions"
+      :past-designs="pastDesigns"
+      :pending-action="pendingAction"
+      :design-request-id="designRequestId"
+      @retry-action="onPaywallRetryAction"
+      @credits-updated="onPaywallCreditsUpdated"
+      @navigate-to="onPaywallNavigateTo"
+      @select-past-design="onPaywallSelectPastDesign"
+      @go-to-checkout="onPaywallGoToCheckout"
+    />
 
-          <!-- Close button -->
-          <button
-            v-if="creditPackPhase !== 'processing'"
-            type="button"
-            class="modal-close-btn"
-            aria-label="Lukk"
-            @click="closePaywall"
-          >
-            <i class="fa-solid fa-xmark"></i>
-          </button>
-
-          <!-- ── Menu phase ──────────────────────────────────────────────── -->
-          <div v-if="creditPackPhase === 'menu'">
-            <div style="text-align:center;margin-bottom:24px">
-              <div style="width:52px;height:52px;border-radius:50%;background:rgba(255,106,61,.15);border:1px solid rgba(255,106,61,.3);display:grid;place-items:center;margin:0 auto 14px;font-size:22px;color:var(--accent)">
-                <i class="fa-solid fa-wand-magic-sparkles"></i>
-              </div>
-              <h2 class="display" style="font-size:22px;color:var(--text);margin-bottom:8px">Generer flere AI-banner</h2>
-              <p style="font-size:14px;color:var(--muted);max-width:28em;margin:0 auto">
-                Du har brukt opp den gratis genereringen. Velg et alternativ for å fortsette.
-              </p>
-            </div>
-
-            <div style="display:grid;gap:12px">
-              <!-- Option 1a: Buy small credit pack (Liten) -->
-              <button
-                type="button"
-                class="paywall-option paywall-option-primary"
-                @click="startCreditPackPurchase('small')"
-              >
-                <div style="display:flex;align-items:flex-start;gap:14px">
-                  <span class="paywall-option-ico" style="background:rgba(255,106,61,.15);color:var(--accent)">
-                    <i class="fa-solid fa-bag-shopping"></i>
-                  </span>
-                  <div style="text-align:left">
-                    <div style="font-weight:700;font-size:15px;color:var(--text)">
-                      Liten pakke — {{ effectivePaywallOptions.creditPackSmallCount }} AI forslag
-                      <span style="color:var(--accent)">({{ formatNok(effectivePaywallOptions.creditPackSmallPriceNok) }})</span>
-                    </div>
-                    <div style="font-size:13px;color:var(--muted);margin-top:3px">
-                      Kortbetaling via Stripe — umiddelbar tilgang
-                    </div>
-                  </div>
-                </div>
-                <i class="fa-solid fa-chevron-right" style="color:var(--faint);font-size:12px;flex-shrink:0"></i>
-              </button>
-
-              <!-- Option 1b: Buy large credit pack (Stor) -->
-              <button
-                type="button"
-                class="paywall-option paywall-option-primary"
-                @click="startCreditPackPurchase('large')"
-              >
-                <div style="display:flex;align-items:flex-start;gap:14px">
-                  <span class="paywall-option-ico" style="background:rgba(255,106,61,.2);color:var(--accent)">
-                    <i class="fa-solid fa-bags-shopping"></i>
-                  </span>
-                  <div style="text-align:left">
-                    <div style="font-weight:700;font-size:15px;color:var(--text)">
-                      Stor pakke — {{ effectivePaywallOptions.creditPackLargeCount }} AI forslag
-                      <span style="color:var(--accent)">({{ formatNok(effectivePaywallOptions.creditPackLargePriceNok) }})</span>
-                    </div>
-                    <div style="font-size:13px;color:var(--muted);margin-top:3px">
-                      Beste verdi — spar over 50% per forslag
-                    </div>
-                  </div>
-                </div>
-                <i class="fa-solid fa-chevron-right" style="color:var(--faint);font-size:12px;flex-shrink:0"></i>
-              </button>
-
-              <!-- Option 2: Order the banner now -->
-              <button
-                type="button"
-                class="paywall-option"
-                @click="goToCheckoutWithDesign"
-              >
-                <div style="display:flex;align-items:flex-start;gap:14px">
-                  <span class="paywall-option-ico" style="background:rgba(74,222,128,.1);color:#4ade80">
-                    <i class="fa-solid fa-cart-shopping"></i>
-                  </span>
-                  <div style="text-align:left">
-                    <div style="font-weight:700;font-size:15px;color:var(--text)">
-                      Betal for banneret nå
-                      <span style="color:#4ade80">({{ effectivePaywallOptions.bannerOrderCreditBonus }} ytterligere forslag inkludert)</span>
-                    </div>
-                    <div style="font-size:13px;color:var(--muted);margin-top:3px">
-                      Du kan fortsatt lage flere design før du sender inn bestillingen
-                    </div>
-                  </div>
-                </div>
-                <i class="fa-solid fa-chevron-right" style="color:var(--faint);font-size:12px;flex-shrink:0"></i>
-              </button>
-
-              <!-- Option 3: Manual designer -->
-              <button
-                type="button"
-                class="paywall-option"
-                @click="navigateFromPaywall(effectivePaywallOptions.manualDesignerUrl)"
-              >
-                <div style="display:flex;align-items:flex-start;gap:14px">
-                  <span class="paywall-option-ico" style="background:rgba(231,185,78,.1);color:var(--gold)">
-                    <i class="fa-solid fa-paintbrush"></i>
-                  </span>
-                  <div style="text-align:left">
-                    <div style="font-weight:700;font-size:15px;color:var(--text)">Få vår designer til å lage design for deg</div>
-                    <div style="font-size:13px;color:var(--muted);margin-top:3px">Menneskelig designer — 495 kr</div>
-                  </div>
-                </div>
-                <i class="fa-solid fa-chevron-right" style="color:var(--faint);font-size:12px;flex-shrink:0"></i>
-              </button>
-
-              <!-- Option 4: Upload own design -->
-              <button
-                type="button"
-                class="paywall-option"
-                @click="navigateFromPaywall(effectivePaywallOptions.uploadOwnUrl)"
-              >
-                <div style="display:flex;align-items:flex-start;gap:14px">
-                  <span class="paywall-option-ico" style="background:rgba(255,106,61,.08);color:var(--muted)">
-                    <i class="fa-solid fa-file-arrow-up"></i>
-                  </span>
-                  <div style="text-align:left">
-                    <div style="font-weight:700;font-size:15px;color:var(--text)">Last opp ditt eget design</div>
-                    <div style="font-size:13px;color:var(--muted);margin-top:3px">Du betaler bare for banneren</div>
-                  </div>
-                </div>
-                <i class="fa-solid fa-chevron-right" style="color:var(--faint);font-size:12px;flex-shrink:0"></i>
-              </button>
-            </div>
-
-            <!-- BANNERSH-83: surface past banners inside the paywall so the user can pick
-                 a previous design instead of paying. -->
-            <div v-if="pastDesigns.length > 0" style="margin-top:22px;border-top:1px solid var(--line-soft);padding-top:18px">
-              <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;display:flex;align-items:center;gap:8px">
-                <i class="fa-solid fa-clock-rotate-left" style="color:var(--accent)"></i>
-                Eller bruk et tidligere banner
-              </div>
-              <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:6px">
-                <button
-                  v-for="d in pastDesigns.slice(0, 6)"
-                  :key="d.id"
-                  type="button"
-                  class="past-mini"
-                  @click="() => { paywallOpen = false; selectPastDesign(d) }"
-                  :title="`${d.personName} — ${d.themeDescription}`"
-                >
-                  <img v-if="d.previewUrl" :src="d.previewUrl" :alt="`Banner for ${d.personName}`" />
-                  <span class="past-mini-name">{{ d.personName || 'Uten navn' }}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- ── Loading phase ───────────────────────────────────────────── -->
-          <div v-else-if="creditPackPhase === 'loading'" style="text-align:center;padding:2rem 0">
-            <i class="fa-solid fa-circle-notch fa-spin" style="font-size:32px;color:var(--accent);margin-bottom:14px;display:block"></i>
-            <p style="color:var(--muted)">Forbereder betaling…</p>
-          </div>
-
-          <!-- ── Card phase (Stripe) ─────────────────────────────────────── -->
-          <div v-else-if="creditPackPhase === 'card' && packDetails">
-            <button
-              type="button"
-              style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);background:none;border:none;cursor:pointer;padding:0 0 18px;font-family:var(--font-ui)"
-              @click="creditPackPhase = 'menu'"
-            >
-              <i class="fa-solid fa-arrow-left" style="font-size:11px"></i> Tilbake
-            </button>
-
-            <h3 class="display" style="font-size:18px;color:var(--text);margin-bottom:6px">
-              Kjøp {{ packDetails.creditCount }} AI banner forslag
-            </h3>
-            <p style="font-size:14px;color:var(--muted);margin-bottom:20px">
-              Pris: <strong style="color:var(--text)">{{ formatNok(packDetails.priceNok) }}</strong> — belastes med en gang
-            </p>
-
-            <label class="field-label" style="margin-bottom:8px">Kortdetaljer</label>
-            <div ref="cardMountEl" class="stripe-mount" />
-            <p v-if="stripeCardError" class="error-box" style="margin-top:10px">
-              <i class="fa-solid fa-circle-exclamation"></i> {{ stripeCardError }}
-            </p>
-
-            <button
-              type="button"
-              class="btn btn-primary"
-              style="width:100%;justify-content:center;padding:14px;font-size:15px;border-radius:12px;margin-top:18px"
-              @click="confirmCreditPackPayment"
-            >
-              <i class="fa-solid fa-lock" style="font-size:12px"></i>
-              Betal {{ formatNok(packDetails.priceNok) }}
-            </button>
-            <p style="font-size:13px;color:var(--faint);text-align:center;margin-top:10px">
-              <i class="fa-solid fa-shield-halved"></i> Sikret av Stripe. Vi lagrer ikke kortinformasjon.
-            </p>
-          </div>
-
-          <!-- ── Processing phase ────────────────────────────────────────── -->
-          <div v-else-if="creditPackPhase === 'processing'" style="text-align:center;padding:2rem 0">
-            <i class="fa-solid fa-circle-notch fa-spin" style="font-size:32px;color:var(--accent);margin-bottom:14px;display:block"></i>
-            <p style="color:var(--muted)">Behandler betaling…</p>
-          </div>
-
-          <!-- ── Done phase ──────────────────────────────────────────────── -->
-          <div v-else-if="creditPackPhase === 'done'" style="text-align:center;padding:2rem 0">
-            <i class="fa-solid fa-circle-check" style="font-size:48px;color:#4ade80;margin-bottom:14px;display:block"></i>
-            <h3 class="display" style="font-size:20px;color:var(--text);margin-bottom:8px">Betaling godkjent!</h3>
-            <p style="color:var(--muted)">Kreditene er lagt til. Genererer nytt banner…</p>
-          </div>
-
-          <!-- ── Error phase ─────────────────────────────────────────────── -->
-          <div v-else-if="creditPackPhase === 'error'" style="text-align:center;padding:1rem 0">
-            <div class="error-box" style="justify-content:center;flex-direction:column;gap:12px;padding:20px">
-              <i class="fa-solid fa-circle-exclamation" style="font-size:28px"></i>
-              <p>{{ creditPackError }}</p>
-              <button type="button" class="btn btn-ghost" @click="creditPackPhase = 'menu'">Prøv igjen</button>
-            </div>
-          </div>
-
-        </div>
-      </div>
-    </Teleport>
 
   </div>
 </template>
@@ -3533,20 +2220,6 @@ onBeforeUnmount(() => {
 .mat-btn:hover { color: var(--text); }
 .mat-btn-active { border-color: var(--accent); color: var(--text); background: rgba(255,106,61,.08); }
 
-/* ── Stripe mount ────────────────────────────────────────────── */
-.stripe-mount {
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 12px 14px;
-  min-height: 44px;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.stripe-mount:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(255,106,61,.18);
-}
-
 /* ── Notices + errors ────────────────────────────────────────── */
 .notice-gold {
   display: flex;
@@ -3631,84 +2304,6 @@ onBeforeUnmount(() => {
 .pay-grid { grid-template-columns: 1.2fr .8fr; }
 @media (max-width: 768px) { .pay-grid { grid-template-columns: 1fr !important; } }
 
-/* ── Paywall modal ───────────────────────────────────────────── */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(10, 8, 6, 0.78);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 1rem;
-  backdrop-filter: blur(4px);
-}
-.modal-box {
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
-  border-radius: 18px;
-  padding: 28px 28px 24px;
-  width: 100%;
-  max-width: 480px;
-  position: relative;
-  max-height: calc(100vh - 2rem);
-  overflow-y: auto;
-}
-.modal-close-btn {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid var(--line);
-  background: var(--surface-2);
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  color: var(--muted);
-  font-size: 14px;
-  transition: background 0.15s, color 0.15s;
-}
-.modal-close-btn:hover { background: var(--line); color: var(--text); }
-
-/* ── Paywall option buttons ──────────────────────────────────── */
-.paywall-option {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  background: var(--surface-2);
-  border: 1px solid var(--line-soft);
-  border-radius: 14px;
-  padding: 14px 16px;
-  cursor: pointer;
-  font-family: var(--font-ui);
-  text-align: left;
-  transition: border-color 0.15s, background 0.15s, transform 0.1s;
-}
-.paywall-option:hover {
-  border-color: var(--line);
-  background: var(--surface);
-  transform: translateY(-1px);
-}
-.paywall-option-primary {
-  border-color: rgba(255,106,61,.35);
-  background: rgba(255,106,61,.06);
-}
-.paywall-option-primary:hover { border-color: var(--accent); background: rgba(255,106,61,.1); }
-
-.paywall-option-ico {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  font-size: 17px;
-  flex-shrink: 0;
-}
-
 /* ── Two-column layout: sidebar + wizard (BANNERSH-145) ──────── */
 .wizard-with-sidebar {
   display: grid;
@@ -3720,178 +2315,6 @@ onBeforeUnmount(() => {
   .wizard-with-sidebar {
     grid-template-columns: 1fr;
   }
-}
-
-/* ── Past-banners sidebar (BANNERSH-83, BANNERSH-145) ────────── */
-.past-sidebar {
-  position: sticky;
-  top: 20px;
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
-  padding: 14px 12px 16px;
-  max-height: calc(100vh - 48px);
-  overflow-y: auto;
-}
-.past-sidebar-hd {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.past-title {
-  font-size: 14px;
-  color: var(--text);
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0;
-  font-weight: 700;
-  line-height: 1.3;
-}
-.past-title i { color: var(--accent); font-size: 13px; }
-.past-count {
-  background: rgba(255,106,61,.12);
-  border: 1px solid rgba(255,106,61,.3);
-  color: var(--accent);
-  border-radius: 99px;
-  padding: 2px 9px;
-  font-size: 13px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-.past-sub {
-  font-size: 13px;
-  color: var(--muted);
-  margin: 0 0 12px;
-  line-height: 1.4;
-}
-.past-sidebar-list {
-  display: flex;
-  flex-direction: column;
-  gap: 13px;
-}
-@media (max-width: 820px) {
-  .past-sidebar {
-    position: static;
-    max-height: none;
-  }
-  .past-sidebar-list {
-    flex-direction: row;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scroll-snap-type: x mandatory;
-  }
-  .past-sidebar-list .past-card {
-    flex: 0 0 160px;
-    width: 160px;
-  }
-}
-.past-card {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface-2);
-  border: 2px solid var(--line-soft);
-  border-radius: 0;
-  overflow: hidden;
-  cursor: pointer;
-  transition: border-color 0.15s, transform 0.15s, background 0.15s;
-  scroll-snap-align: start;
-  text-align: left;
-  font-family: var(--font-ui);
-  padding: 0;
-}
-.past-card:hover {
-  border-color: var(--accent);
-  transform: translateY(-2px);
-  background: rgba(255,106,61,.06);
-}
-.past-card-active {
-  border-color: var(--accent);
-  background: rgba(255,106,61,.08);
-  box-shadow: 0 0 0 2px rgba(255,106,61,.25);
-}
-.past-thumb {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: var(--surface);
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-}
-.past-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.past-meta {
-  padding: 8px 10px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  /* 10% more lightness than --surface-2 (#2a251e ≈ hsl(35,17%,14%)) */
-  background: hsl(35 17% 24%);
-}
-.past-name {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.past-theme {
-  font-size: 13px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.past-status {
-  margin-top: 3px;
-  font-size: 13px;
-  color: var(--faint);
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-/* Compact past-banner thumbnails for inside the paywall modal */
-.past-mini {
-  flex: 0 0 110px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  background: var(--surface-2);
-  border: 1.5px solid var(--line-soft);
-  border-radius: 0;
-  overflow: hidden;
-  cursor: pointer;
-  padding: 0;
-  font-family: var(--font-ui);
-  transition: border-color 0.15s, transform 0.1s;
-}
-.past-mini:hover {
-  border-color: var(--accent);
-  transform: translateY(-1px);
-}
-.past-mini img {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  object-fit: cover;
-  display: block;
-}
-.past-mini-name {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text);
-  padding: 0 8px 7px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: block;
 }
 
 /* ── BANNERSH-133: Eyelet (malje) option selector (mirrors BannerBuilderView) ── */
