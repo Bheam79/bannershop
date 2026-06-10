@@ -69,8 +69,8 @@ public sealed class AdminDesignRequestService : IAdminDesignRequestService
             var s = filter.Search.ToLower();
             q = q.Where(r =>
                 r.PersonName.ToLower().Contains(s) ||
-                r.User.Name.ToLower().Contains(s) ||
-                r.User.Email.ToLower().Contains(s));
+                (r.User != null && r.User.Name.ToLower().Contains(s)) ||
+                (r.User != null && r.User.Email.ToLower().Contains(s)));
         }
 
         var total = await q.CountAsync(ct);
