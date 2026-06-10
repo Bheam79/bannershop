@@ -11,13 +11,19 @@ export async function fetchSizes(customWidthCm?: number): Promise<BannerSize[]> 
   return data
 }
 
-/** Fetches a single price for a banner size (optionally for a custom width). */
+/** Fetches a single price for a banner size (optionally for a custom width).
+ *  Pass noSurcharge=true to omit the custom-width surcharge — used when
+ *  dimensions are derived automatically (e.g. the AI quality-picker) rather
+ *  than explicitly requested as a custom size by the customer.
+ */
 export async function fetchPrice(
   sizeId: number,
   customWidthCm?: number,
+  noSurcharge?: boolean,
 ): Promise<number> {
-  const params: Record<string, number> = {}
+  const params: Record<string, number | boolean> = {}
   if (customWidthCm) params.customWidthCm = customWidthCm
+  if (noSurcharge) params.noCustomSurcharge = true
   const { data } = await apiClient.get<{ priceNok: number }>(
     `/sizes/${sizeId}/price`,
     { params },

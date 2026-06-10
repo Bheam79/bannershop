@@ -53,12 +53,13 @@ public class SizesController : ControllerBase
         return Ok(new { pricePerEyeletNok = pricePerEyelet });
     }
 
-    // ── GET /api/sizes/{id}/price?customWidthCm=X&customHeightCm=Y ───────────
+    // ── GET /api/sizes/{id}/price?customWidthCm=X&customHeightCm=Y&noCustomSurcharge=true ─
     [HttpGet("{id:int}/price")]
     public async Task<IActionResult> GetPrice(
         int id,
         [FromQuery] int? customWidthCm = null,
-        [FromQuery] int? customHeightCm = null)
+        [FromQuery] int? customHeightCm = null,
+        [FromQuery] bool noCustomSurcharge = false)
     {
         // Include Material so PricingService can apply the multi-panel multiplier
         // (BANNERSH-88) when the requested width exceeds Material.MaxBannerWidthCm.
@@ -72,7 +73,7 @@ public class SizesController : ControllerBase
         if (size.IsCustomHeight && customHeightCm is null)
             return BadRequest(new { error = "customHeightCm is required for custom-height banner sizes." });
 
-        var price = await _pricing.CalculatePriceAsync(size, customWidthCm, customHeightCm);
+        var price = await _pricing.CalculatePriceAsync(size, customWidthCm, customHeightCm, noCustomSurcharge);
         return Ok(new PriceResponseDto
         {
             SizeId = size.Id,

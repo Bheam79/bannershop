@@ -10,8 +10,12 @@ public interface IPricingService
     /// For custom-width sizes, pass <paramref name="customWidthCm"/> to get an accurate quote;
     /// for custom-height sizes, pass <paramref name="customHeightCm"/>;
     /// when omitted the minimum price is used as a lower-bound estimate.
+    /// Set <paramref name="skipCustomSurcharge"/> to <c>true</c> to omit the
+    /// <c>custom_width_surcharge</c> fee — used when dimensions are derived
+    /// automatically (e.g. the AI quality-picker) rather than explicitly
+    /// requested as a custom size.
     /// </summary>
-    Task<decimal> CalculatePriceAsync(BannerSize size, int? customWidthCm = null, int? customHeightCm = null);
+    Task<decimal> CalculatePriceAsync(BannerSize size, int? customWidthCm = null, int? customHeightCm = null, bool skipCustomSurcharge = false);
 
     /// <summary>
     /// Calculate the total eyelet (malje) addon fee for a single banner of the given dimensions.

@@ -334,6 +334,7 @@ async function computeOptionPrice(
   targetHeight: number,
   state: OptionPriceState,
   materialGsm?: number,
+  skipSurcharge?: boolean,
 ) {
   state.loading = true
   state.price = null
@@ -342,7 +343,7 @@ async function computeOptionPrice(
     const picked = pickBannerSize(sizes.value, targetWidth, targetHeight, materialGsm)
     if (!picked) { state.price = null; return }
     state.comingSoon = isComingSoon(picked.size)
-    state.price = await fetchPrice(picked.size.id, picked.customWidthCm)
+    state.price = await fetchPrice(picked.size.id, picked.customWidthCm, skipSurcharge)
   } catch {
     state.price = null
   } finally {
@@ -352,9 +353,11 @@ async function computeOptionPrice(
 
 async function refreshAllPrices() {
   if (!sizesLoaded.value) return
+  // skipSurcharge=true: the High/Good widths are auto-derived from the AI image
+  // ratio, not manually chosen by the customer, so the custom-width fee doesn't apply.
   await Promise.all([
-    computeOptionPrice(highOptionWidthCm.value, 150, option1State.value),
-    computeOptionPrice(goodOptionWidthCm.value, 180, option2State.value),
+    computeOptionPrice(highOptionWidthCm.value, 150, option1State.value, undefined, true),
+    computeOptionPrice(goodOptionWidthCm.value, 180, option2State.value, undefined, true),
   ])
 }
 
@@ -362,6 +365,7 @@ async function refreshCustomPrice() {
   const w = customWidth.value ?? 0
   const h = customHeight.value ?? 0
   if (!sizesLoaded.value || w <= 0 || h <= 0) { customState.value.price = null; return }
+  // Custom option: surcharge applies (customer explicitly chose a custom dimension)
   await computeOptionPrice(w, h, customState.value, customMaterialGsm.value)
 }
 

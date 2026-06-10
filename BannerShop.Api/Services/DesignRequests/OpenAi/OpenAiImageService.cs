@@ -209,8 +209,7 @@ public sealed class OpenAiImageService : IAiImageService
     /// </summary>
     private async Task<AiImageResult> GeneratePlaceholderAsync(AiImageRequest request, CancellationToken ct)
     {
-        const int Width = 1920;
-        const int Height = 1080;
+        var size = NativeSizeFor(request.AspectRatio);
         var tempPath = Path.Combine(Path.GetTempPath(), $"placeholder_{Guid.NewGuid():N}.png");
 
         var hash = unchecked((uint)request.Prompt.GetHashCode());
@@ -220,15 +219,15 @@ public sealed class OpenAiImageService : IAiImageService
             (byte)(60 + ((hash >> 16) & 0xFF) / 3),
             255);
 
-        using var img = new Image<Rgba32>(Width, Height, tint);
+        using var img = new Image<Rgba32>(size.Width, size.Height, tint);
         await img.SaveAsPngAsync(tempPath, ct);
 
         _log.LogWarning(
             "Generated solid-colour PLACEHOLDER PNG ({Width}x{Height}, rgb={R},{G},{B}) at {Path} — " +
             "real OpenAI API was NOT called. See preceding error for the reason.",
-            Width, Height, tint.R, tint.G, tint.B, tempPath);
+            size.Width, size.Height, tint.R, tint.G, tint.B, tempPath);
 
-        return new AiImageResult(tempPath, Width, Height);
+        return new AiImageResult(tempPath, size.Width, size.Height);
     }
 
     // ── Internals ────────────────────────────────────────────────────────────
@@ -311,10 +310,24 @@ public sealed class OpenAiImageService : IAiImageService
     private static string Trunc(string s, int max) => s.Length <= max ? s : s[..max] + "…";
 
     /// <summary>
-    /// gpt-image-2 native output sizes: we ask for 16:9 (3840x2160) for both
-    /// "16:9" and "18:9" inputs (18:9 is cropped by the caller after the fact).
+    /// Maps an aspect-ratio string to the best native size for gpt-image-2.
+    ///
+    /// gpt-image-2 accepts arbitrary WxH where both dimensions are divisible by 16,
+    /// the ratio is between 1:3 and 3:1, and the max resolution is 3840×2160.
+    ///
+    /// 18:9 (legacy) and 16:9 both use a true 16:9 native size — the 18:9 center-crop
+    /// in <c>AiGenerationPipeline</c> still runs for old requests that carry that value.
+    /// 4:1 is outside the 3:1 API limit and is clamped to 3:1.
     /// </summary>
-    private static NativeSize NativeSizeFor(string aspectRatio) => new(3840, 2160);
+    private static NativeSize NativeSizeFor(string aspectRatio) => aspectRatio switch
+    {
+        "1:1"           => new(1024, 1024),
+        "1:2"           => new(1024, 2048),
+        "2:1"           => new(2048, 1024),
+        "3:1"           => new(3072, 1024),
+        "4:1"           => new(3072, 1024),   // 4:1 exceeds the 3:1 API limit; use 3:1
+        _               => new(1792, 1008),   // 16:9 (covers "16:9", "18:9", and anything unknown)
+    };
 
     private readonly record struct NativeSize(int Width, int Height)
     {

@@ -12,7 +12,7 @@ public class PricingService : IPricingService
 
     public PricingService(BannerShopDbContext db) => _db = db;
 
-    public async Task<decimal> CalculatePriceAsync(BannerSize size, int? customWidthCm = null, int? customHeightCm = null)
+    public async Task<decimal> CalculatePriceAsync(BannerSize size, int? customWidthCm = null, int? customHeightCm = null, bool skipCustomSurcharge = false)
     {
         // Fixed-price sizes (e.g. 300×180 cm at 699 NOK) skip the formula AND the panel
         // multiplier — admins set those manually and are expected to bake any gluing
@@ -87,7 +87,10 @@ public class PricingService : IPricingService
 
         // The custom-width/height surcharge is a one-time administrative fee for
         // non-standard dimensions — it does NOT scale with the number of panels.
-        var surcharge = (size.IsCustomWidth || size.IsCustomHeight) ? customSurcharge : 0m;
+        // Callers that derive dimensions automatically (e.g. the AI quality-picker)
+        // should pass skipCustomSurcharge=true so the fee is not charged for
+        // system-chosen dimensions.
+        var surcharge = (!skipCustomSurcharge && (size.IsCustomWidth || size.IsCustomHeight)) ? customSurcharge : 0m;
         return basePrice * panels + surcharge;
     }
 
