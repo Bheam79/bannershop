@@ -1,6 +1,47 @@
+using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace BannerShop.Api.Services.Shipping;
+
+/// <summary>
+/// Parses an <c>int?</c> JSON value that Bring may return as either a JSON number
+/// (e.g. <c>1</c>) or a JSON string (e.g. <c>"1"</c>). BANNERSH-177: Bring's
+/// <c>expectedDelivery.workingDays</c> field arrives as a string in practice, which
+/// caused System.Text.Json to throw before the response could be deserialized.
+/// </summary>
+internal sealed class FlexibleNullableInt32Converter : JsonConverter<int?>
+{
+    public override int? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        switch (reader.TokenType)
+        {
+            case JsonTokenType.Null:
+                return null;
+            case JsonTokenType.Number:
+                if (reader.TryGetInt32(out var i)) return i;
+                if (reader.TryGetInt64(out var l)) return checked((int)l);
+                return (int)reader.GetDouble();
+            case JsonTokenType.String:
+                var s = reader.GetString();
+                if (string.IsNullOrWhiteSpace(s)) return null;
+                if (int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                    return parsed;
+                // Tolerate decimal strings like "1.0" by rounding.
+                if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var d))
+                    return (int)Math.Round(d);
+                return null;
+            default:
+                return null;
+        }
+    }
+
+    public override void Write(Utf8JsonWriter writer, int? value, JsonSerializerOptions options)
+    {
+        if (value.HasValue) writer.WriteNumberValue(value.Value);
+        else writer.WriteNullValue();
+    }
+}
 
 // ── Request DTOs (Bring Shipping Guide 2.0) ──────────────────────────────────
 // Reference: https://developer.bring.com/api/shipping-guide_2/
@@ -168,6 +209,7 @@ internal class BringPriceAmount
 internal class BringExpectedDelivery
 {
     [JsonPropertyName("workingDays")]
+    [JsonConverter(typeof(FlexibleNullableInt32Converter))]
     public int? WorkingDays { get; set; }
 
     [JsonPropertyName("formattedExpectedDeliveryDate")]
