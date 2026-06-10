@@ -112,6 +112,7 @@ builder.Services.Configure<TestingOptions>(builder.Configuration.GetSection(Test
 builder.Services.AddScoped<IStripePaymentService, StripePaymentService>();
 
 builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<IAdminOrderService, AdminOrderService>();
 
 // ─── Banner Builder (file uploads, image processing) ─────────────────────────
 builder.Services.Configure<FileStorageOptions>(builder.Configuration.GetSection(FileStorageOptions.SectionName));

@@ -176,7 +176,7 @@ public class CreditPackOrderTests : IClassFixture<TestWebApplicationFactory>
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BannerShop.Infrastructure.Data.BannerShopDbContext>();
-        var orderService = scope.ServiceProvider.GetRequiredService<IOrderService>();
+        var orderService = scope.ServiceProvider.GetRequiredService<IAdminOrderService>();
 
         // Add a credit-pack order directly
         var user = new BannerShop.Core.Entities.User

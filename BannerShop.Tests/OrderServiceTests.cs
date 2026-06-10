@@ -115,6 +115,27 @@ public class OrderServiceTests
         return (service, db, pricingMock, shippingMock, stripeMock, emailMock, aiCreditsMock);
     }
 
+    /// <summary>
+    /// Build an <see cref="AdminOrderService"/> on the shared <paramref name="db"/> so
+    /// admin-side tests can drive admin operations while the customer-side
+    /// <see cref="OrderService"/> (from <see cref="CreateService"/>) keeps the seeded
+    /// data fixtures in place. Optional <paramref name="emailMock"/> exposes the
+    /// IEmailService so tests can verify production-started / shipment-dispatched
+    /// emails fire.
+    /// </summary>
+    private static AdminOrderService CreateAdmin(
+        BannerShop.Infrastructure.Data.BannerShopDbContext db,
+        Mock<IEmailService>? emailMock = null)
+    {
+        emailMock ??= new Mock<IEmailService>();
+        emailMock.Setup(e => e.SendAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var storage = new BannerFileStorage(Options.Create(new FileStorageOptions()));
+        return new AdminOrderService(db, emailMock.Object, storage,
+                                      NullLogger<AdminOrderService>.Instance);
+    }
+
     private static CreateOrderDraftRequest MakeRequest(
         int bannerSizeId = 1,
         DeliveryType delivery = DeliveryType.Standard,
@@ -599,10 +620,11 @@ public class OrderServiceTests
     {
         // PendingPayment → Paid is a valid transition
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
 
         // UpdateStatusAsync calls LoadFullOrderAsync (AsSplitQuery) after saving — verify DB directly
-        try { await service.UpdateStatusAsync(draft.OrderId, OrderStatus.Paid); }
+        try { await admin.UpdateStatusAsync(draft.OrderId, OrderStatus.Paid); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
 
         var order = db.Orders.Find(draft.OrderId)!;
@@ -612,9 +634,10 @@ public class OrderServiceTests
     [Fact]
     public async Task UpdateStatus_UnknownOrder_Fails()
     {
-        var (service, _, _, _, _) = CreateService();
+        var (_, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
 
-        var result = await service.UpdateStatusAsync(99999, OrderStatus.Paid);
+        var result = await admin.UpdateStatusAsync(99999, OrderStatus.Paid);
 
         result.Success.Should().BeFalse();
         result.ErrorType.Should().Be(OrderActionErrorType.NotFound);
@@ -625,9 +648,10 @@ public class OrderServiceTests
     {
         // PendingPayment → InProduction skips the Paid step and is not allowed
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
 
-        var result = await service.UpdateStatusAsync(draft.OrderId, OrderStatus.InProduction);
+        var result = await admin.UpdateStatusAsync(draft.OrderId, OrderStatus.InProduction);
 
         result.Success.Should().BeFalse();
         result.ErrorType.Should().Be(OrderActionErrorType.InvalidTransition);
@@ -642,11 +666,12 @@ public class OrderServiceTests
     {
         // Delivered is a final state — no further transitions allowed
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
         db.Orders.Find(draft.OrderId)!.Status = OrderStatus.Delivered;
         db.SaveChanges();
 
-        var result = await service.UpdateStatusAsync(draft.OrderId, OrderStatus.Paid);
+        var result = await admin.UpdateStatusAsync(draft.OrderId, OrderStatus.Paid);
 
         result.Success.Should().BeFalse();
         result.ErrorType.Should().Be(OrderActionErrorType.InvalidTransition);
@@ -657,11 +682,12 @@ public class OrderServiceTests
     public async Task UpdateStatus_CancelledIsFinalState_CannotTransitionAway()
     {
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
         db.Orders.Find(draft.OrderId)!.Status = OrderStatus.Cancelled;
         db.SaveChanges();
 
-        var result = await service.UpdateStatusAsync(draft.OrderId, OrderStatus.Paid);
+        var result = await admin.UpdateStatusAsync(draft.OrderId, OrderStatus.Paid);
 
         result.Success.Should().BeFalse();
         result.ErrorType.Should().Be(OrderActionErrorType.InvalidTransition);
@@ -671,11 +697,12 @@ public class OrderServiceTests
     public async Task UpdateStatus_PaidToCancelled_IsAllowed()
     {
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
         db.Orders.Find(draft.OrderId)!.Status = OrderStatus.Paid;
         db.SaveChanges();
 
-        try { await service.UpdateStatusAsync(draft.OrderId, OrderStatus.Cancelled); }
+        try { await admin.UpdateStatusAsync(draft.OrderId, OrderStatus.Cancelled); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
 
         db.Orders.Find(draft.OrderId)!.Status.Should().Be(OrderStatus.Cancelled);
@@ -686,12 +713,13 @@ public class OrderServiceTests
     {
         // Walk PendingPayment → Paid → InProduction → ReadyToShip one step at a time
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
         var id = draft.OrderId;
 
         foreach (var next in new[] { OrderStatus.Paid, OrderStatus.InProduction, OrderStatus.ReadyToShip })
         {
-            try { await service.UpdateStatusAsync(id, next); }
+            try { await admin.UpdateStatusAsync(id, next); }
             catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
             db.Orders.Find(id)!.Status.Should().Be(next);
         }
@@ -701,6 +729,7 @@ public class OrderServiceTests
     public async Task UpdateStatus_ToDelivered_StampsDeliveredAt_OnShipmentTracking()
     {
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
         var id = draft.OrderId;
 
@@ -717,7 +746,7 @@ public class OrderServiceTests
 
         var before = DateTime.UtcNow.AddSeconds(-1);
 
-        try { await service.UpdateStatusAsync(id, OrderStatus.Delivered); }
+        try { await admin.UpdateStatusAsync(id, OrderStatus.Delivered); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
 
         var tracking = db.ShipmentTrackings.Single(t => t.OrderId == id);
@@ -730,12 +759,13 @@ public class OrderServiceTests
     {
         // An order could theoretically reach Delivered without a ShipmentTracking row
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
         var id = draft.OrderId;
         db.Orders.Find(id)!.Status = OrderStatus.Shipped;
         db.SaveChanges();
 
-        try { await service.UpdateStatusAsync(id, OrderStatus.Delivered); }
+        try { await admin.UpdateStatusAsync(id, OrderStatus.Delivered); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation in ToDetailDto */ }
 
         db.Orders.Find(id)!.Status.Should().Be(OrderStatus.Delivered);
@@ -746,6 +776,7 @@ public class OrderServiceTests
     {
         // If DeliveredAt was already set (e.g. corrective admin action), it should not be clobbered
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
         var id = draft.OrderId;
         var originalDeliveredAt = DateTime.UtcNow.AddHours(-2);
@@ -759,7 +790,7 @@ public class OrderServiceTests
         db.Orders.Find(id)!.Status = OrderStatus.Shipped;
         db.SaveChanges();
 
-        try { await service.UpdateStatusAsync(id, OrderStatus.Delivered); }
+        try { await admin.UpdateStatusAsync(id, OrderStatus.Delivered); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
 
         var tracking = db.ShipmentTrackings.Single(t => t.OrderId == id);
@@ -772,10 +803,11 @@ public class OrderServiceTests
     public async Task UpdateProduction_AddsProductionStatusRecord()
     {
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
         var item = db.OrderItems.First(i => i.OrderId == draft.OrderId);
 
-        try { await service.UpdateProductionAsync(draft.OrderId, item.Id, ProductionStage.Printing, "Test note"); }
+        try { await admin.UpdateProductionAsync(draft.OrderId, item.Id, ProductionStage.Printing, "Test note"); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
 
         var status = db.ProductionStatuses
@@ -788,12 +820,13 @@ public class OrderServiceTests
     public async Task UpdateProduction_NonQueuedStageOnPaidOrder_PromotesToInProduction()
     {
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
         db.Orders.Find(draft.OrderId)!.Status = OrderStatus.Paid;
         db.SaveChanges();
         var item = db.OrderItems.First(i => i.OrderId == draft.OrderId);
 
-        try { await service.UpdateProductionAsync(draft.OrderId, item.Id, ProductionStage.Printing, null); }
+        try { await admin.UpdateProductionAsync(draft.OrderId, item.Id, ProductionStage.Printing, null); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
 
         db.Orders.Find(draft.OrderId)!.Status.Should().Be(OrderStatus.InProduction);
@@ -803,12 +836,13 @@ public class OrderServiceTests
     public async Task UpdateProduction_QueuedStageOnPaidOrder_DoesNotPromote()
     {
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
         db.Orders.Find(draft.OrderId)!.Status = OrderStatus.Paid;
         db.SaveChanges();
         var item = db.OrderItems.First(i => i.OrderId == draft.OrderId);
 
-        try { await service.UpdateProductionAsync(draft.OrderId, item.Id, ProductionStage.Queued, null); }
+        try { await admin.UpdateProductionAsync(draft.OrderId, item.Id, ProductionStage.Queued, null); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
 
         // Adding Queued stage must NOT promote a Paid order to InProduction
@@ -819,12 +853,13 @@ public class OrderServiceTests
     public async Task UpdateProduction_AllItemsReadyToShip_PromotesOrderToReadyToShip()
     {
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest()); // single item
         db.Orders.Find(draft.OrderId)!.Status = OrderStatus.Paid;
         db.SaveChanges();
         var item = db.OrderItems.First(i => i.OrderId == draft.OrderId);
 
-        try { await service.UpdateProductionAsync(draft.OrderId, item.Id, ProductionStage.ReadyToShip, null); }
+        try { await admin.UpdateProductionAsync(draft.OrderId, item.Id, ProductionStage.ReadyToShip, null); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
 
         db.Orders.Find(draft.OrderId)!.Status.Should().Be(OrderStatus.ReadyToShip);
@@ -834,6 +869,7 @@ public class OrderServiceTests
     public async Task UpdateProduction_PartialItemsReadyToShip_DoesNotPromoteOrder()
     {
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         // Two-item order — both BannerSize 1 and 2 exist in the seeded catalog
         var twoItemReq = new CreateOrderDraftRequest
         {
@@ -852,7 +888,7 @@ public class OrderServiceTests
         items.Should().HaveCount(2);
 
         // Only mark the first item as ReadyToShip
-        try { await service.UpdateProductionAsync(draft.OrderId, items[0].Id, ProductionStage.ReadyToShip, null); }
+        try { await admin.UpdateProductionAsync(draft.OrderId, items[0].Id, ProductionStage.ReadyToShip, null); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
 
         // Second item is still Queued, so the order must NOT be ReadyToShip
@@ -862,10 +898,11 @@ public class OrderServiceTests
     [Fact]
     public async Task UpdateProduction_UnknownItem_ReturnsFail()
     {
-        var (service, _, _, _, _) = CreateService();
+        var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
 
-        var result = await service.UpdateProductionAsync(draft.OrderId, 99999, ProductionStage.Printing, null);
+        var result = await admin.UpdateProductionAsync(draft.OrderId, 99999, ProductionStage.Printing, null);
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("not found");
@@ -877,6 +914,7 @@ public class OrderServiceTests
     public async Task SetShipping_FirstCall_CreatesTrackingAndSetsOrderToShipped()
     {
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
         // Order must be in a shippable state (ReadyToShip or InProduction) before shipping
         db.Orders.Find(draft.OrderId)!.Status = OrderStatus.ReadyToShip;
@@ -888,7 +926,7 @@ public class OrderServiceTests
             TrackingUrl = "https://tracking.bring.com/TEST001"
         };
 
-        try { await service.SetShippingAsync(draft.OrderId, req); }
+        try { await admin.SetShippingAsync(draft.OrderId, req); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
 
         db.Orders.Find(draft.OrderId)!.Status.Should().Be(OrderStatus.Shipped);
@@ -903,17 +941,18 @@ public class OrderServiceTests
     public async Task SetShipping_SecondCall_UpdatesExistingTrackingInstead()
     {
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
         // Seed ReadyToShip so the first call is allowed
         db.Orders.Find(draft.OrderId)!.Status = OrderStatus.ReadyToShip;
         db.SaveChanges();
 
-        try { await service.SetShippingAsync(draft.OrderId, new SetShippingRequest { Carrier = "Bring", TrackingNumber = "FIRST001" }); }
+        try { await admin.SetShippingAsync(draft.OrderId, new SetShippingRequest { Carrier = "Bring", TrackingNumber = "FIRST001" }); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
         // After first call the order is Shipped — re-seeding to ReadyToShip simulates an admin correction
         db.Orders.Find(draft.OrderId)!.Status = OrderStatus.ReadyToShip;
         db.SaveChanges();
-        try { await service.SetShippingAsync(draft.OrderId, new SetShippingRequest { Carrier = "PostNord", TrackingNumber = "SECOND002" }); }
+        try { await admin.SetShippingAsync(draft.OrderId, new SetShippingRequest { Carrier = "PostNord", TrackingNumber = "SECOND002" }); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
 
         // Must update the existing row, not create a second one
@@ -926,9 +965,10 @@ public class OrderServiceTests
     [Fact]
     public async Task SetShipping_UnknownOrder_ReturnsFail()
     {
-        var (service, _, _, _, _) = CreateService();
+        var (_, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
 
-        var result = await service.SetShippingAsync(99999, new SetShippingRequest { Carrier = "Bring", TrackingNumber = "X" });
+        var result = await admin.SetShippingAsync(99999, new SetShippingRequest { Carrier = "Bring", TrackingNumber = "X" });
 
         result.Success.Should().BeFalse();
         result.ErrorType.Should().Be(OrderActionErrorType.NotFound);
@@ -940,10 +980,11 @@ public class OrderServiceTests
     {
         // PendingPayment is not a shippable state — the order hasn't been paid or produced yet
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
         // Status is PendingPayment after CreateDraftAsync
 
-        var result = await service.SetShippingAsync(draft.OrderId,
+        var result = await admin.SetShippingAsync(draft.OrderId,
             new SetShippingRequest { Carrier = "Bring", TrackingNumber = "X" });
 
         result.Success.Should().BeFalse();
@@ -958,11 +999,12 @@ public class OrderServiceTests
     {
         // InProduction is an allowed pre-shipping state
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
         db.Orders.Find(draft.OrderId)!.Status = OrderStatus.InProduction;
         db.SaveChanges();
 
-        try { await service.SetShippingAsync(draft.OrderId, new SetShippingRequest { Carrier = "Bring", TrackingNumber = "T1" }); }
+        try { await admin.SetShippingAsync(draft.OrderId, new SetShippingRequest { Carrier = "Bring", TrackingNumber = "T1" }); }
         catch (NullReferenceException) { /* InMemory AsSplitQuery limitation */ }
 
         db.Orders.Find(draft.OrderId)!.Status.Should().Be(OrderStatus.Shipped);
@@ -1001,11 +1043,12 @@ public class OrderServiceTests
     public async Task ListAll_NoFilter_ReturnsAllOrders()
     {
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         await SeedUserAndCreateOrder(service, db, 1, "u1@test.com");
         await SeedUserAndCreateOrder(service, db, 2, "u2@test.com");
         await SeedUserAndCreateOrder(service, db, 3, "u3@test.com");
 
-        var result = await service.ListAllAsync(new AdminOrderFilter());
+        var result = await admin.ListAllAsync(new AdminOrderFilter());
 
         result.TotalCount.Should().Be(3);
         result.Items.Should().HaveCount(3);
@@ -1015,6 +1058,7 @@ public class OrderServiceTests
     public async Task ListAll_FilterByStatus_ReturnsOnlyMatchingOrders()
     {
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var id1 = await SeedUserAndCreateOrder(service, db, 1, "a@test.com");
         var id2 = await SeedUserAndCreateOrder(service, db, 2, "b@test.com");
         var id3 = await SeedUserAndCreateOrder(service, db, 3, "c@test.com");
@@ -1022,7 +1066,7 @@ public class OrderServiceTests
         db.Orders.Find(id2)!.Status = OrderStatus.Paid;
         db.SaveChanges();
 
-        var result = await service.ListAllAsync(new AdminOrderFilter { Status = OrderStatus.Paid });
+        var result = await admin.ListAllAsync(new AdminOrderFilter { Status = OrderStatus.Paid });
 
         result.TotalCount.Should().Be(2);
         result.Items.Select(i => i.Id).Should().BeEquivalentTo(new[] { id1, id2 });
@@ -1033,6 +1077,7 @@ public class OrderServiceTests
     public async Task ListAll_FilterByDateRange_ReturnsOnlyOrdersInRange()
     {
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var oldId = await SeedUserAndCreateOrder(service, db, 1, "old@test.com");
         var newId = await SeedUserAndCreateOrder(service, db, 2, "new@test.com");
         // Backdate the first order to 20 days ago
@@ -1040,7 +1085,7 @@ public class OrderServiceTests
         db.SaveChanges();
 
         // Filter: only last 5 days → excludes the old order
-        var result = await service.ListAllAsync(new AdminOrderFilter
+        var result = await admin.ListAllAsync(new AdminOrderFilter
         {
             FromUtc = DateTime.UtcNow.AddDays(-5)
         });
@@ -1053,10 +1098,11 @@ public class OrderServiceTests
     public async Task ListAll_SearchByOrderId_ReturnsMatchingOrder()
     {
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var targetId = await SeedUserAndCreateOrder(service, db, 1, "target@test.com");
         await SeedUserAndCreateOrder(service, db, 2, "noise@test.com");
 
-        var result = await service.ListAllAsync(new AdminOrderFilter { Search = targetId.ToString() });
+        var result = await admin.ListAllAsync(new AdminOrderFilter { Search = targetId.ToString() });
 
         result.Items.Should().Contain(i => i.Id == targetId);
     }
@@ -1065,10 +1111,11 @@ public class OrderServiceTests
     public async Task ListAll_SearchByEmail_ReturnsOrdersForMatchingUser()
     {
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         await SeedUserAndCreateOrder(service, db, 1, "john.doe@example.com");
         await SeedUserAndCreateOrder(service, db, 2, "jane.smith@other.com");
 
-        var result = await service.ListAllAsync(new AdminOrderFilter { Search = "john.doe" });
+        var result = await admin.ListAllAsync(new AdminOrderFilter { Search = "john.doe" });
 
         result.Items.Should().HaveCount(1);
         result.Items[0].CustomerEmail.Should().Be("john.doe@example.com");
@@ -1078,10 +1125,11 @@ public class OrderServiceTests
     public async Task ListAll_Pagination_LimitsResultsAndReportsTotalCount()
     {
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         for (var i = 1; i <= 5; i++)
             await SeedUserAndCreateOrder(service, db, i, $"u{i}@test.com");
 
-        var result = await service.ListAllAsync(new AdminOrderFilter { Page = 1, PageSize = 2 });
+        var result = await admin.ListAllAsync(new AdminOrderFilter { Page = 1, PageSize = 2 });
 
         result.Items.Should().HaveCount(2);
         result.TotalCount.Should().Be(5);
@@ -1099,9 +1147,10 @@ public class OrderServiceTests
         // returns null here. The order's existence is confirmed via the DbContext directly,
         // so the null result is a known InMemory limitation, not a "not-found" code path.
         var (service, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
         var draft = await service.CreateDraftAsync(1, MakeRequest());
 
-        var result = await service.GetAnyAsync(draft.OrderId);
+        var result = await admin.GetAnyAsync(draft.OrderId);
 
         // In InMemory the AsSplitQuery limitation surfaces as a null return.
         // The order genuinely exists — the behaviour difference is a test infra constraint.
@@ -1112,9 +1161,10 @@ public class OrderServiceTests
     [Fact]
     public async Task GetAny_UnknownOrder_ReturnsNull()
     {
-        var (service, _, _, _, _) = CreateService();
+        var (_, db, _, _, _) = CreateService();
+        var admin = CreateAdmin(db);
 
-        var result = await service.GetAnyAsync(99999);
+        var result = await admin.GetAnyAsync(99999);
 
         result.Should().BeNull();
     }

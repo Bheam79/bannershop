@@ -12,9 +12,9 @@ namespace BannerShop.Api.Controllers.Admin;
 [Authorize(Roles = "Admin")]
 public class AdminOrdersController : ControllerBase
 {
-    private readonly IOrderService _orders;
+    private readonly IAdminOrderService _orders;
 
-    public AdminOrdersController(IOrderService orders) => _orders = orders;
+    public AdminOrdersController(IAdminOrderService orders) => _orders = orders;
 
     // ── GET /api/admin/orders ────────────────────────────────────────────────
     /// <summary>
@@ -121,7 +121,7 @@ public class AdminOrdersController : ControllerBase
     /// <summary>
     /// Unified orders API variant of the advance endpoint. Accepts <c>{ toState }</c>
     /// in the request body (matching the BANNERSH-110 API surface) and delegates to
-    /// the same <see cref="IOrderService.AdvanceStateAsync"/> implementation.
+    /// the same <see cref="IAdminOrderService.AdvanceStateAsync"/> implementation.
     /// Returns 422 when the transition is not permitted.
     /// </summary>
     [HttpPost("{id:int}/advance-state")]

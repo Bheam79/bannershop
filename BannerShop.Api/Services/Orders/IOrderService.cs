@@ -53,26 +53,6 @@ public interface IOrderService
     /// </summary>
     Task<OrderActionResult> MockMarkPaidAsync(int userId, int orderId, string password, CancellationToken ct = default);
 
-    // ── Admin operations ──────────────────────────────────────────────────────
-
-    Task<PagedResult<OrderListItemDto>> ListAllAsync(AdminOrderFilter filter, CancellationToken ct = default);
-
-    Task<OrderDetailDto?> GetAnyAsync(int orderId, CancellationToken ct = default);
-
-    Task<OrderActionResult> UpdateStatusAsync(int orderId, OrderStatus status, CancellationToken ct = default);
-
-    Task<OrderActionResult> UpdateProductionAsync(int orderId, int itemId, ProductionStage stage, string? notes, CancellationToken ct = default);
-
-    Task<OrderActionResult> SetShippingAsync(int orderId, SetShippingRequest req, CancellationToken ct = default);
-
-    /// <summary>
-    /// Advances <see cref="Core.Entities.Order.OrderState"/> from its current value to
-    /// <paramref name="next"/>, validating the transition against the order's
-    /// <see cref="Core.Enums.OrderType"/> using <see cref="Core.Helpers.OrderStateHelper"/>.
-    /// Returns a transition-error result when the move is not permitted.
-    /// </summary>
-    Task<OrderActionResult> AdvanceStateAsync(int orderId, OrderState next, CancellationToken ct = default);
-
     /// <summary>
     /// Customer-initiated design approval for an AI or Manual-design order in
     /// <see cref="Core.Enums.OrderState.CustomerApproval"/>. Advances Order state to
