@@ -8,6 +8,7 @@ import type { BannerSize, CartItem, EyeletOption } from '@/types'
 import { countEyelets } from '@/types'
 import UploadZone from '@/components/banner-builder/UploadZone.vue'
 import BannerPreviewEditor from '@/components/banner-builder/BannerPreviewEditor.vue'
+import EyeletPreview from '@/components/shop/EyeletPreview.vue'
 import { getBannerDesign } from '@/api/bannerBuilder'
 import type { UploadResponse } from '@/api/bannerBuilder'
 
@@ -360,6 +361,15 @@ onMounted(async () => {
                 Maljer (øyebolter)
                 <span style="font-size:13px;font-weight:400;color:var(--faint);margin-left:4px">tilvalg</span>
               </div>
+              <!-- BANNERSH-173: banner + eyelet placement preview -->
+              <EyeletPreview
+                v-if="computedWidthCm > 0 && heightCm > 0"
+                :width-cm="computedWidthCm"
+                :height-cm="heightCm"
+                :eyelet-option="eyeletOption"
+                :image-url="design?.previewUrl ?? undefined"
+                style="margin-bottom:12px;border-radius:8px;overflow:hidden;border:1px solid var(--line-soft)"
+              />
               <div style="display:grid;gap:8px">
                 <label
                   v-for="opt in ([

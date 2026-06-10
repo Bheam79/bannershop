@@ -12,6 +12,7 @@ import {
 import { fetchSizes, fetchPrice, fetchEyeletPriceNok } from '@/api/shop'
 import type { BannerSize, CartItem, EyeletOption } from '@/types'
 import { countEyelets } from '@/types'
+import EyeletPreview from '@/components/shop/EyeletPreview.vue'
 
 // ── Router / auth / cart ──────────────────────────────────────────────────────
 const router = useRouter()
@@ -959,6 +960,14 @@ onBeforeUnmount(() => {
             <p style="font-size:13.5px;color:var(--muted);margin-bottom:16px">
               Maljer gjør det enklere å henge opp banneret. Velg alternativet som passer best.
             </p>
+            <!-- BANNERSH-173: eyelet placement preview -->
+            <EyeletPreview
+              v-if="selectedDimensions.width > 0 && selectedDimensions.height > 0"
+              :width-cm="selectedDimensions.width"
+              :height-cm="selectedDimensions.height"
+              :eyelet-option="eyeletOption"
+              style="margin-bottom:16px;border-radius:8px;overflow:hidden;border:1px solid var(--line-soft)"
+            />
             <div class="eyelet-grid">
               <button
                 v-for="opt in (['None', 'FourCorners', 'PerMeter'] as EyeletOption[])"

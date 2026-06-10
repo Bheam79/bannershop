@@ -9,6 +9,7 @@ import { uploadBannerFile, getBannerDesign } from '@/api/bannerBuilder'
 import { fetchSizes, fetchPrice, fetchEyeletPriceNok } from '@/api/shop'
 import type { BannerSize, EyeletOption } from '@/types'
 import { countEyelets } from '@/types'
+import EyeletPreview from '@/components/shop/EyeletPreview.vue'
 import {
   fetchTemplates,
   createAiRequest,
@@ -2446,6 +2447,15 @@ onBeforeUnmount(() => {
                 Hem (søm) er ikke mulig på PVC-bannere — kun maljer tilbys.
               </p>
             </div>
+            <!-- BANNERSH-173: eyelet placement preview -->
+            <EyeletPreview
+              v-if="tilpassDesignWidthCm > 0 && tilpassDesignHeightCm > 0"
+              :width-cm="tilpassDesignWidthCm"
+              :height-cm="tilpassDesignHeightCm"
+              :eyelet-option="tilpassEyeletOption"
+              :image-url="currentDesignRequest?.previewUrl ?? undefined"
+              style="border-radius:8px;overflow:hidden;border:1px solid var(--line-soft)"
+            />
             <div style="display:grid;gap:10px">
               <label
                 v-for="opt in ([
