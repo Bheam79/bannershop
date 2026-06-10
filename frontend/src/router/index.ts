@@ -82,6 +82,14 @@ const router = createRouter({
       component: () => import('@/views/account/OrdersView.vue'),
       meta: { requiresAuth: true },
     },
+    // BANNERSH-183: dedicated one-pager for buying AI credit packs.
+    // Linked from the AI credit badge in the header (NavBar → AiCreditBadge).
+    {
+      path: '/account/credits',
+      name: 'account-credits',
+      component: () => import('@/views/account/BuyCreditsView.vue'),
+      meta: { requiresAuth: true },
+    },
     {
       path: '/account/orders/:id',
       name: 'account-order-detail',

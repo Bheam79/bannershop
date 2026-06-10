@@ -7,13 +7,18 @@ import { useAiCreditsStore } from '@/stores/aiCredits'
 interface Props {
   /** "light" = bright pill on dark navbar (default). "dark" = subdued pill. */
   variant?: 'light' | 'dark'
-  /** Optional override for which route the badge links to. Defaults to /account. */
+  /**
+   * Optional override for which route the badge links to.
+   * Defaults to `/account/credits` — the dedicated one-pager for buying AI credit
+   * packs (BANNERSH-183). Previously pointed at `/account`, which had nothing to
+   * do with AI credits.
+   */
   to?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   variant: 'light',
-  to: '/account',
+  to: '/account/credits',
 })
 
 const router = useRouter()
@@ -25,8 +30,8 @@ const visible = computed(() => auth.isLoggedIn && credits.creditsRemaining !== n
 const tooltip = computed(() => {
   const n = credits.creditsRemaining ?? 0
   if (n === 0) return 'Ingen AI-kreditter — klikk for å kjøpe'
-  if (n === 1) return '1 AI-kreditt igjen'
-  return `${n} AI-kreditter igjen`
+  if (n === 1) return '1 AI-kreditt igjen — klikk for å kjøpe flere'
+  return `${n} AI-kreditter igjen — klikk for å kjøpe flere`
 })
 
 function open() {
