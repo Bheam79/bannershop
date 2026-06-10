@@ -62,11 +62,14 @@ public class ParcelCalculator
     {
         if (qty < 1) qty = 1;
 
+        // BANNERSH-180: fallback packaging weight reduced from 500 g → 200 g
+        // (Michael's measured average). Existing DBs keep whatever the admin
+        // has stored in `shipping_packaging_weight_g` — editable in /admin/pricing.
         var packagingGrams = await _db.PricingParameters
             .AsNoTracking()
             .Where(x => x.Key == KeyPackagingWeightG)
             .Select(x => (decimal?)x.Value)
-            .FirstOrDefaultAsync(ct) ?? 500m;
+            .FirstOrDefaultAsync(ct) ?? 200m;
 
         // ── Determine banner width in cm ─────────────────────────────────────
         int bannerWidthCm;

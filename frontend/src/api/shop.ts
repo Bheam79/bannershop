@@ -72,3 +72,29 @@ export async function calculateShipping(
     express:  { costNok: data.express.cost,  estimatedDays: data.express.estimatedDays  },
   }
 }
+
+// ─── Parcel preview (no postal code) — BANNERSH-180 ─────────────────────────
+
+export interface ParcelPreviewRequest {
+  bannerSizeId: number
+  customWidthCm?: number
+  qty: number
+  packingMode: PackingMode
+}
+
+export interface ParcelDimensions {
+  lengthCm: number
+  widthCm: number
+  heightCm: number
+  weightKg: number
+}
+
+/**
+ * Returns the parcel dimensions + weight a banner would ship as for the given
+ * packing mode. Used by the checkout UI to show "what we'll send to Bring"
+ * under each Pakkemetode option. No carrier call, no postal code required.
+ */
+export async function previewParcel(req: ParcelPreviewRequest): Promise<ParcelDimensions> {
+  const { data } = await apiClient.post<ParcelDimensions>('/shipping/parcel-preview', req)
+  return data
+}

@@ -67,6 +67,20 @@ cd /workspace/repo/BannerShop.Api && dotnet run
 - 2 materials (160cm/400g and 180cm/680g), 7 banner sizes, 5 pricing parameters
 - Seed is in `BannerShopDbContext.SeedData()` — applied via migration
 
+## Parcel preview in checkout (BANNERSH-180)
+`POST /api/shipping/parcel-preview` returns the parcel `L × W × H + weight`
+that will be sent to Bring for a given `(bannerSizeId, customWidthCm, qty,
+packingMode)` — no postal code, no carrier call. `CheckoutView` calls it on
+mount for both Folded and Rolled so the customer sees the actual dims under
+each Pakkemetode radio before entering a postal code.
+
+The packaging-weight default in `ParcelCalculator` was lowered from 500 g →
+**200 g** (matches Michael's measured packaging). The seeded
+`shipping_packaging_weight_g` pricing parameter still ships at 500 g in old
+migrations, so the displayed weight on existing installs reflects whatever
+the admin has stored — update via `/admin/pricing` to surface the new 200 g
+default end-to-end.
+
 ## Bring shipping (BANNERSH-143)
 `BringOptions` ships with the production Mybring credentials hardcoded as defaults
 (uid `post@beatgrid.no`, customer number `20027039252`, rates endpoint

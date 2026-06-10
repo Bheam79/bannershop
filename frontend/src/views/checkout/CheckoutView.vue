@@ -4,8 +4,8 @@ import { useRouter } from 'vue-router'
 import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore } from '@/stores/checkout'
 import { useAuthStore } from '@/stores/auth'
-import { calculateShipping } from '@/api/shop'
-import type { PackingMode } from '@/api/shop'
+import { calculateShipping, previewParcel } from '@/api/shop'
+import type { PackingMode, ParcelDimensions } from '@/api/shop'
 import { getBannerDesign } from '@/api/bannerBuilder'
 import type { DeliveryType, EyeletOption, ShippingEstimate } from '@/types'
 import { countEyelets } from '@/types'
@@ -70,6 +70,9 @@ onMounted(() => {
     return
   }
   preloadThumbnails()
+  // BANNERSH-180: prime the parcel-preview dimensions for both packing modes
+  // so they're visible the moment the customer reaches the Pakkemetode step.
+  loadParcelPreviews()
 })
 
 // Refresh thumbnails if the cart changes (e.g. removed item, new design added).
@@ -150,6 +153,52 @@ watch(city, () => {
 watch(packingMode, () => {
   if (/^\d{4}$/.test(postalCode.value.trim())) scheduleShipping()
 })
+
+// ── Parcel preview (BANNERSH-180) ────────────────────────────────────────────
+// Shows the actual L × W × H + weight that will be sent to Bring under each
+// Pakkemetode option. Independent of postal code so it's visible immediately.
+const parcelFolded = ref<ParcelDimensions | null>(null)
+const parcelRolled = ref<ParcelDimensions | null>(null)
+const parcelLoading = ref(false)
+
+async function loadParcelPreviews() {
+  const firstItem = cart.items[0]
+  if (!firstItem?.bannerSizeId) {
+    parcelFolded.value = null
+    parcelRolled.value = null
+    return
+  }
+  parcelLoading.value = true
+  const base = {
+    bannerSizeId: firstItem.bannerSizeId,
+    customWidthCm: firstItem.customWidthCm ?? undefined,
+    qty: cart.itemCount,
+  }
+  try {
+    const [folded, rolled] = await Promise.all([
+      previewParcel({ ...base, packingMode: 'Folded' }),
+      previewParcel({ ...base, packingMode: 'Rolled' }),
+    ])
+    parcelFolded.value = folded
+    parcelRolled.value = rolled
+  } catch {
+    parcelFolded.value = null
+    parcelRolled.value = null
+  } finally {
+    parcelLoading.value = false
+  }
+}
+
+// Re-fetch when the underlying cart changes (qty, items added/removed, etc.).
+watch(() => [cart.itemCount, cart.items.map(i => `${i.bannerSizeId}:${i.customWidthCm ?? ''}`).join(',')], loadParcelPreviews)
+
+function formatParcelDims(p: ParcelDimensions): string {
+  const round = (n: number) => (Number.isInteger(n) ? n.toString() : n.toFixed(1))
+  return `${round(p.lengthCm)} × ${round(p.widthCm)} × ${round(p.heightCm)} cm`
+}
+function formatParcelWeight(p: ParcelDimensions): string {
+  return `${p.weightKg.toFixed(2).replace('.', ',')} kg`
+}
 
 // ── Price calculations ───────────────────────────────────────────────────────
 const subtotal = computed(() => cart.subtotal)
@@ -444,6 +493,13 @@ function eyeletCountFor(item: import('@/types').CartItem): number {
                     <span class="badge-packing-default">Anbefalt</span>
                   </div>
                   <div class="packing-btn__sub">Flat eske 50 × 60 cm</div>
+                  <!-- BANNERSH-180: show actual dims + weight that go to Bring -->
+                  <div v-if="parcelFolded" class="packing-btn__dims">
+                    <span class="packing-btn__dim">{{ formatParcelDims(parcelFolded) }}</span>
+                    <span class="packing-btn__dim-sep">·</span>
+                    <span class="packing-btn__dim">{{ formatParcelWeight(parcelFolded) }}</span>
+                  </div>
+                  <div v-else-if="parcelLoading" class="packing-btn__dims packing-btn__dims--loading">Beregner mål …</div>
                 </div>
                 <div class="packing-btn__radio">
                   <div class="radio-outer" :class="{ 'radio-outer--active': packingMode === 'Folded' }">
@@ -466,6 +522,13 @@ function eyeletCountFor(item: import('@/types').CartItem): number {
                 <div class="packing-btn__body">
                   <div class="packing-btn__title">Rullet</div>
                   <div class="packing-btn__sub">Sendt som rør (tubes)</div>
+                  <!-- BANNERSH-180: show actual dims + weight that go to Bring -->
+                  <div v-if="parcelRolled" class="packing-btn__dims">
+                    <span class="packing-btn__dim">{{ formatParcelDims(parcelRolled) }}</span>
+                    <span class="packing-btn__dim-sep">·</span>
+                    <span class="packing-btn__dim">{{ formatParcelWeight(parcelRolled) }}</span>
+                  </div>
+                  <div v-else-if="parcelLoading" class="packing-btn__dims packing-btn__dims--loading">Beregner mål …</div>
                 </div>
                 <div class="packing-btn__radio">
                   <div class="radio-outer" :class="{ 'radio-outer--active': packingMode === 'Rolled' }">
@@ -933,6 +996,25 @@ function eyeletCountFor(item: import('@/types').CartItem): number {
   font-size: 0.8rem;
   color: var(--muted);
   margin-top: 2px;
+}
+/* BANNERSH-180: calculated parcel dims + weight under each packing option */
+.packing-btn__dims {
+  margin-top: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--faint);
+  letter-spacing: 0.01em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.packing-btn__dim { color: var(--muted); }
+.packing-btn__dim-sep { color: var(--faint); opacity: 0.6; }
+.packing-btn__dims--loading {
+  font-style: italic;
+  color: var(--faint);
+  font-weight: 500;
 }
 .packing-btn__radio { flex-shrink: 0; margin-top: 2px; }
 .badge-packing-default {

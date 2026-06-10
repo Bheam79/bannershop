@@ -82,6 +82,46 @@ public class ShippingController : ControllerBase
         }
     }
 
+    // ── POST /api/shipping/parcel-preview ─────────────────────────────────────
+    // BANNERSH-180: lightweight endpoint that returns the parcel dimensions +
+    // weight a banner would be shipped as for a given packing mode, without
+    // calling the carrier API or requiring a postal code. Used by the checkout
+    // UI to show "what we'll send to Bring" under each Pakkemetode option.
+    [HttpPost("parcel-preview")]
+    public async Task<IActionResult> ParcelPreview([FromBody] ParcelPreviewRequest req, CancellationToken ct)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var size = await _db.BannerSizes
+            .Include(s => s.Material)
+            .FirstOrDefaultAsync(s => s.Id == req.BannerSizeId, ct);
+
+        if (size is null)
+            return NotFound(new { error = $"Banner size {req.BannerSizeId} not found." });
+
+        if (size.IsCustomWidth && req.CustomWidthCm is null)
+            return BadRequest(new { error = "customWidthCm is required for custom-width banner sizes." });
+
+        ParcelDimensions parcel;
+        try
+        {
+            parcel = await _parcels.CalculateAsync(size, req.CustomWidthCm, req.Qty, req.PackingMode, ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+
+        return Ok(new ParcelDimensionsDto
+        {
+            LengthCm = parcel.LengthCm,
+            WidthCm  = parcel.WidthCm,
+            HeightCm = parcel.HeightCm,
+            WeightKg = parcel.WeightKg
+        });
+    }
+
     private static ShippingOptionDto ToDto(ShippingOption o) => new()
     {
         Cost = o.CostNok,
