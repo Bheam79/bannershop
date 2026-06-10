@@ -38,7 +38,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick, true
 
       <!-- Brand -->
       <RouterLink to="/" style="display:flex;align-items:center;gap:11px;font-family:var(--font-display);font-weight:700;font-size:20px;letter-spacing:-.02em;text-decoration:none;color:var(--text)">
-        <span style="width:34px;height:34px;border-radius:9px;display:grid;place-items:center;overflow:hidden;background:var(--accent)">
+        <span style="width:34px;height:34px;border-radius:9px;display:grid;place-items:center;overflow:hidden;background:#000">
           <img src="/logo.png" alt="BannerShop.no" style="width:22px;height:22px;object-fit:contain">
         </span>
         <span>Banner<b style="color:var(--accent)">Shop</b>.no</span>
