@@ -286,10 +286,18 @@ public class BannerBuilderController : ControllerBase
         if (design is null) return NotFound();
         if (!UserCanAccess(design, userId)) return Forbid();
 
+        // Only return a preview URL when the design actually has a preview file —
+        // if PreviewStoragePath is null (e.g. designs created via TryCreateFinalBannerDesignAsync
+        // before BANNERSH-187 was fixed) the /preview endpoint would return 404, which causes
+        // broken <img> tags in the cart and checkout views when the customer re-orders.
+        var previewUrl = string.IsNullOrWhiteSpace(design.PreviewStoragePath)
+            ? string.Empty
+            : Url.Action(nameof(GetPreview), values: new { id = design.Id }) ?? string.Empty;
+
         return Ok(new UploadResponseDto
         {
             DesignId = design.Id,
-            PreviewUrl = Url.Action(nameof(GetPreview), values: new { id = design.Id }) ?? string.Empty,
+            PreviewUrl = previewUrl,
             WidthPx = design.WidthPx,
             HeightPx = design.HeightPx,
             RotationDegrees = design.RotationDegrees,

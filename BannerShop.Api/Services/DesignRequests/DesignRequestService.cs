@@ -852,6 +852,14 @@ public sealed class DesignRequestService : IDesignRequestService
 
         // BannerDesign.UserId is non-nullable — anonymous DesignRequests never reach
         // Final without going through /approve (auth-required), so this is safe.
+        //
+        // BANNERSH-187: Use the low-res AI/designer preview as the BannerDesign preview
+        // so that GET /api/banner-builder/{id}/preview can serve a thumbnail when the
+        // customer later re-orders via "Bestill på nytt". Previously PreviewStoragePath
+        // was left null ("customer has already seen the preview"), but that caused the
+        // /preview endpoint to return 404 every time the cart/checkout tried to render
+        // the thumbnail for a reorder.
+        var previewStoragePath = r.AiPreviewPath ?? r.DesignerPreviewPath;
         var design = new BannerDesign
         {
             UserId           = r.UserId ?? 0,
@@ -863,7 +871,7 @@ public sealed class DesignRequestService : IDesignRequestService
             RotationDegrees  = 0,
             SelectedHeightCm = selectedHeightCm,
             ComputedWidthCm  = computedWidthCm,
-            PreviewStoragePath = null, // customer has already seen the preview
+            PreviewStoragePath = previewStoragePath,
             CreatedAt        = DateTime.UtcNow
         };
         _db.BannerDesigns.Add(design);
