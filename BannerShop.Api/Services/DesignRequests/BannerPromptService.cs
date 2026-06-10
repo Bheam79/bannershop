@@ -90,11 +90,59 @@ public sealed class BannerPromptService : IBannerPromptService
     private static string LanguageDisplayName(string? language) =>
         string.Equals(language, "en", StringComparison.OrdinalIgnoreCase) ? "English" : "Norwegian";
 
-    private static string AspectRatioPhrase(string? aspectRatio) => (aspectRatio ?? string.Empty).Trim() switch
+    /// <summary>
+    /// Returns a short phrase describing the requested orientation that gets
+    /// appended to the AI prompt. Recognises both legacy ratio labels
+    /// ("16:9", "18:9") and the WxH dimensions strings the frontend sends
+    /// since BANNERSH-170 (e.g. "267x150", "150x150", "90x180"). Without this
+    /// the prompt always claimed "16:9 landscape" regardless of the customer's
+    /// choice, so the model had no orientation hint — see BANNERSH-175.
+    /// </summary>
+    private static string AspectRatioPhrase(string? aspectRatio)
     {
-        "18:9" => "ultra-wide 2:1 landscape",
-        _       => "16:9 landscape"
-    };
+        var raw = (aspectRatio ?? string.Empty).Trim();
+        // Keep the legacy phrases verbatim so they aren't accidentally reworded
+        // (and so the existing tests around "16:9 landscape" / "ultra-wide 2:1
+        // landscape" still pass).
+        if (raw == "16:9") return "16:9 landscape";
+        if (raw == "18:9") return "ultra-wide 2:1 landscape";
+
+        var ratio = ParseRatio(raw);
+        if (ratio >= 2.5)  return "ultra-wide 3:1 panoramic landscape";
+        if (ratio >= 1.75) return "16:9 landscape";
+        if (ratio >= 1.25) return "wide 2:1 landscape";
+        if (ratio >= 0.85) return "square 1:1";
+        if (ratio >= 0.55) return "portrait 2:3";
+        return "tall 1:2 portrait";
+    }
+
+    /// <summary>
+    /// Parses an aspect-ratio string into a numeric W/H ratio. Accepts the
+    /// "A:B" label form (e.g. "16:9") and the "WxH" dimensions form
+    /// (e.g. "267x150"). Falls back to 16/9 when the input is empty or
+    /// unparseable.
+    /// </summary>
+    private static double ParseRatio(string? aspectRatio)
+    {
+        if (string.IsNullOrWhiteSpace(aspectRatio)) return 16.0 / 9.0;
+        var s = aspectRatio.Trim();
+
+        var xIdx = s.IndexOfAny(['x', 'X']);
+        if (xIdx > 0
+            && int.TryParse(s[..xIdx], out var w)
+            && int.TryParse(s[(xIdx + 1)..], out var h)
+            && w > 0 && h > 0)
+            return (double)w / h;
+
+        var colonIdx = s.IndexOf(':');
+        if (colonIdx > 0
+            && int.TryParse(s[..colonIdx], out var a)
+            && int.TryParse(s[(colonIdx + 1)..], out var b)
+            && a > 0 && b > 0)
+            return (double)a / b;
+
+        return 16.0 / 9.0;
+    }
 
     private static string SafeName(string? raw)
     {

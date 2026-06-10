@@ -315,19 +315,88 @@ public sealed class OpenAiImageService : IAiImageService
     /// gpt-image-2 accepts arbitrary WxH where both dimensions are divisible by 16,
     /// the ratio is between 1:3 and 3:1, and the max resolution is 3840×2160.
     ///
+    /// Accepts either:
+    ///   • Legacy ratio labels: "1:1", "1:2", "2:1", "3:1", "4:1", "16:9", "18:9".
+    ///   • Frontend WxH strings (BANNERSH-170): e.g. "267x150", "150x150", "90x180" —
+    ///     the actual print dimensions chosen by the customer. We compute the W/H
+    ///     ratio, clamp to the API's 1:3 — 3:1 limit, and pick the closest
+    ///     16-aligned native size so the AI image MATCHES the customer's choice.
+    ///
+    /// Bug fixed (BANNERSH-175): previously any WxH input fell through to the
+    /// default 16:9 (1792×1008) — the ratio buttons in the wizard had no effect
+    /// on the generated image.
+    ///
     /// 18:9 (legacy) and 16:9 both use a true 16:9 native size — the 18:9 center-crop
     /// in <c>AiGenerationPipeline</c> still runs for old requests that carry that value.
     /// 4:1 is outside the 3:1 API limit and is clamped to 3:1.
     /// </summary>
-    private static NativeSize NativeSizeFor(string aspectRatio) => aspectRatio switch
+    private static NativeSize NativeSizeFor(string aspectRatio)
     {
-        "1:1"           => new(1024, 1024),
-        "1:2"           => new(1024, 2048),
-        "2:1"           => new(2048, 1024),
-        "3:1"           => new(3072, 1024),
-        "4:1"           => new(3072, 1024),   // 4:1 exceeds the 3:1 API limit; use 3:1
-        _               => new(1792, 1008),   // 16:9 (covers "16:9", "18:9", and anything unknown)
-    };
+        // Fast path for the legacy ratio labels — these keep their hand-tuned sizes
+        // so old DesignRequests still produce identical output to before.
+        switch ((aspectRatio ?? string.Empty).Trim())
+        {
+            case "1:1":            return new NativeSize(1024, 1024);
+            case "1:2":            return new NativeSize(1024, 2048);
+            case "2:1":            return new NativeSize(2048, 1024);
+            case "3:1":            return new NativeSize(3072, 1024);
+            case "4:1":            return new NativeSize(3072, 1024); // clamped to 3:1
+            case "16:9":
+            case "18:9":           return new NativeSize(1792, 1008);
+        }
+
+        // BANNERSH-175: parse anything else as W/H, clamp to API limit, snap to /16.
+        var ratio = ParseRatio(aspectRatio);
+        ratio = Math.Clamp(ratio, 1.0 / 3.0, 3.0);
+
+        const int maxSide = 2048; // headroom under the 3840×2160 cap
+        int width, height;
+        if (ratio >= 1.0)
+        {
+            width  = maxSide;
+            height = (int)Math.Round(maxSide / ratio);
+        }
+        else
+        {
+            height = maxSide;
+            width  = (int)Math.Round(maxSide * ratio);
+        }
+        // Snap each side to the nearest multiple of 16, never below 16.
+        // Rounding to nearest (rather than truncating down) keeps the resulting
+        // ratio under the API's 3:1 limit at the boundary — e.g. for input "3:1"
+        // (=ratio 3.0) the short side becomes 688 instead of 672, giving 2.977
+        // rather than 3.048.
+        width  = Math.Max(16, ((width  + 8) / 16) * 16);
+        height = Math.Max(16, ((height + 8) / 16) * 16);
+        return new NativeSize(width, height);
+    }
+
+    /// <summary>
+    /// Parses an aspect-ratio string into a numeric W/H ratio. Accepts the
+    /// "A:B" label form and the "WxH" dimensions form (case-insensitive).
+    /// Falls back to 16/9 when the input is empty or unparseable.
+    /// </summary>
+    private static double ParseRatio(string? aspectRatio)
+    {
+        if (string.IsNullOrWhiteSpace(aspectRatio)) return 16.0 / 9.0;
+        var s = aspectRatio.Trim();
+
+        var xIdx = s.IndexOfAny(['x', 'X']);
+        if (xIdx > 0
+            && int.TryParse(s[..xIdx], out var w)
+            && int.TryParse(s[(xIdx + 1)..], out var h)
+            && w > 0 && h > 0)
+            return (double)w / h;
+
+        var colonIdx = s.IndexOf(':');
+        if (colonIdx > 0
+            && int.TryParse(s[..colonIdx], out var a)
+            && int.TryParse(s[(colonIdx + 1)..], out var b)
+            && a > 0 && b > 0)
+            return (double)a / b;
+
+        return 16.0 / 9.0;
+    }
 
     private readonly record struct NativeSize(int Width, int Height)
     {
