@@ -81,17 +81,21 @@ internal class BringPackage
     [JsonPropertyName("id")]
     public string Id { get; set; } = "1";
 
-    [JsonPropertyName("weightInKg")]
-    public decimal WeightInKg { get; set; }
+    /// <summary>Gross weight in <b>grams</b> (Bring Shipping Guide 2.0 field name is "grossWeight").</summary>
+    [JsonPropertyName("grossWeight")]
+    public decimal GrossWeight { get; set; }
 
-    [JsonPropertyName("lengthInCm")]
-    public decimal LengthInCm { get; set; }
+    /// <summary>Length in cm (Bring field name is "length", no "InCm" suffix).</summary>
+    [JsonPropertyName("length")]
+    public decimal Length { get; set; }
 
-    [JsonPropertyName("widthInCm")]
-    public decimal WidthInCm { get; set; }
+    /// <summary>Width in cm (Bring field name is "width", no "InCm" suffix).</summary>
+    [JsonPropertyName("width")]
+    public decimal Width { get; set; }
 
-    [JsonPropertyName("heightInCm")]
-    public decimal HeightInCm { get; set; }
+    /// <summary>Height in cm (Bring field name is "height", no "InCm" suffix).</summary>
+    [JsonPropertyName("height")]
+    public decimal Height { get; set; }
 }
 
 // ── Response DTOs ────────────────────────────────────────────────────────────

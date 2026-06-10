@@ -24,8 +24,8 @@ public class BringOptions
     /// </summary>
     public string CustomerNumber { get; set; } = "20027039252";
 
-    /// <summary>Sender postal code (the shop address).</summary>
-    public string SenderPostalCode { get; set; } = "0001";
+    /// <summary>Sender postal code (the shop address — Kristiansand).</summary>
+    public string SenderPostalCode { get; set; } = "4626";
 
     /// <summary>Sender country code (ISO 3166-1 alpha-2).</summary>
     public string SenderCountryCode { get; set; } = "NO";
@@ -35,9 +35,12 @@ public class BringOptions
 
     /// <summary>
     /// Comma-separated Bring product codes to request.
-    /// Defaults to SERVICEPAKKE (Bedriftspakke, business parcel) — fits parcels up to 240 cm length.
+    /// All four are included by default so the API can fall back to a door-to-door product
+    /// when the parcel exceeds the standard limits (e.g. long rolled banner tubes).
+    /// SERVICEPAKKE = business parcel; BPAKKE_DOR-DOR = door-to-door;
+    /// PA_DOREN = to-the-door; EKSPRESS09 = express by 09:00.
     /// </summary>
-    public string ProductCodes { get; set; } = "SERVICEPAKKE";
+    public string ProductCodes { get; set; } = "SERVICEPAKKE,BPAKKE_DOR-DOR,PA_DOREN,EKSPRESS09";
 
     /// <summary>Base URL of the Bring Shipping Guide v2 API.</summary>
     public string BaseUrl { get; set; } = "https://api.bring.com";

@@ -100,10 +100,12 @@ public class BringShippingService : IShippingService
                     {
                         new BringPackage
                         {
-                            WeightInKg = decimal.Round(parcel.WeightKg, 2),
-                            LengthInCm = decimal.Round(parcel.LengthCm, 1),
-                            WidthInCm  = decimal.Round(parcel.WidthCm,  1),
-                            HeightInCm = decimal.Round(parcel.HeightCm, 1)
+                            // Bring API v2 uses grams for grossWeight and plain cm for dimensions
+                            // (no "InKg"/"InCm" suffixes — BANNERSH-143 fix).
+                            GrossWeight = decimal.Round(parcel.WeightKg * 1000m, 0),
+                            Length      = decimal.Round(parcel.LengthCm, 1),
+                            Width       = decimal.Round(parcel.WidthCm,  1),
+                            Height      = decimal.Round(parcel.HeightCm, 1)
                         }
                     }
                 }
