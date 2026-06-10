@@ -15,14 +15,14 @@ namespace BannerShop.Api.Controllers;
 /// and persist the resulting BannerDesign. Width is derived from the rotation-effective
 /// aspect ratio and the selected height (rounded to nearest 10 cm).
 ///
-/// All endpoints are [AllowAnonymous] since BANNERSH-96: anonymous users can build a banner
-/// before registering/logging in. Authentication is required at order-creation time instead.
+/// Most endpoints are [AllowAnonymous] since BANNERSH-96: anonymous users can build a banner
+/// before registering/logging in. Authentication is required at order-creation time.
+/// Exception: GET /api/banner-builder/mine (ListMine) requires authentication ([Authorize]).
 ///
 /// See BANNERSH-14 (plan), BANNERSH-15 (original implementation), BANNERSH-96 (anonymous upload).
 /// </summary>
 [ApiController]
 [Route("api/banner-builder")]
-[AllowAnonymous]
 public class BannerBuilderController : ControllerBase
 {
     // Accepted file types (Content-Type + extension hint)
@@ -69,6 +69,7 @@ public class BannerBuilderController : ControllerBase
 
     // ── POST /api/banner-builder/upload ───────────────────────────────────────
     [HttpPost("upload")]
+    [AllowAnonymous]
     [RequestSizeLimit(75 * 1024 * 1024)] // a little above the 50 MB validation cap
     [RequestFormLimits(MultipartBodyLengthLimit = 75L * 1024 * 1024)]
     public async Task<IActionResult> Upload(IFormFile? file, CancellationToken ct)
@@ -170,6 +171,7 @@ public class BannerBuilderController : ControllerBase
 
     // ── PUT /api/banner-builder/{id}/rotate ──────────────────────────────────
     [HttpPut("{id:int}/rotate")]
+    [AllowAnonymous]
     public async Task<IActionResult> Rotate(int id, [FromBody] RotateRequestDto req, CancellationToken ct)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -206,6 +208,7 @@ public class BannerBuilderController : ControllerBase
 
     // ── PUT /api/banner-builder/{id}/height ──────────────────────────────────
     [HttpPut("{id:int}/height")]
+    [AllowAnonymous]
     public async Task<IActionResult> SetHeight(int id, [FromBody] HeightRequestDto req, CancellationToken ct)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -277,6 +280,7 @@ public class BannerBuilderController : ControllerBase
     /// and pre-populate the cart item before navigating to checkout.
     /// </summary>
     [HttpGet("{id:int}")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetDesign(int id, CancellationToken ct)
     {
         var userId = GetUserId();
@@ -308,6 +312,7 @@ public class BannerBuilderController : ControllerBase
 
     // ── GET /api/banner-builder/{id}/preview ─────────────────────────────────
     [HttpGet("{id:int}/preview")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetPreview(int id, CancellationToken ct)
     {
         var design = await _db.BannerDesigns.FirstOrDefaultAsync(d => d.Id == id, ct);
