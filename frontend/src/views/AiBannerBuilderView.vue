@@ -2443,9 +2443,6 @@ onBeforeUnmount(() => {
                 Maljer (øyebolter)
                 <span style="font-size:13px;font-weight:400;color:var(--faint);margin-left:4px">tilvalg</span>
               </div>
-              <p style="font-size:13px;color:var(--faint);margin:0">
-                Hem (søm) er ikke mulig på PVC-bannere — kun maljer tilbys.
-              </p>
             </div>
             <!-- BANNERSH-173: eyelet placement preview -->
             <EyeletPreview

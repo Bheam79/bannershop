@@ -401,9 +401,6 @@ onMounted(async () => {
                   </div>
                 </label>
               </div>
-              <p style="font-size:13px;color:var(--faint);margin-top:6px">
-                Hem (søm) er ikke mulig på PVC-bannere av denne typen.
-              </p>
             </div>
 
             <!-- Price box -->
