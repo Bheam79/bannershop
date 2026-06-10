@@ -97,6 +97,15 @@ function removeItem(idx: number) {
 }
 
 // ── Form state (pre-fill from checkout store if user came back) ──────────────
+// BANNERSH-181: if the in-memory store is empty (e.g. the user just completed
+// a prior order which called `checkout.clear()`), pull the last-used address
+// from localStorage so the form is pre-filled rather than blank. The store
+// also seeds itself from localStorage on creation, so this is a no-op for the
+// usual first-visit case but is essential for repeat orders within the same
+// SPA session.
+if (!checkout.recipientName.trim() && !checkout.address.line1.trim()) {
+  checkout.loadLastAddress()
+}
 const recipientName = ref(checkout.recipientName)
 const addressLine1 = ref(checkout.address.line1)
 const postalCode = ref(checkout.address.postalCode)
