@@ -494,6 +494,12 @@ function onPaywallGoToCheckout() {
   void router.push(id ? `/checkout?designRequestId=${id}` : '/checkout')
 }
 
+/** Moderation block: save current form state and switch to manual design flow */
+function switchToManualMode() {
+  saveManualSessionState()
+  void router.push('/banner-builder/manual')
+}
+
 // ── Clear age when switching to a non-birthday template ──────────────────────
 watch(selectedTemplateId, () => {
   if (selectedTemplate.value?.category !== 'Birthday') personAge.value = null
@@ -1225,7 +1231,17 @@ onBeforeUnmount(() => {
         <div v-else-if="genPhase === 'error'" class="preview-generating preview-error-frame">
           <i class="fa-solid fa-triangle-exclamation" style="font-size:36px;color:var(--accent);margin-bottom:8px"></i>
           <div class="display" style="font-size:18px;color:var(--text);margin-bottom:6px">Noe gikk galt</div>
-          <p style="font-size:13.5px;color:var(--muted);text-align:center;max-width:26em">
+          <template v-if="currentDesignRequest?.lastError === 'moderation_block'">
+            <p style="font-size:13.5px;color:var(--muted);text-align:center;max-width:28em">
+              Beklager, vår AI kan ikke lage plakater med opphavsrettsbeskyttede karakterer og innhold.<br><br>
+              I stedet for f.eks. «spiderman», prøv «Superhelt i edderkopp drakt som svinger seg mellom skyskrapere».<br><br>
+              Eventuelt velg manuell design hvis du ønsker dette — så skal vi se hva vi kan få til!
+            </p>
+            <button type="button" class="btn btn-ghost" style="margin-top:4px" @click="switchToManualMode">
+              <i class="fa-solid fa-palette"></i> Velg manuell design
+            </button>
+          </template>
+          <p v-else style="font-size:13.5px;color:var(--muted);text-align:center;max-width:26em">
             {{ currentDesignRequest?.lastError ?? 'AI-genereringen feilet. Prøv igjen.' }}
           </p>
         </div>
@@ -1908,17 +1924,34 @@ onBeforeUnmount(() => {
       <div v-else-if="genPhase === 'error'" style="text-align:center;padding:4rem 0">
         <i class="fa-solid fa-triangle-exclamation" style="font-size:52px;color:var(--accent);margin-bottom:18px;display:block"></i>
         <h2 class="display" style="font-size:26px;color:var(--text);margin-bottom:10px">Noe gikk galt</h2>
-        <p style="color:var(--muted);margin-bottom:24px;max-width:30em;margin-left:auto;margin-right:auto">
-          {{ currentDesignRequest?.lastError ?? 'AI-genereringen feilet. Prøv igjen eller kontakt support.' }}
-        </p>
-        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-          <button type="button" class="btn btn-primary" @click="genPhase = 'idle'; generateApiError = null">
-            <i class="fa-solid fa-rotate"></i> Prøv igjen
-          </button>
-          <RouterLink to="/account" class="btn btn-ghost">
-            <i class="fa-solid fa-house"></i> Min konto
-          </RouterLink>
-        </div>
+        <template v-if="currentDesignRequest?.lastError === 'moderation_block'">
+          <p style="color:var(--muted);margin-bottom:24px;max-width:34em;margin-left:auto;margin-right:auto">
+            Beklager, vår AI kan ikke lage plakater med opphavsrettsbeskyttede karakterer og innhold.<br><br>
+            I stedet for f.eks. «spiderman», prøv «Superhelt i edderkopp drakt som svinger seg mellom skyskrapere».<br><br>
+            Eventuelt velg manuell design hvis du ønsker dette — så skal vi se hva vi kan få til!
+          </p>
+          <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+            <button type="button" class="btn btn-primary" @click="genPhase = 'idle'; generateApiError = null">
+              <i class="fa-solid fa-rotate"></i> Prøv igjen med annet tema
+            </button>
+            <button type="button" class="btn btn-ghost" @click="switchToManualMode">
+              <i class="fa-solid fa-palette"></i> Manuell design
+            </button>
+          </div>
+        </template>
+        <template v-else>
+          <p style="color:var(--muted);margin-bottom:24px;max-width:30em;margin-left:auto;margin-right:auto">
+            {{ currentDesignRequest?.lastError ?? 'AI-genereringen feilet. Prøv igjen eller kontakt support.' }}
+          </p>
+          <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+            <button type="button" class="btn btn-primary" @click="genPhase = 'idle'; generateApiError = null">
+              <i class="fa-solid fa-rotate"></i> Prøv igjen
+            </button>
+            <RouterLink to="/account" class="btn btn-ghost">
+              <i class="fa-solid fa-house"></i> Min konto
+            </RouterLink>
+          </div>
+        </template>
       </div>
 
       <!-- Back button (only in idle phase) -->

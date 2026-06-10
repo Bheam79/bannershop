@@ -284,6 +284,27 @@ public sealed class OpenAiImageService : IAiImageService
         if (!resp.IsSuccessStatusCode)
         {
             _log.LogError("OpenAI {Status}: {Body}", (int)resp.StatusCode, Trunc(body, 1500));
+
+            // Detect moderation_block (400) so the pipeline stores a distinguishable
+            // sentinel in LastError that the frontend surfaces as a Norwegian-language
+            // user-friendly explanation instead of a raw JSON dump.
+            if ((int)resp.StatusCode == 400)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    if (doc.RootElement.TryGetProperty("error", out var err) &&
+                        err.TryGetProperty("code", out var code) &&
+                        code.GetString() is string codeStr &&
+                        codeStr.StartsWith("moderation_block", StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException("moderation_block");
+                    }
+                }
+                catch (InvalidOperationException) { throw; }
+                catch (JsonException) { /* JSON parse failed — fall through to generic error */ }
+            }
+
             throw new InvalidOperationException($"OpenAI image API failed ({(int)resp.StatusCode}): {Trunc(body, 300)}");
         }
         return body;
