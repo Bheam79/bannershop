@@ -74,6 +74,13 @@ internal class BringAdditionalService
 
 internal class BringPackage
 {
+    /// <summary>
+    /// Package identifier — required by Bring API v2. Without it the API cannot
+    /// correlate dimensions to the package and returns WEIGHT_OR_DIMENSIONS_OR_VOLUME_REQUIRED.
+    /// </summary>
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = "1";
+
     [JsonPropertyName("weightInKg")]
     public decimal WeightInKg { get; set; }
 
@@ -167,6 +174,10 @@ internal class BringError
 {
     [JsonPropertyName("code")]
     public string? Code { get; set; }
+
+    /// <summary>Machine-readable error code returned alongside <see cref="Code"/>.</summary>
+    [JsonPropertyName("errorCode")]
+    public string? ErrorCode { get; set; }
 
     [JsonPropertyName("description")]
     public string? Description { get; set; }
