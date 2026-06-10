@@ -138,11 +138,14 @@ const router = createRouter({
       component: () => import('@/views/admin/OrderDetailView.vue'),
       meta: { requiresAdmin: true },
     },
+    // BANNERSH-179: design-bestillinger merged into Ordrer. The list route now
+    // redirects to /admin/orders (so old bookmarks/links land in the unified
+    // table — order types AI / Designer / AI-kjøp are first-class filters
+    // there). The detail route is kept because OrderDetailView deep-links into
+    // it for revision history / new-revision upload tooling.
     {
       path: '/admin/design-requests',
-      name: 'admin-design-requests',
-      component: () => import('@/views/admin/AdminDesignRequestsView.vue'),
-      meta: { requiresAdmin: true },
+      redirect: '/admin/orders',
     },
     {
       path: '/admin/design-requests/:id',
