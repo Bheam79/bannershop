@@ -645,7 +645,7 @@ const packingLabel = computed(() => {
           <img
             :src="order.aiBanner.previewUrl"
             alt="AI-generert forhåndsvisning"
-            class="w-full max-w-xl rounded-xl border border-gray-600 shadow-sm"
+            class="w-full max-w-xl border border-gray-600 shadow-sm"
           />
           <div class="mt-3 flex items-center gap-4 text-sm">
             <a

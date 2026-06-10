@@ -1737,7 +1737,7 @@ onBeforeUnmount(() => {
 
         <!-- Phase: ready — show the generated image -->
         <template v-else-if="genPhase === 'ready' && currentDesignRequest">
-          <div class="bb-panel" style="padding:0;overflow:hidden">
+          <div class="bb-panel" style="padding:0;overflow:hidden;border-radius:0">
             <img
               v-if="currentDesignRequest.previewUrl"
               :src="currentDesignRequest.previewUrl"
@@ -2166,7 +2166,7 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Preview -->
-        <div class="bb-panel" style="padding:0;overflow:hidden">
+        <div class="bb-panel" style="padding:0;overflow:hidden;border-radius:0">
           <img
             v-if="currentDesignRequest.previewUrl"
             :src="currentDesignRequest.previewUrl"
@@ -2401,7 +2401,7 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Preview -->
-        <div class="bb-panel" style="padding:0;overflow:hidden">
+        <div class="bb-panel" style="padding:0;overflow:hidden;border-radius:0">
           <img
             v-if="currentDesignRequest.previewUrl"
             :src="currentDesignRequest.previewUrl"
@@ -3376,7 +3376,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   background: var(--surface-2);
   border: 2px solid var(--line-soft);
-  border-radius: 12px;
+  border-radius: 0;
   overflow: hidden;
   cursor: pointer;
   transition: border-color 0.15s, transform 0.15s, background 0.15s;
@@ -3449,7 +3449,7 @@ onBeforeUnmount(() => {
   gap: 5px;
   background: var(--surface-2);
   border: 1.5px solid var(--line-soft);
-  border-radius: 10px;
+  border-radius: 0;
   overflow: hidden;
   cursor: pointer;
   padding: 0;

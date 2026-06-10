@@ -20,7 +20,7 @@ const heightPct = computed(() => (props.heightCm / maxEdge.value) * 100)
   <div class="relative w-full bg-gray-100 rounded-lg overflow-hidden border border-gray-200" style="aspect-ratio: 2 / 1;">
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div
-        class="relative bg-gradient-to-br from-blue-600 to-blue-800 rounded-sm shadow-md flex items-center justify-center"
+        class="relative bg-gradient-to-br from-blue-600 to-blue-800 shadow-md flex items-center justify-center"
         :style="{ width: widthPct + '%', height: heightPct + '%' }"
       >
         <!-- Eyelet markers in the four corners -->

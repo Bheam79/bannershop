@@ -123,7 +123,7 @@ onUnmounted(() => {
 <template>
   <div class="space-y-5">
     <!-- Preview image -->
-    <div class="relative w-full bg-gray-100 rounded-lg overflow-hidden border border-gray-200 flex items-center justify-center" style="min-height: 280px;">
+    <div class="relative w-full bg-gray-100 overflow-hidden border border-gray-200 flex items-center justify-center" style="min-height: 280px;">
       <div v-if="loadingPreview" class="text-sm text-gray-500 py-8">
         Laster forhåndsvisning…
       </div>

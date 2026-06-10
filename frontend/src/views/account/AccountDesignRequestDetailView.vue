@@ -1099,7 +1099,7 @@ async function reorder() {
 .preview-wrap { margin-bottom: 1.25rem; }
 .preview-img {
   width: 100%;
-  border-radius: 14px;
+  border-radius: 0;
   border: 1px solid var(--line-soft);
 }
 .preview-placeholder {
@@ -1246,7 +1246,7 @@ async function reorder() {
 .approved-preview {
   width: 100%;
   max-width: 520px;
-  border-radius: 14px;
+  border-radius: 0;
   border: 1px solid var(--line-soft);
   margin-top: 0.5rem;
 }

@@ -668,7 +668,7 @@ function eyeletCountFor(item: import('@/types').CartItem): number {
   flex-shrink: 0;
   width: 64px;
   height: 64px;
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--surface-2);
   border: 1px solid var(--line-soft);
   display: flex;
