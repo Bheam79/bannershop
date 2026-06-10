@@ -158,6 +158,18 @@ public sealed class OpenAiPromptRefinementService : IPromptRefinementService
         system.AppendLine("  • ALL text must be placed well within the safe zone — at least 10% inward from every edge — so nothing is clipped by print finishing or aspect-ratio cropping. Never position text against the top or bottom edge.");
         system.AppendLine("  • Specify the aspect ratio, photorealistic / print-quality, no watermarks, no logos.");
         system.AppendLine();
+        system.AppendLine("Copyright / trademark safety (critical):");
+        system.AppendLine("  • If the theme or any other field references a trademarked character, franchise, or brand");
+        system.AppendLine("    (e.g. Spider-Man, Batman, Elsa, Pikachu, Minecraft, Harry Potter, Peppa Pig, etc.),");
+        system.AppendLine("    replace it with a purely descriptive visual equivalent. Do NOT include the character");
+        system.AppendLine("    name, franchise name, or any associated logo in the final prompt.");
+        system.AppendLine("    Examples of acceptable rewrites:");
+        system.AppendLine("      Spider-Man  → \"a red-and-blue spider-themed superhero\"");
+        system.AppendLine("      Elsa        → \"an ice queen in a shimmering blue gown with flowing platinum hair\"");
+        system.AppendLine("      Pikachu     → \"a small yellow electric mouse with a lightning bolt tail\"");
+        system.AppendLine("      Minecraft   → \"a blocky pixelated world with cubic terrain and creative building\"");
+        system.AppendLine("      Harry Potter→ \"a young wizard in a magical castle school\"");
+        system.AppendLine();
         system.AppendLine("Output rules (important):");
         system.AppendLine("  • Reply with the refined image-generation prompt ONLY. No preamble, no markdown, no code fences.");
         system.AppendLine("  • One paragraph. English. ≤ 400 words.");

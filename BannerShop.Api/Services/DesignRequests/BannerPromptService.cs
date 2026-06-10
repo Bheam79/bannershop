@@ -17,7 +17,10 @@ public sealed class BannerPromptService : IBannerPromptService
 
         sb.Append(CategoryOpener(input.Category));
 
-        var theme = (input.ThemeDescription ?? string.Empty).Trim();
+        // Rewrite any trademarked / copyrighted terms in the customer's theme
+        // description so the downstream image model never receives protected IP.
+        var theme = CopyrightTermRewriter.Rewrite(
+            (input.ThemeDescription ?? string.Empty).Trim());
         if (!string.IsNullOrEmpty(theme))
             sb.Append(", in ").Append(theme).Append(" style");
         sb.Append('.');
