@@ -159,6 +159,18 @@ stripe listen --forward-to localhost:5000/api/webhooks/stripe
 # Copy the printed "whsec_…" into /admin/settings → Stripe Webhook Secret
 ```
 
+## Test-mode "Marker som betalt" (BANNERSH-182)
+`POST /api/orders/{id}/mock-pay` (`OrderService.MockMarkPaidAsync`) flips a
+Draft/PendingPayment order to Paid without going through Stripe — same
+post-payment side-effects as the webhook path (production rows seeded,
+confirmation email, AI-credit grant). Gated by `TestingOptions`
+(`Testing:EnableMockPayment` + `Testing:MockPaymentPassword`, default
+`test1234`). The checkout's `confirmMockPayment` reuses one cached draft id
+across password retries; `pay()` similarly caches `orderId` + `clientSecret`
+across failed `confirmCardPayment` retries on the same PaymentView mount —
+either of those flows creating a fresh draft per click was the source of the
+"every order makes 2 orders" duplication.
+
 ## API keys: DB-only (BANNERSH-161)
 All secret API keys live in `system_settings` and are set via `/admin/settings`. **There is no appsettings fallback.** Affected rows:
 - `openai_api_key` → consumed by `OpenAiImageService` AND `OpenAiPromptRefinementService` (both inject `ISystemSettingsService`; refinement is silently skipped → base prompt if the key is blank)
