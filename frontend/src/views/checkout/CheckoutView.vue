@@ -73,6 +73,15 @@ onMounted(() => {
   // BANNERSH-180: prime the parcel-preview dimensions for both packing modes
   // so they're visible the moment the customer reaches the Pakkemetode step.
   loadParcelPreviews()
+  // BANNERSH-184: if the postal code is pre-filled (e.g. from the last-used
+  // address in localStorage), the `watch(postalCode, …)` below never fires
+  // because the value didn't change after mount — so shipping would stay at
+  // "Skriv inn postnummer for pris" and the form validation would block the
+  // customer from proceeding ("Beregn frakt før du fortsetter"). Kick off the
+  // calculation here so the saved postnummer is honoured immediately.
+  if (deliveryType.value !== 'Pickup' && /^\d{4}$/.test(postalCode.value.trim())) {
+    computeShipping()
+  }
 })
 
 // Refresh thumbnails if the cart changes (e.g. removed item, new design added).
