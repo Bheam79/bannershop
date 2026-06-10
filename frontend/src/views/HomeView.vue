@@ -97,7 +97,10 @@ async function handleLogout() {
   <div style="background:var(--bg);color:var(--text);font-family:var(--font-ui)">
 
     <!-- ═══════════════════════ NAV ═══════════════════════════ -->
-    <header style="position:sticky;top:0;z-index:50;background:rgba(21,18,14,.82);backdrop-filter:saturate(140%) blur(14px);border-bottom:1px solid var(--line-soft)">
+    <!-- BANNERSH-178: when the user is logged in, App.vue renders the shared
+         NavBar (Lag ditt banner / Mine design / AI credits / hamburger) on the
+         home page too, so we hide this guest-oriented marketing header. -->
+    <header v-if="!auth.isLoggedIn" style="position:sticky;top:0;z-index:50;background:rgba(21,18,14,.82);backdrop-filter:saturate(140%) blur(14px);border-bottom:1px solid var(--line-soft)">
       <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;height:72px">
 
         <!-- Brand -->

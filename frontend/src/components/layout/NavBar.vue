@@ -44,14 +44,27 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick, true
         <span>Banner<b style="color:var(--accent)">Shop</b>.no</span>
       </RouterLink>
 
+      <!-- Centre nav (logged in only) -->
+      <nav v-if="auth.isLoggedIn" style="display:flex;align-items:center;gap:8px">
+        <RouterLink
+          to="/banner-builder"
+          class="nb-link nb-pill"
+          active-class="nb-pill--active"
+        >Lag ditt banner</RouterLink>
+        <RouterLink
+          to="/mine-design"
+          class="nb-link nb-pill"
+          active-class="nb-pill--active"
+        >Mine design</RouterLink>
+      </nav>
+
       <!-- Right side -->
       <div style="display:flex;align-items:center;gap:16px">
-        <RouterLink to="/" style="color:var(--muted);font-weight:500;font-size:15px;text-decoration:none;transition:color .15s" class="nb-link">Hjem</RouterLink>
-
         <template v-if="auth.isLoggedIn">
           <AiCreditBadge />
         </template>
         <template v-else>
+          <RouterLink to="/" style="color:var(--muted);font-weight:500;font-size:15px;text-decoration:none;transition:color .15s" class="nb-link">Hjem</RouterLink>
           <RouterLink to="/login" style="color:var(--muted);font-weight:500;font-size:15px;text-decoration:none" class="nb-link">Logg inn</RouterLink>
           <RouterLink to="/register" class="btn btn-primary" style="font-size:14px;padding:9px 16px">Registrer</RouterLink>
         </template>
@@ -155,6 +168,25 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick, true
 
 <style scoped>
 .nb-link:hover { color: var(--text) !important; }
+
+/* Top nav pills (Lag ditt banner / Mine design) */
+.nb-pill {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 15px;
+  text-decoration: none;
+  padding: 8px 14px;
+  border-radius: 8px;
+  transition: background .15s, color .15s;
+}
+.nb-pill:hover {
+  background: rgba(255,255,255,.05);
+  color: var(--text) !important;
+}
+.nb-pill--active {
+  background: rgba(255,255,255,.07);
+  color: var(--text) !important;
+}
 
 .hamburger-btn:hover {
   background: rgba(255,255,255,.07) !important;

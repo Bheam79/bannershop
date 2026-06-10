@@ -9,6 +9,11 @@ import { useAiCreditsStore } from '@/stores/aiCredits'
 const route = useRoute()
 const isAdmin = computed(() => route.path.startsWith('/admin'))
 const isHome  = computed(() => route.path === '/')
+// BANNERSH-178: when a user is logged in, the same NavBar (with "Lag ditt banner"
+// / "Mine design" / AI credits / hamburger) should appear on every non-admin
+// page — including the marketing home view, which otherwise renders its own
+// guest-oriented header.
+const showNavBar = computed(() => !isAdmin.value && (!isHome.value || auth.isLoggedIn))
 
 // ── AI credit badge bootstrap (BANNERSH-87) ───────────────────────────────────
 // Keep the header badge in sync with the logged-in user's balance:
@@ -59,7 +64,7 @@ watch(
 <template>
   <div class="min-h-screen flex flex-col">
     <AdminNavBar v-if="isAdmin" />
-    <NavBar v-else-if="!isHome" />
+    <NavBar v-else-if="showNavBar" />
     <main class="flex-1">
       <RouterView />
     </main>
