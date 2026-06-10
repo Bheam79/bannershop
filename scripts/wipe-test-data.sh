@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ============================================================================
-# wipe-test-data.sh — BannerShop dev data reset
+# wipe-test-data.sh — BannerShop dev/prod data reset
 #
 # Wipes ALL orders, banner designs, design requests, AI credit history,
-# and uploaded/generated files from the dev environment.
+# and uploaded/generated files from the environment.
 #
 # Preserves: Users, Addresses, RefreshTokens, PricingParameters, Materials,
 #            BannerSizes, BannerTemplates, SystemSettings.
@@ -14,53 +14,110 @@
 #
 #   --yes   Skip the confirmation prompt (for CI / scripted use)
 #
-# Database connection:
-#   The script reads the DB host/port/name/user/password from the running
-#   MariaDB container via `cb docker` and from the hard-coded dev credentials.
-#   Override individual values with environment variables:
-#     DB_HOST  DB_PORT  DB_NAME  DB_USER  DB_PASS
+# Database connection — resolved in this order (first match wins):
+#   1. Explicit env vars: DB_HOST, DB_PORT, DB_USER, DB_PASS
+#   2. Production layout:
+#        container named 'bannershop-db' is running AND
+#        ~/.local/share/bannershop/secrets/db_password exists
+#        → connect to 127.0.0.1:17006 using that password
+#   3. Dev container (cb docker available):
+#        container named 'db' running → connect via its internal IP on 3306
+#   4. Parse Server= and Port= from the closest appsettings*.json
 #
-# File storage:
-#   Wipes the directory pointed to by FileStorage:LocalRoot in appsettings.json
-#   (default: /workspace/uploads). Override with UPLOADS_DIR env var.
+# File storage — resolved in this order:
+#   1. UPLOADS_DIR env var (explicit override)
+#   2. ~/.local/share/bannershop/data/uploads   (production layout, if present)
+#   3. /workspace/uploads                        (dev container default)
 # ============================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# ── Defaults ────────────────────────────────────────────────────────────────
+# ── DB credential defaults (overrideable) ────────────────────────────────────
 DB_NAME="${DB_NAME:-bannershop}"
 DB_USER="${DB_USER:-bannershop}"
 DB_PASS="${DB_PASS:-bannershop_dev}"
-DB_PORT="${DB_PORT:-3306}"
-UPLOADS_DIR="${UPLOADS_DIR:-/workspace/uploads}"
+# DB_PORT is intentionally left unset here so the detection branches below can
+# choose the right default (17006 for production, 3306 for dev).
+# It is finalised to 3306 at the end of the detection block if nothing else set it.
 
-# ── Resolve DB host ──────────────────────────────────────────────────────────
+# ── Resolve DB host + port + password ────────────────────────────────────────
 if [[ -z "${DB_HOST:-}" ]]; then
-  # Try to get the IP of the running 'db' sibling container.
-  if command -v cb &>/dev/null && cb docker ps 2>/dev/null | grep -q '\bdb\b'; then
+
+  # ── Option 1: Production layout ─────────────────────────────────────────────
+  # bannershop-db container running AND secrets dir present.
+  # In production the container is bound to 127.0.0.1:17006 on the host, so
+  # connecting to the container's internal IP is wrong — always use localhost.
+  PROD_SECRETS="$HOME/.local/share/bannershop/secrets/db_password"
+  if (docker ps --format '{{.Names}}' 2>/dev/null || podman ps --format '{{.Names}}' 2>/dev/null) \
+       | grep -qx 'bannershop-db' 2>/dev/null \
+     && [[ -f "$PROD_SECRETS" ]]; then
+    DB_HOST="127.0.0.1"
+    DB_PORT="${DB_PORT:-17006}"
+    DB_PASS="$(cat "$PROD_SECRETS")"
+    echo "  Detected production setup (bannershop-db container + secrets dir)."
+    echo "  DB_HOST=127.0.0.1  DB_PORT=$DB_PORT"
+
+  # ── Option 2: Dev container via cb docker ───────────────────────────────────
+  elif command -v cb &>/dev/null && cb docker ps 2>/dev/null | grep -q '\bdb\b'; then
     DB_HOST="$(cb docker exec db hostname -I 2>/dev/null | tr -d ' ' || true)"
+    DB_PORT="${DB_PORT:-3306}"
+    echo "  Detected dev container (cb docker 'db')."
+    echo "  DB_HOST=$DB_HOST  DB_PORT=$DB_PORT"
   fi
-  # Fall back to the IP currently in appsettings.json
+
+  # ── Option 3: Parse appsettings*.json ───────────────────────────────────────
   if [[ -z "${DB_HOST:-}" ]]; then
-    APPSETTINGS="$REPO_ROOT/BannerShop.Api/appsettings.json"
-    if [[ -f "$APPSETTINGS" ]]; then
-      DB_HOST="$(grep -oP '(?<=Server=)[^;]+' "$APPSETTINGS" | head -1 || true)"
-    fi
+    # Try Production config first (deployed app dir), then source-tree fallback.
+    for CFG in \
+      "$HOME/.local/share/bannershop/app/appsettings.Production.json" \
+      "$REPO_ROOT/BannerShop.Api/appsettings.json"; do
+      if [[ -f "$CFG" ]]; then
+        _h="$(grep -oP '(?<=Server=)[^;\"]+' "$CFG" 2>/dev/null | head -1 || true)"
+        _p="$(grep -oP '(?<=Port=)[0-9]+' "$CFG" 2>/dev/null | head -1 || true)"
+        if [[ -n "$_h" ]]; then
+          DB_HOST="$_h"
+          [[ -n "$_p" ]] && DB_PORT="$_p"
+          echo "  Parsed DB host from: $CFG"
+          echo "  DB_HOST=$DB_HOST  DB_PORT=$DB_PORT"
+          break
+        fi
+      fi
+    done
   fi
+
   if [[ -z "${DB_HOST:-}" ]]; then
-    echo "ERROR: Could not determine DB host. Set DB_HOST env var or start the db container." >&2
+    echo ""
+    echo "ERROR: Could not determine DB host." >&2
+    echo "  Set DB_HOST (and optionally DB_PORT, DB_PASS) as environment variables." >&2
+    echo "  Examples:" >&2
+    echo "    DB_HOST=127.0.0.1 DB_PORT=17006 DB_PASS=\$(cat ~/.local/share/bannershop/secrets/db_password) $0" >&2
+    echo "    DB_HOST=10.89.7.5 $0" >&2
     exit 1
   fi
 fi
 
+# Finalise DB_PORT if still unset (no explicit env var, no production/dev detection hit)
+DB_PORT="${DB_PORT:-3306}"
+
+# ── Resolve uploads directory ─────────────────────────────────────────────────
+if [[ -z "${UPLOADS_DIR:-}" ]]; then
+  PROD_UPLOADS="$HOME/.local/share/bannershop/data/uploads"
+  if [[ -d "$PROD_UPLOADS" ]]; then
+    UPLOADS_DIR="$PROD_UPLOADS"
+  else
+    UPLOADS_DIR="/workspace/uploads"
+  fi
+fi
+
+# ── Banner ────────────────────────────────────────────────────────────────────
 echo ""
 echo "┌──────────────────────────────────────────────────────┐"
 echo "│        BannerShop — DEV DATA WIPE SCRIPT             │"
 echo "├──────────────────────────────────────────────────────┤"
-echo "│  Database : $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME"
-echo "│  Uploads  : $UPLOADS_DIR"
+printf "│  Database : %s@%s:%s/%s\n" "$DB_USER" "$DB_HOST" "$DB_PORT" "$DB_NAME"
+printf "│  Uploads  : %s\n" "$UPLOADS_DIR"
 echo "└──────────────────────────────────────────────────────┘"
 echo ""
 echo "This will PERMANENTLY DELETE all of the following:"
@@ -92,16 +149,57 @@ if [[ $SKIP_CONFIRM -eq 0 ]]; then
 fi
 
 # ── MySQL helper ──────────────────────────────────────────────────────────────
+# Try the 'mysql' binary first; fall back to running it inside the container
+# (useful on hosts where the mysql client is not installed but docker exec works).
+_mysql_cmd=""
+if command -v mysql &>/dev/null; then
+  _mysql_cmd="mysql"
+elif command -v mariadb &>/dev/null; then
+  _mysql_cmd="mariadb"
+fi
+
 mysql_exec() {
-  mysql \
-    --host="$DB_HOST" \
-    --port="$DB_PORT" \
-    --user="$DB_USER" \
-    --password="$DB_PASS" \
-    --database="$DB_NAME" \
-    --batch \
-    --silent \
-    -e "$1"
+  local sql="$1"
+  if [[ -n "$_mysql_cmd" ]]; then
+    "$_mysql_cmd" \
+      --host="$DB_HOST" \
+      --port="$DB_PORT" \
+      --user="$DB_USER" \
+      --password="$DB_PASS" \
+      --database="$DB_NAME" \
+      --batch \
+      --silent \
+      -e "$sql"
+  else
+    # No local mysql/mariadb binary — run inside the container.
+    # Prefer bannershop-db (production), fall back to 'db' (dev container).
+    local cname=""
+    for c in bannershop-db db; do
+      if (docker ps --format '{{.Names}}' 2>/dev/null || podman ps --format '{{.Names}}' 2>/dev/null) \
+           | grep -qx "$c" 2>/dev/null; then
+        cname="$c"
+        break
+      fi
+    done
+    if [[ -z "$cname" ]]; then
+      echo "ERROR: No mysql/mariadb binary found and no running container to exec into." >&2
+      exit 1
+    fi
+    (docker exec -i "$cname" mariadb \
+      --user="$DB_USER" \
+      --password="$DB_PASS" \
+      --database="$DB_NAME" \
+      --batch \
+      --silent \
+      -e "$sql") 2>/dev/null || \
+    (docker exec -i "$cname" mysql \
+      --user="$DB_USER" \
+      --password="$DB_PASS" \
+      --database="$DB_NAME" \
+      --batch \
+      --silent \
+      -e "$sql")
+  fi
 }
 
 echo ""
