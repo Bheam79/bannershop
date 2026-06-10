@@ -1,15 +1,42 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRoute, RouterLink } from 'vue-router'
-import { getOrder } from '@/api/orders'
+import { useRoute, useRouter, RouterLink } from 'vue-router'
+import { getOrder, deleteOrder } from '@/api/orders'
 import type { OrderDetailResponse, OrderItemDetail, ProductionStatusEntry } from '@/api/orders'
 
 const route = useRoute()
+const router = useRouter()
 const orderId = Number(route.params.id)
 
 const order = ref<OrderDetailResponse | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
+
+// BANNERSH-185: customer "Betal nå" + "Slett" actions for unpaid orders.
+const isUnpaid = computed(() =>
+  order.value?.status === 'Draft' || order.value?.status === 'PendingPayment'
+)
+const canDelete = computed(() => {
+  const s = order.value?.status
+  return s === 'Draft' || s === 'PendingPayment' || s === 'Cancelled'
+})
+
+const deleting = ref(false)
+async function onDeleteOrder() {
+  if (!canDelete.value || deleting.value) return
+  // eslint-disable-next-line no-alert
+  if (!confirm(`Slette ordre #${orderId}? Dette kan ikke angres.`)) return
+  deleting.value = true
+  try {
+    await deleteOrder(orderId)
+    router.push('/account/orders')
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { error?: string } }; message?: string }
+    error.value = e.response?.data?.error || e.message || 'Kunne ikke slette ordren.'
+  } finally {
+    deleting.value = false
+  }
+}
 
 onMounted(async () => {
   try {
@@ -139,6 +166,32 @@ const packingLabel = computed(() => {
           <span class="badge" :class="statusClass(order.status)">
             {{ statusLabel(order.status) }}
           </span>
+        </div>
+
+        <!-- BANNERSH-185: pay-now / delete actions for unpaid orders -->
+        <div v-if="isUnpaid || canDelete" class="order-actions">
+          <RouterLink
+            v-if="isUnpaid"
+            :to="`/account/orders/${order.id}/pay`"
+            class="btn btn-primary"
+          >
+            <i class="fa-solid fa-credit-card"></i>
+            Betal nå ({{ formatNok(order.totalNok) }})
+          </RouterLink>
+          <button
+            v-if="canDelete"
+            type="button"
+            class="btn btn-ghost btn-delete"
+            :disabled="deleting"
+            @click="onDeleteOrder"
+          >
+            <i
+              :class="deleting
+                ? 'fa-solid fa-circle-notch fa-spin'
+                : 'fa-solid fa-trash'"
+            ></i>
+            {{ deleting ? 'Sletter…' : 'Slett ordre' }}
+          </button>
         </div>
 
         <div class="meta-grid">
@@ -425,6 +478,24 @@ const packingLabel = computed(() => {
   color: var(--text);
 }
 .order-date { font-size: 0.8125rem; color: var(--muted); margin-top: 3px; }
+
+/* BANNERSH-185: pay-now / delete row */
+.order-actions {
+  display: flex;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+.btn-delete {
+  color: #f4a57a;
+  border: 1px solid rgba(220,60,60,.32);
+  background: rgba(220,60,60,.08);
+}
+.btn-delete:hover:not(:disabled) {
+  background: rgba(220,60,60,.16);
+  color: #ff8c6a;
+}
+.btn-delete:disabled { opacity: 0.55; cursor: not-allowed; }
 
 /* ── Meta grid ──────────────────────────────────────────────── */
 .meta-grid {

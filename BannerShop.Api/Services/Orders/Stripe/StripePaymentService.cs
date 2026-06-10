@@ -115,6 +115,40 @@ public class StripePaymentService : IStripePaymentService
         }
     }
 
+    public async Task<StripeIntentResult?> RetrievePaymentIntentAsync(
+        string paymentIntentId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(paymentIntentId)) return null;
+        try
+        {
+            var apiKey = await GetEffectiveSecretKeyAsync(ct);
+            var reqOpts = new RequestOptions { ApiKey = apiKey };
+
+            var service = new PaymentIntentService();
+            var intent = await service.GetAsync(paymentIntentId, requestOptions: reqOpts, cancellationToken: ct);
+
+            // Stripe statuses where the existing client_secret can still drive a
+            // successful confirmation: requires_payment_method (after a previous
+            // failure), requires_confirmation, requires_action. Other statuses
+            // (canceled, succeeded, processing) mean a retry would either be
+            // impossible or already in-flight — caller should mint a new PI.
+            var status = intent.Status;
+            if (status is "requires_payment_method" or "requires_confirmation" or "requires_action")
+                return new StripeIntentResult(intent.Id, intent.ClientSecret);
+
+            _logger.LogInformation(
+                "Stripe PI {Pi} retrieved but status '{Status}' is not retryable.",
+                paymentIntentId, status);
+            return null;
+        }
+        catch (StripeException ex)
+        {
+            _logger.LogInformation(ex, "Stripe PI {Pi} could not be retrieved: {Msg}",
+                paymentIntentId, ex.Message);
+            return null;
+        }
+    }
+
     public async Task<StripeWebhookEvent?> VerifyAndParseEventAsync(
         string requestBody, string signatureHeader, CancellationToken ct = default)
     {

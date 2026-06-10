@@ -194,3 +194,39 @@ export async function mockPayOrder(
   )
   return data
 }
+
+/**
+ * BANNERSH-185: customer-initiated soft-delete of a Draft / PendingPayment /
+ * Cancelled order. The backend sets `Deleted=true` so the row vanishes from
+ * "Mine ordrer" while staying in the DB for audit. Throws on Paid / Shipped
+ * (etc.) orders — those cannot be deleted.
+ */
+export async function deleteOrder(orderId: number): Promise<void> {
+  await apiClient.delete(`/orders/${orderId}`)
+}
+
+/** BANNERSH-185: response shape for POST /api/orders/{id}/retry-payment. */
+export interface RetryPaymentResponse {
+  orderId: number
+  /**
+   * Stripe client secret usable with `stripe.confirmCardPayment`. `null` when
+   * the order has already been paid — frontend should jump to the
+   * confirmation page in that case.
+   */
+  clientSecret: string | null
+  totalNok: number
+  alreadyPaid: boolean
+}
+
+/**
+ * BANNERSH-185: re-opens an existing PendingPayment order for retry. The
+ * backend returns a fresh client secret (reusing the existing PaymentIntent
+ * when it is still in a retryable status, otherwise minting a new one).
+ */
+export async function retryOrderPayment(orderId: number): Promise<RetryPaymentResponse> {
+  const { data } = await apiClient.post<RetryPaymentResponse>(
+    `/orders/${orderId}/retry-payment`,
+    {},
+  )
+  return data
+}

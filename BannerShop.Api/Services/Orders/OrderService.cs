@@ -309,7 +309,9 @@ public class OrderService : IOrderService
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-        var query = _db.Orders.AsNoTracking().Where(o => o.UserId == userId);
+        // BANNERSH-185: exclude soft-deleted orders (Draft / PendingPayment rows the
+        // customer cleaned up via the "Slett" button) from the customer's listing.
+        var query = _db.Orders.AsNoTracking().Where(o => o.UserId == userId && !o.Deleted);
         var total = await query.CountAsync(ct);
         var orders = await query
             .OrderByDescending(o => o.CreatedAt)
@@ -332,7 +334,9 @@ public class OrderService : IOrderService
     public async Task<OrderDetailDto?> GetMineAsync(int userId, int orderId, CancellationToken ct = default)
     {
         var o = await LoadFullOrderAsync(orderId, ct);
-        if (o is null || o.UserId != userId) return null;
+        // BANNERSH-185: soft-deleted orders are treated as if they don't exist for the
+        // customer — same 404 as a foreign order.
+        if (o is null || o.UserId != userId || o.Deleted) return null;
         var dr = await LoadDesignRequestForOrderAsync(orderId, ct);
         return ToDetailDto(o, dr);
     }
@@ -340,7 +344,7 @@ public class OrderService : IOrderService
     public async Task<OrderActionResult> CancelMineAsync(int userId, int orderId, CancellationToken ct = default)
     {
         var order = await _db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == orderId, ct);
-        if (order is null || order.UserId != userId)
+        if (order is null || order.UserId != userId || order.Deleted)
             return OrderActionResult.Fail("Order not found.");
         if (order.Status is not (OrderStatus.Draft or OrderStatus.PendingPayment))
             return OrderActionResult.Fail($"Order in status {order.Status} cannot be cancelled by the customer.");
@@ -413,6 +417,82 @@ public class OrderService : IOrderService
             : OrderActionResult.Ok(full);
     }
 
+    /// <inheritdoc />
+    public async Task<OrderActionResult> DeleteMineAsync(int userId, int orderId, CancellationToken ct = default)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == orderId, ct);
+        if (order is null || order.UserId != userId || order.Deleted)
+            return OrderActionResult.Fail("Order not found.");
+
+        // BANNERSH-185: customers can only soft-delete orders that never made it past
+        // payment. Paid / in-production / shipped / delivered orders are accounting
+        // records and must remain visible.
+        if (order.Status is not (OrderStatus.Draft or OrderStatus.PendingPayment or OrderStatus.Cancelled))
+            return OrderActionResult.Fail($"Order in status {order.Status} cannot be deleted.");
+
+        order.Deleted = true;
+        order.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        // Cancel any open PaymentIntent so the customer is not left with a
+        // half-confirmed authorisation on Stripe's side.
+        if (!string.IsNullOrEmpty(order.StripePaymentIntentId) &&
+            order.Status is OrderStatus.Draft or OrderStatus.PendingPayment)
+        {
+            await _stripe.CancelPaymentIntentAsync(order.StripePaymentIntentId, ct);
+        }
+
+        _logger.LogInformation(
+            "Order {OrderId} soft-deleted by user {UserId} (Status={Status}).",
+            orderId, userId, order.Status);
+
+        return OrderActionResult.Ok(new OrderDetailDto { Id = orderId });
+    }
+
+    /// <inheritdoc />
+    public async Task<RetryPaymentResult> RetryPaymentAsync(int userId, int orderId, CancellationToken ct = default)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == orderId, ct);
+        if (order is null || order.UserId != userId || order.Deleted)
+            return RetryPaymentResult.Fail("Order not found.");
+
+        // Only orders that are awaiting customer payment can be retried. Already-paid
+        // (or beyond) orders return a benign success-with-null-secret so the frontend
+        // can route the user to the confirmation page.
+        if (order.Status is OrderStatus.Paid or OrderStatus.InProduction or OrderStatus.ReadyToShip
+                          or OrderStatus.Shipped or OrderStatus.Delivered)
+        {
+            return new RetryPaymentResult(true, null, order.Id, ClientSecret: null,
+                TotalNok: order.TotalNok, AlreadyPaid: true);
+        }
+        if (order.Status is not (OrderStatus.Draft or OrderStatus.PendingPayment))
+            return RetryPaymentResult.Fail($"Order in status {order.Status} cannot be retried.");
+
+        // Try to reuse the existing PaymentIntent first — its client_secret is still
+        // valid for any retryable status (requires_payment_method etc.). If we get
+        // nothing back (cancelled / succeeded / not-found / API error), mint a new PI.
+        StripeIntentResult? intent = null;
+        if (!string.IsNullOrEmpty(order.StripePaymentIntentId))
+            intent = await _stripe.RetrievePaymentIntentAsync(order.StripePaymentIntentId, ct);
+        if (intent is null)
+        {
+            intent = await _stripe.CreatePaymentIntentAsync(order.Id, userId, order.TotalNok, ct);
+            order.StripePaymentIntentId = intent.PaymentIntentId;
+        }
+
+        // Make sure the status reflects "customer is paying" — moves Draft → PendingPayment
+        // (orders persisted at PendingPayment already by CreateDraftAsync stay that way).
+        if (order.Status == OrderStatus.Draft)
+        {
+            order.Status = OrderStatus.PendingPayment;
+        }
+        order.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return new RetryPaymentResult(true, null, order.Id,
+            ClientSecret: intent.ClientSecret, TotalNok: order.TotalNok, AlreadyPaid: false);
+    }
+
     // ────────────────────────────────────────────────────────────────────────
     // Admin operations
     // ────────────────────────────────────────────────────────────────────────
@@ -422,7 +502,10 @@ public class OrderService : IOrderService
         var page = filter.Page < 1 ? 1 : filter.Page;
         var pageSize = filter.PageSize < 1 || filter.PageSize > 200 ? 20 : filter.PageSize;
 
-        var query = _db.Orders.AsNoTracking().AsQueryable();
+        // BANNERSH-185: hide soft-deleted orders from the admin list. (No admin-side
+        // "show deleted" toggle yet — they're truly gone from the UI; rows remain in
+        // the DB for audit / undo.)
+        var query = _db.Orders.AsNoTracking().Where(o => !o.Deleted).AsQueryable();
         if (filter.Status is { } s)
             query = query.Where(o => o.Status == s);
         if (filter.OrderType is { } t)
@@ -474,7 +557,7 @@ public class OrderService : IOrderService
     public async Task<OrderDetailDto?> GetAnyAsync(int orderId, CancellationToken ct = default)
     {
         var o = await LoadFullOrderAsync(orderId, ct);
-        if (o is null) return null;
+        if (o is null || o.Deleted) return null;
         var dr = await LoadDesignRequestForOrderAsync(orderId, ct);
         return ToDetailDto(o, dr);
     }

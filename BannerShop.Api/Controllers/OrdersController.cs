@@ -72,6 +72,52 @@ public class OrdersController : ControllerBase
         return Ok(result.Order);
     }
 
+    // ── DELETE /api/orders/{id} ──────────────────────────────────────────────
+    /// <summary>
+    /// BANNERSH-185: customer-initiated soft-delete for unpaid orders (Draft /
+    /// PendingPayment / Cancelled). Hides the order from the customer's listing
+    /// and cancels any open Stripe PaymentIntent. Paid orders are not deletable.
+    /// </summary>
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> Delete(int id, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        if (userId == 0) return Unauthorized();
+        var result = await _orders.DeleteMineAsync(userId, id, ct);
+        if (!result.Success)
+            return result.Error == "Order not found."
+                ? NotFound(new { error = result.Error })
+                : BadRequest(new { error = result.Error });
+        return NoContent();
+    }
+
+    // ── POST /api/orders/{id}/retry-payment ──────────────────────────────────
+    /// <summary>
+    /// BANNERSH-185: customer "Betal nå" action — re-opens an existing
+    /// PendingPayment order for payment, returning a Stripe client secret usable
+    /// with <c>confirmCardPayment</c> on the frontend. When the order is already
+    /// paid, the response carries <c>alreadyPaid=true</c> and no client secret
+    /// so the frontend can route straight to the confirmation page.
+    /// </summary>
+    [HttpPost("{id:int}/retry-payment")]
+    public async Task<IActionResult> RetryPayment(int id, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        if (userId == 0) return Unauthorized();
+        var result = await _orders.RetryPaymentAsync(userId, id, ct);
+        if (!result.Success)
+            return result.Error == "Order not found."
+                ? NotFound(new { error = result.Error })
+                : BadRequest(new { error = result.Error });
+        return Ok(new
+        {
+            orderId = result.OrderId,
+            clientSecret = result.ClientSecret,
+            totalNok = result.TotalNok,
+            alreadyPaid = result.AlreadyPaid,
+        });
+    }
+
     // ── POST /api/orders/{id}/mock-pay ───────────────────────────────────────
     /// <summary>
     /// BANNERSH-182: testing-only override that flips a Draft/PendingPayment

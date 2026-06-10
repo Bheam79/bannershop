@@ -46,6 +46,18 @@ public interface IStripePaymentService
     Task CancelPaymentIntentAsync(string paymentIntentId, CancellationToken ct = default);
 
     /// <summary>
+    /// BANNERSH-185: retrieves an existing PaymentIntent so the customer can retry a
+    /// failed payment without re-creating the order. Returns the PI id + a fresh
+    /// client secret usable with Stripe.confirmCardPayment on the frontend.
+    /// Returns <c>null</c> when the PI does not exist, has been cancelled, or has
+    /// already succeeded — the caller should then fall back to creating a brand-new
+    /// PaymentIntent.
+    /// </summary>
+    Task<StripeIntentResult?> RetrievePaymentIntentAsync(
+        string paymentIntentId,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Verifies a Stripe webhook signature and returns the parsed event.
     /// Returns null when the signature is invalid.
     /// </summary>

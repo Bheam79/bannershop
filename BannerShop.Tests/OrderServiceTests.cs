@@ -1118,4 +1118,129 @@ public class OrderServiceTests
 
         result.Should().BeNull();
     }
+
+    // ── DeleteMineAsync / RetryPaymentAsync (BANNERSH-185) ───────────────────
+
+    [Fact]
+    public async Task DeleteMine_PendingPaymentOrder_SoftDeletesAndCancelsPi()
+    {
+        var (service, db, _, _, stripeMock) = CreateService();
+        var draftId = await SeedUserAndCreateOrder(service, db, 1, "user1@test.com");
+
+        var result = await service.DeleteMineAsync(1, draftId);
+
+        result.Success.Should().BeTrue();
+        // No global query filter is configured — query the raw table directly.
+        var row = db.Orders.Single(o => o.Id == draftId);
+        row.Deleted.Should().BeTrue();
+        stripeMock.Verify(s => s.CancelPaymentIntentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task DeleteMine_OtherUsersOrder_ReturnsNotFound()
+    {
+        var (service, db, _, _, _) = CreateService();
+        var draftId = await SeedUserAndCreateOrder(service, db, 1, "owner@test.com");
+
+        var result = await service.DeleteMineAsync(2, draftId);
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Be("Order not found.");
+    }
+
+    [Fact]
+    public async Task DeleteMine_PaidOrder_Refuses()
+    {
+        var (service, db, _, _, _) = CreateService();
+        var draftId = await SeedUserAndCreateOrder(service, db, 1, "user@test.com");
+        var row = db.Orders.Single(o => o.Id == draftId);
+        row.Status = OrderStatus.Paid;
+        db.SaveChanges();
+
+        var result = await service.DeleteMineAsync(1, draftId);
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("cannot be deleted");
+    }
+
+    [Fact]
+    public async Task DeleteMine_HidesOrderFromListMine()
+    {
+        var (service, db, _, _, _) = CreateService();
+        var draftId = await SeedUserAndCreateOrder(service, db, 1, "user@test.com");
+
+        await service.DeleteMineAsync(1, draftId);
+
+        var list = await service.ListMineAsync(1, 1, 20);
+        list.Items.Should().NotContain(i => i.Id == draftId);
+        list.TotalCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RetryPayment_PendingPayment_ReturnsClientSecret()
+    {
+        var (service, db, _, _, stripeMock) = CreateService();
+        var draftId = await SeedUserAndCreateOrder(service, db, 1, "user@test.com");
+        stripeMock
+            .Setup(s => s.RetrievePaymentIntentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StripeIntentResult("pi_mock_1", "pi_mock_1_secret_retry"));
+
+        var result = await service.RetryPaymentAsync(1, draftId);
+
+        result.Success.Should().BeTrue();
+        result.AlreadyPaid.Should().BeFalse();
+        result.ClientSecret.Should().Be("pi_mock_1_secret_retry");
+    }
+
+    [Fact]
+    public async Task RetryPayment_WhenRetrieveFails_MintsNewPaymentIntent()
+    {
+        var (service, db, _, _, stripeMock) = CreateService();
+        var draftId = await SeedUserAndCreateOrder(service, db, 1, "user@test.com");
+        // Retrieval returns null (e.g. PI was cancelled) — service should fall back to Create.
+        stripeMock
+            .Setup(s => s.RetrievePaymentIntentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StripeIntentResult?)null);
+        stripeMock
+            .Setup(s => s.CreatePaymentIntentAsync(
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<decimal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StripeIntentResult("pi_retry_new", "pi_retry_new_secret"));
+
+        var result = await service.RetryPaymentAsync(1, draftId);
+
+        result.Success.Should().BeTrue();
+        result.ClientSecret.Should().Be("pi_retry_new_secret");
+        var row = db.Orders.Single(o => o.Id == draftId);
+        row.StripePaymentIntentId.Should().Be("pi_retry_new");
+    }
+
+    [Fact]
+    public async Task RetryPayment_AlreadyPaidOrder_ReturnsAlreadyPaidFlag()
+    {
+        var (service, db, _, _, _) = CreateService();
+        var draftId = await SeedUserAndCreateOrder(service, db, 1, "user@test.com");
+        var row = db.Orders.Single(o => o.Id == draftId);
+        row.Status = OrderStatus.Paid;
+        db.SaveChanges();
+
+        var result = await service.RetryPaymentAsync(1, draftId);
+
+        result.Success.Should().BeTrue();
+        result.AlreadyPaid.Should().BeTrue();
+        result.ClientSecret.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RetryPayment_DeletedOrder_ReturnsNotFound()
+    {
+        var (service, db, _, _, _) = CreateService();
+        var draftId = await SeedUserAndCreateOrder(service, db, 1, "user@test.com");
+        await service.DeleteMineAsync(1, draftId);
+
+        var result = await service.RetryPaymentAsync(1, draftId);
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Be("Order not found.");
+    }
 }

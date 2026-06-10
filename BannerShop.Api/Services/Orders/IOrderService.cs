@@ -25,6 +25,23 @@ public interface IOrderService
     Task<OrderActionResult> CancelMineAsync(int userId, int orderId, CancellationToken ct = default);
 
     /// <summary>
+    /// BANNERSH-185: customer "Slett" action on a Draft / PendingPayment / Cancelled
+    /// order. Soft-deletes the row (sets <c>Deleted=true</c>) so it disappears from
+    /// the customer's "Mine ordrer" list, and cancels any open Stripe PaymentIntent.
+    /// Paid orders are NOT deletable — accounting records stay visible.
+    /// </summary>
+    Task<OrderActionResult> DeleteMineAsync(int userId, int orderId, CancellationToken ct = default);
+
+    /// <summary>
+    /// BANNERSH-185: customer "Betal nå" / retry action on a PendingPayment order.
+    /// Returns a usable client secret — either the existing PaymentIntent's (when it
+    /// is still in a retryable state) or a freshly minted one. Already-paid orders
+    /// return <c>AlreadyPaid=true</c> with a null client secret so the frontend can
+    /// hop straight to the confirmation page.
+    /// </summary>
+    Task<RetryPaymentResult> RetryPaymentAsync(int userId, int orderId, CancellationToken ct = default);
+
+    /// <summary>
     /// BANNERSH-182: testing-only override. When the operator types the
     /// configured <see cref="TestingOptions.MockPaymentPassword"/> into
     /// the checkout's "Marker som betalt (testmodus)" modal, the order is
@@ -77,6 +94,23 @@ public record CreateOrderDraftResult(
     string ClientSecret,
     decimal TotalNok,
     OrderPriceBreakdownDto Breakdown);
+
+/// <summary>
+/// Outcome of <see cref="IOrderService.RetryPaymentAsync"/>. On success carries the
+/// client secret to drive Stripe.confirmCardPayment on the frontend (or
+/// <c>AlreadyPaid=true</c> with a null secret when the order has already been paid).
+/// </summary>
+public record RetryPaymentResult(
+    bool Success,
+    string? Error,
+    int OrderId,
+    string? ClientSecret,
+    decimal TotalNok,
+    bool AlreadyPaid)
+{
+    public static RetryPaymentResult Fail(string error) =>
+        new(false, error, 0, null, 0m, false);
+}
 
 public enum OrderActionErrorType { NotFound, InvalidTransition }
 

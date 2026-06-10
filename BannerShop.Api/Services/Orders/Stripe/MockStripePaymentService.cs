@@ -31,6 +31,17 @@ public class MockStripePaymentService : IStripePaymentService
     public Task CancelPaymentIntentAsync(string paymentIntentId, CancellationToken ct = default)
         => Task.CompletedTask;
 
+    public Task<StripeIntentResult?> RetrievePaymentIntentAsync(string paymentIntentId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(paymentIntentId))
+            return Task.FromResult<StripeIntentResult?>(null);
+        // Mock PIs created by CreatePaymentIntentAsync remain "retryable" indefinitely —
+        // returning a deterministic client secret so the retry-payment flow exercises
+        // the same code path the live Stripe path uses.
+        return Task.FromResult<StripeIntentResult?>(new StripeIntentResult(
+            paymentIntentId, $"{paymentIntentId}_secret_dev"));
+    }
+
     public Task<StripeWebhookEvent?> VerifyAndParseEventAsync(string requestBody, string signatureHeader, CancellationToken ct = default)
     {
         _logger.LogWarning("Webhook called against MockStripePaymentService — rejecting.");

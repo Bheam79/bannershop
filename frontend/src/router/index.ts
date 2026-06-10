@@ -99,6 +99,16 @@ const router = createRouter({
       component: () => import('@/views/account/OrderDetailView.vue'),
       meta: { requiresAuth: true },
     },
+    // BANNERSH-185: dedicated retry-payment view for unpaid orders. Loads a
+    // fresh Stripe client secret for the existing order (reusing the previous
+    // PaymentIntent when possible) so the customer can complete payment from
+    // the "Mine ordrer" listing.
+    {
+      path: '/account/orders/:id/pay',
+      name: 'account-order-pay',
+      component: () => import('@/views/account/RetryPaymentView.vue'),
+      meta: { requiresAuth: true },
+    },
     {
       path: '/account/design-requests',
       name: 'account-design-requests',

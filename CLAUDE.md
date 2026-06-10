@@ -147,6 +147,25 @@ banner + 495 kr designer-fee lines to the cart. The legacy
 - **BANNERSH-162: quality/size picker placement + image-ratio-driven sizing.** In `AiBannerBuilderView`, the "Velg kvalitet og størrelse" block is rendered *below* the generated preview (not above it) and is hidden until `genPhase === 'ready' && currentDesignRequest.previewUrl`. The displayed widths come from `aiImageAspectRatio` (preferred: `aiImageNaturalRatio` captured by the preview `<img>`'s `@load` handler; fallback: parsing `currentDesignRequest.aspectRatio` as `WxH` or `A:B`). High → 150 cm tall × `round(150 × ratio)` wide; Good → 180 cm tall × `round(180 × ratio)` wide; Custom width ↔ height are linked via the same ratio (lock cleared on `nextTick` so Vue's same-value skip doesn't strand the guard). `step2Valid` only requires custom W/H once `genPhase === 'ready'`, since the picker is invisible during the pre-generation form. `aiImageNaturalRatio` is reset in `generateBanner`, `regenerate`, `selectPastDesign`, and `returnToWizardIdle` so the next image's `@load` is authoritative.
 - **BANNERSH-139: credit packs tracked as Orders.** AI credit-pack purchases now write a real `Order` row with `OrderType = CreditPack` (enum value 3) so transaction reports pick them up. The buy endpoint (`AiCreditsController.BuyCreditPack`) creates the Order + a synthetic `OrderItem` *before* asking Stripe for a PaymentIntent, then stamps the PI id on the order. `IStripePaymentService.CreateCreditPackPaymentIntentAsync` now takes an optional `orderId` so the PI metadata includes it. The webhook handler still routes `type=ai_credit_pack` to the credits-grant path, AND additionally calls `OrderService.MarkPaidAsync(pi, orderId)` — `MarkPaidAsync` skips production-row seeding AND the order-confirmation email for `OrderType=CreditPack` orders (those flows don't apply). Admin orders list (`OrderService.ListAllAsync` + `AdminOrderFilter.IncludeCreditPacks` + `GET /api/admin/orders?includeCreditPacks=true`) hides them by default; the type filter overrides the hide. Frontend admin OrdersView has an "Inkluder AI-kjøp" checkbox + a gold `CreditPack` chip; account OrdersView + AccountView label them "AI-pakke" with a matching chip.
 
+## Unpaid-order retry + soft-delete (BANNERSH-185)
+`Order.Deleted` (bool, default false; migration `AddOrderDeletedFlag`, indexed) hides
+unpaid rows from `ListMineAsync` / `GetMineAsync` / admin `ListAllAsync` / `GetAnyAsync`.
+Two customer endpoints back the new buttons in "Mine ordrer":
+- `DELETE /api/orders/{id}` → soft-deletes Draft / PendingPayment / Cancelled orders
+  (also cancels the Stripe PI). Paid orders refuse with `cannot be deleted`.
+- `POST /api/orders/{id}/retry-payment` → returns `{orderId, clientSecret, totalNok,
+  alreadyPaid}`. Reuses the existing PaymentIntent when its status is retryable
+  (`requires_payment_method` / `requires_confirmation` / `requires_action`) via the
+  new `IStripePaymentService.RetrievePaymentIntentAsync` method; otherwise mints a
+  new PI. Already-paid orders return `alreadyPaid=true` + null `clientSecret` so
+  the frontend can route straight to the confirmation page.
+
+Frontend: `OrdersView` exposes "Betal nå" + "Slett" actions per-row (mobile + desktop);
+`OrderDetailView` shows the same actions in the header. The pay-now CTA routes to
+`/account/orders/:id/pay` (new `RetryPaymentView.vue`) which mounts a Stripe card
+element bound to the retrieved client secret — separate file from `PaymentView`
+to avoid bloating the checkout path with retry-mode conditionals.
+
 ## Stripe webhook (BANNERSH-166)
 Yes — the app uses Stripe webhooks. The endpoint is:
 

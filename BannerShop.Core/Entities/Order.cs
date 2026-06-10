@@ -42,6 +42,14 @@ public class Order
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? EstimatedDelivery { get; set; }
 
+    /// <summary>
+    /// BANNERSH-185: soft-delete flag. When <c>true</c>, the order is hidden from all
+    /// customer- and admin-facing listings and lookups. Set via the customer's "Slett"
+    /// button on Draft / PendingPayment orders (orders that never made it to a paid /
+    /// production state). Paid orders are not deletable.
+    /// </summary>
+    public bool Deleted { get; set; }
+
     // Navigation
     public User User { get; set; } = null!;
     public Address? ShippingAddress { get; set; }

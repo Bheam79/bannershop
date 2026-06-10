@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { listOrders } from '@/api/orders'
+import { listOrders, deleteOrder } from '@/api/orders'
 import { listDesignRequests } from '@/api/designRequests'
 
 const router = useRouter()
@@ -21,6 +21,10 @@ interface UnifiedItem {
   previewUrl: string | null
   detailPath: string
   isAwaitingApproval: boolean
+  /** BANNERSH-185: PendingPayment/Draft orders — show "Betal nå" CTA + path to the retry view. */
+  payPath: string | null
+  /** BANNERSH-185: PendingPayment/Draft/Cancelled orders — show "Slett" button. */
+  canDelete: boolean
 }
 
 const allItems = ref<UnifiedItem[]>([])
@@ -96,6 +100,11 @@ async function load() {
       // OrderType=CreditPack. Surface them under the user's "Mine ordrer" list
       // with a clear "AI-pakke" label so the receipt is visible.
       const isCreditPack = o.orderType === 'CreditPack'
+      // BANNERSH-185: Draft / PendingPayment orders are unpaid — show "Betal nå"
+      // CTA + a delete button. Credit-pack purchases never enter this state on
+      // the user's listing (PI lifecycle is short), but the rules still apply.
+      const isUnpaid = o.status === 'Draft' || o.status === 'PendingPayment'
+      const isDeletable = isUnpaid || o.status === 'Cancelled'
       return {
         id: o.id,
         displayId: isCreditPack ? `AI-pakke-${o.id}` : `O-${o.id}`,
@@ -110,6 +119,8 @@ async function load() {
         previewUrl: null,
         detailPath: `/account/orders/${o.id}`,
         isAwaitingApproval: false,
+        payPath: isUnpaid ? `/account/orders/${o.id}/pay` : null,
+        canDelete: isDeletable,
       }
     })
 
@@ -127,6 +138,8 @@ async function load() {
       previewUrl: dr.previewUrl,
       detailPath: `/account/design-requests/${dr.id}`,
       isAwaitingApproval: dr.status === 'AwaitingApproval',
+      payPath: null,
+      canDelete: false,
     }))
 
     allItems.value = [...orderItems, ...drItems].sort(
@@ -143,6 +156,35 @@ onMounted(() => load())
 
 function goToItem(item: UnifiedItem) {
   router.push(item.detailPath)
+}
+
+// BANNERSH-185: track which orders are currently being deleted so the row can
+// disable both actions while the DELETE is in flight. Stored as a Set so the
+// computed-via-include() lookup is cheap.
+const deletingIds = ref<Set<number>>(new Set())
+
+async function onDeleteOrder(item: UnifiedItem) {
+  if (item.kind !== 'order' || !item.canDelete) return
+  if (deletingIds.value.has(item.id)) return
+  // eslint-disable-next-line no-alert
+  if (!confirm(`Slette ordre #${item.displayId}? Dette kan ikke angres.`)) return
+
+  deletingIds.value = new Set([...deletingIds.value, item.id])
+  try {
+    await deleteOrder(item.id)
+    allItems.value = allItems.value.filter(x => !(x.kind === 'order' && x.id === item.id))
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { error?: string } }; message?: string }
+    error.value = e.response?.data?.error || e.message || 'Kunne ikke slette ordren.'
+  } finally {
+    const next = new Set(deletingIds.value)
+    next.delete(item.id)
+    deletingIds.value = next
+  }
+}
+
+function isDeleting(item: UnifiedItem): boolean {
+  return item.kind === 'order' && deletingIds.value.has(item.id)
 }
 
 function formatNok(n: number): string {
@@ -211,6 +253,7 @@ function formatDate(iso: string): string {
               <th class="th">Status</th>
               <th class="th">Dato</th>
               <th class="th th--right">Totalt</th>
+              <th class="th th--actions"></th>
             </tr>
           </thead>
           <tbody>
@@ -258,6 +301,34 @@ function formatDate(iso: string): string {
               </td>
               <td class="td td--muted">{{ formatDate(item.date) }}</td>
               <td class="td td--right td--bold">{{ formatNok(item.priceNok) }}</td>
+              <td class="td td--actions" @click.stop>
+                <div class="row-actions">
+                  <RouterLink
+                    v-if="item.payPath"
+                    :to="item.payPath"
+                    class="action-btn action-btn--pay"
+                    :title="`Betal ordre #${item.displayId}`"
+                  >
+                    <i class="fa-solid fa-credit-card"></i>
+                    Betal nå
+                  </RouterLink>
+                  <button
+                    v-if="item.canDelete"
+                    type="button"
+                    class="action-btn action-btn--delete"
+                    :disabled="isDeleting(item)"
+                    :title="`Slett ordre #${item.displayId}`"
+                    @click="onDeleteOrder(item)"
+                  >
+                    <i
+                      :class="isDeleting(item)
+                        ? 'fa-solid fa-circle-notch fa-spin'
+                        : 'fa-solid fa-trash'"
+                    ></i>
+                    <span class="action-btn__label">Slett</span>
+                  </button>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -299,6 +370,34 @@ function formatDate(iso: string): string {
                 >
                   Godkjenn design →
                 </RouterLink>
+              </div>
+              <div
+                v-if="item.payPath || item.canDelete"
+                class="mobile-row__actions"
+                @click.stop
+              >
+                <RouterLink
+                  v-if="item.payPath"
+                  :to="item.payPath"
+                  class="action-btn action-btn--pay"
+                >
+                  <i class="fa-solid fa-credit-card"></i>
+                  Betal nå
+                </RouterLink>
+                <button
+                  v-if="item.canDelete"
+                  type="button"
+                  class="action-btn action-btn--delete"
+                  :disabled="isDeleting(item)"
+                  @click="onDeleteOrder(item)"
+                >
+                  <i
+                    :class="isDeleting(item)
+                      ? 'fa-solid fa-circle-notch fa-spin'
+                      : 'fa-solid fa-trash'"
+                  ></i>
+                  Slett
+                </button>
               </div>
             </div>
 
@@ -598,6 +697,61 @@ function formatDate(iso: string): string {
 .pager-btn { font-size: 0.875rem; }
 .pager-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .pager-info { color: var(--muted); }
+
+/* ── Row actions (BANNERSH-185) ──────────────────────────────── */
+.th--actions { width: 1%; white-space: nowrap; }
+.td--actions { white-space: nowrap; }
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.mobile-row__actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: none;
+  font-family: inherit;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, opacity 0.12s;
+  white-space: nowrap;
+}
+.action-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.action-btn i { font-size: 0.75rem; }
+
+.action-btn--pay {
+  background: rgba(255,106,61,.14);
+  border-color: rgba(255,106,61,.32);
+  color: var(--accent);
+}
+.action-btn--pay:hover { background: rgba(255,106,61,.22); color: var(--accent-2); }
+
+.action-btn--delete {
+  background: rgba(220,60,60,.10);
+  border-color: rgba(220,60,60,.25);
+  color: #f4a57a;
+}
+.action-btn--delete:hover:not(:disabled) {
+  background: rgba(220,60,60,.18);
+  color: #ff8c6a;
+}
 
 /* ── Status badges ──────────────────────────────────────────── */
 .badge {

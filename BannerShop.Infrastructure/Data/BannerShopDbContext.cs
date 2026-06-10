@@ -179,6 +179,11 @@ public class BannerShopDbContext : DbContext
             e.Property(x => x.AiActivationFeeNok).HasColumnType("decimal(10,2)").HasDefaultValue(0m);
             e.Property(x => x.TotalNok).HasColumnType("decimal(10,2)");
             e.Property(x => x.StripePaymentIntentId).HasMaxLength(200);
+            // BANNERSH-185: soft-delete flag for customer-cleared Draft / PendingPayment
+            // orders. Indexed so the (UserId, Deleted) and (Deleted) filters used by the
+            // customer + admin listings remain fast as the orders table grows.
+            e.Property(x => x.Deleted).HasDefaultValue(false);
+            e.HasIndex(x => x.Deleted);
             e.HasOne(x => x.User)
                 .WithMany(x => x.Orders)
                 .HasForeignKey(x => x.UserId)
