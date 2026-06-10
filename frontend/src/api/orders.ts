@@ -175,3 +175,22 @@ export async function getOrder(id: number): Promise<OrderDetailResponse> {
   const { data } = await apiClient.get<OrderDetailResponse>(`/orders/${id}`)
   return data
 }
+
+/**
+ * BANNERSH-182: testing-only override that flips an order to Paid without
+ * going through Stripe. Used by the checkout's "Marker som betalt
+ * (testmodus)" modal. Requires the caller to own the order and the
+ * server-side <c>Testing:EnableMockPayment</c> flag to be on; the password
+ * is configured server-side (<c>Testing:MockPaymentPassword</c>, default
+ * "test1234"). Returns the updated order detail on success.
+ */
+export async function mockPayOrder(
+  orderId: number,
+  password: string,
+): Promise<OrderDetailResponse> {
+  const { data } = await apiClient.post<OrderDetailResponse>(
+    `/orders/${orderId}/mock-pay`,
+    { password },
+  )
+  return data
+}

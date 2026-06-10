@@ -103,11 +103,13 @@ public class OrderServiceTests
 
         var parcels = new ParcelCalculator(db);
         var storage = new BannerFileStorage(Options.Create(new FileStorageOptions()));
+        var testing = Options.Create(new TestingOptions());
         var service = new OrderService(db, pricingMock.Object, shippingMock.Object,
                                         parcels, stripeMock.Object,
                                         emailMock.Object,
                                         aiCreditsMock.Object,
                                         storage,
+                                        testing,
                                         NullLogger<OrderService>.Instance);
 
         return (service, db, pricingMock, shippingMock, stripeMock, emailMock, aiCreditsMock);

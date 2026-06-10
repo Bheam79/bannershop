@@ -72,6 +72,31 @@ public class OrdersController : ControllerBase
         return Ok(result.Order);
     }
 
+    // ── POST /api/orders/{id}/mock-pay ───────────────────────────────────────
+    /// <summary>
+    /// BANNERSH-182: testing-only override that flips a Draft/PendingPayment
+    /// order to Paid without going through Stripe. Used by the checkout's
+    /// "Marker som betalt (testmodus)" modal so the operator can exercise the
+    /// post-payment flow end-to-end (production rows, confirmation email,
+    /// redirect to the confirmation page) when Stripe is not configured on
+    /// the frontend. Gated by <c>Testing:EnableMockPayment</c> + a
+    /// configurable password (<c>Testing:MockPaymentPassword</c>).
+    /// </summary>
+    [HttpPost("{id:int}/mock-pay")]
+    public async Task<IActionResult> MockPay(int id, [FromBody] MockPayRequest req, CancellationToken ct)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        var userId = GetUserId();
+        if (userId == 0) return Unauthorized();
+
+        var result = await _orders.MockMarkPaidAsync(userId, id, req.Password, ct);
+        if (!result.Success)
+            return result.Error == "Invalid mock-payment password."
+                ? Unauthorized(new { error = result.Error })
+                : NotFound(new { error = result.Error });
+        return Ok(result.Order);
+    }
+
     // ── POST /api/orders/{id}/approve ────────────────────────────────────────
     /// <summary>
     /// Customer approves the AI or manual design preview for this order.

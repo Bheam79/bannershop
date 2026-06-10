@@ -24,6 +24,18 @@ public interface IOrderService
     /// <summary>Customer cancels a Draft or PendingPayment order.</summary>
     Task<OrderActionResult> CancelMineAsync(int userId, int orderId, CancellationToken ct = default);
 
+    /// <summary>
+    /// BANNERSH-182: testing-only override. When the operator types the
+    /// configured <see cref="TestingOptions.MockPaymentPassword"/> into
+    /// the checkout's "Marker som betalt (testmodus)" modal, the order is
+    /// flipped to Paid without going through Stripe (so the post-payment
+    /// flow — production rows, confirmation email, redirect — can be
+    /// exercised end-to-end). Returns a NotFound result when the order
+    /// does not belong to the caller or when <c>Testing:EnableMockPayment</c>
+    /// is disabled.
+    /// </summary>
+    Task<OrderActionResult> MockMarkPaidAsync(int userId, int orderId, string password, CancellationToken ct = default);
+
     // ── Admin operations ──────────────────────────────────────────────────────
 
     Task<PagedResult<OrderListItemDto>> ListAllAsync(AdminOrderFilter filter, CancellationToken ct = default);

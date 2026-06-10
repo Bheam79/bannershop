@@ -97,6 +97,10 @@ else
 // ─── Stripe + Orders ──────────────────────────────────────────────────────────
 builder.Services.Configure<StripeOptions>(builder.Configuration.GetSection(StripeOptions.SectionName));
 
+// BANNERSH-182: gating + password for the checkout "Marker som betalt
+// (testmodus)" override that bypasses Stripe for end-to-end testing.
+builder.Services.Configure<TestingOptions>(builder.Configuration.GetSection(TestingOptions.SectionName));
+
 // Always register the real StripePaymentService — it resolves the API key at call
 // time (DB system setting → appsettings fallback) so the admin can enter or update
 // the key via the settings panel without restarting the service.  Restricted keys

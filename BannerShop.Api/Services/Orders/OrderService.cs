@@ -12,6 +12,7 @@ using BannerShop.Core.Enums;
 using BannerShop.Core.Helpers;
 using BannerShop.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace BannerShop.Api.Services.Orders;
 
@@ -54,6 +55,7 @@ public class OrderService : IOrderService
     private readonly IEmailService _email;
     private readonly IAiCreditService _aiCredits;
     private readonly BannerFileStorage _storage;
+    private readonly TestingOptions _testing;
     private readonly ILogger<OrderService> _logger;
 
     public OrderService(
@@ -65,6 +67,7 @@ public class OrderService : IOrderService
         IEmailService email,
         IAiCreditService aiCredits,
         BannerFileStorage storage,
+        IOptions<TestingOptions> testing,
         ILogger<OrderService> logger)
     {
         _db = db;
@@ -75,6 +78,7 @@ public class OrderService : IOrderService
         _email = email;
         _aiCredits = aiCredits;
         _storage = storage;
+        _testing = testing.Value;
         _logger = logger;
     }
 
@@ -352,6 +356,61 @@ public class OrderService : IOrderService
         var full = await LoadFullOrderAsync(orderId, ct);
         var drCancel = await LoadDesignRequestForOrderAsync(orderId, ct);
         return OrderActionResult.Ok(ToDetailDto(full!, drCancel));
+    }
+
+    /// <inheritdoc />
+    public async Task<OrderActionResult> MockMarkPaidAsync(
+        int userId, int orderId, string password, CancellationToken ct = default)
+    {
+        // BANNERSH-182: gated by the same Not-Found error on every failure mode
+        // (disabled, wrong password, foreign order, missing) so an attacker
+        // can't probe the existence of the override from the response.
+        if (!_testing.EnableMockPayment)
+        {
+            _logger.LogWarning(
+                "MockMarkPaidAsync rejected: Testing:EnableMockPayment is false (user {UserId}, order {OrderId}).",
+                userId, orderId);
+            return OrderActionResult.Fail("Order not found.");
+        }
+        if (string.IsNullOrEmpty(password) ||
+            !string.Equals(password, _testing.MockPaymentPassword, StringComparison.Ordinal))
+        {
+            _logger.LogWarning(
+                "MockMarkPaidAsync rejected: wrong password (user {UserId}, order {OrderId}).",
+                userId, orderId);
+            return OrderActionResult.Fail("Invalid mock-payment password.");
+        }
+
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == orderId, ct);
+        if (order is null || order.UserId != userId)
+            return OrderActionResult.Fail("Order not found.");
+
+        // Idempotent: if the order is already paid (or beyond), return success
+        // so a retry from the frontend just succeeds rather than 422-ing.
+        if (order.Status is OrderStatus.Paid or OrderStatus.InProduction or OrderStatus.ReadyToShip
+                          or OrderStatus.Shipped or OrderStatus.Delivered)
+        {
+            var dto = await GetMineAsync(userId, orderId, ct);
+            return dto is null
+                ? OrderActionResult.Fail("Order not found.")
+                : OrderActionResult.Ok(dto);
+        }
+        if (order.Status is not (OrderStatus.Draft or OrderStatus.PendingPayment))
+            return OrderActionResult.Fail($"Order in status {order.Status} cannot be marked paid.");
+
+        // Route through the same internal path used by the Stripe webhook so
+        // the post-payment side effects (production-row seeding, confirmation
+        // email, AI credit grant) all run consistently.
+        await MarkPaidAsync(order.StripePaymentIntentId ?? string.Empty, order.Id, ct);
+
+        _logger.LogInformation(
+            "Order {OrderId} marked Paid via test-mode override (user {UserId}).",
+            orderId, userId);
+
+        var full = await GetMineAsync(userId, orderId, ct);
+        return full is null
+            ? OrderActionResult.Fail("Order not found.")
+            : OrderActionResult.Ok(full);
     }
 
     // ────────────────────────────────────────────────────────────────────────

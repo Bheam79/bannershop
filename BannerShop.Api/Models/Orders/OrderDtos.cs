@@ -110,6 +110,18 @@ public class UpdateProductionRequest
     public string? Notes { get; set; }
 }
 
+/// <summary>
+/// BANNERSH-182: body for <c>POST /api/orders/{id}/mock-pay</c>. The
+/// customer types the configured testing password into the "Marker
+/// som betalt (testmodus)" modal on the checkout page and the server
+/// flips the order to Paid without going through Stripe.
+/// </summary>
+public class MockPayRequest
+{
+    [Required, StringLength(200)]
+    public string Password { get; set; } = string.Empty;
+}
+
 public class SetShippingRequest
 {
     [Required, StringLength(100)]

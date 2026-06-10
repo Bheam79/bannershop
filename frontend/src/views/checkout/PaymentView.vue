@@ -6,7 +6,7 @@ import type { Stripe, StripeCardElement } from '@stripe/stripe-js'
 import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore } from '@/stores/checkout'
 import { useAuthStore } from '@/stores/auth'
-import { createOrderDraft } from '@/api/orders'
+import { createOrderDraft, mockPayOrder } from '@/api/orders'
 
 const router = useRouter()
 const cart = useCartStore()
@@ -114,10 +114,25 @@ const paymentError = ref<string | null>(null)
 const apiError = ref<string | null>(null)
 
 // ── Mock-payment modal (shown when Stripe is not configured) ──────────────────
+// BANNERSH-182: previously this path
+//   1. created the order draft, then
+//   2. inspected the returned client secret for a `pi_mock_*` prefix and
+//      redirected on match, or
+//   3. fell through to `pay()` (which created a SECOND draft and then errored
+//      out because Stripe wasn't loaded).
+// The fallthrough double-created every test order AND never marked it Paid.
+// New flow: create one draft, then call the dedicated mock-pay endpoint with
+// the password — the backend gates the override (Testing:EnableMockPayment +
+// Testing:MockPaymentPassword) and routes through the same MarkPaidAsync hook
+// the Stripe webhook uses, so the order ends up Paid with production rows
+// seeded and the confirmation email queued, just like a real payment.
 const showMockModal = ref(false)
 const mockPassword = ref('')
 const mockPasswordError = ref<string | null>(null)
 const mockProcessing = ref(false)
+/** Holds the orderId of an already-created draft so retries (e.g. typo in the
+ *  password) don't keep creating new orders on every "Bekreft" click. */
+const mockOrderId = ref<number | null>(null)
 
 function openMockModal() {
   mockPassword.value = ''
@@ -130,60 +145,77 @@ function closeMockModal() {
 }
 
 async function confirmMockPayment() {
-  if (mockPassword.value !== 'test1234') {
-    mockPasswordError.value = 'Feil passord. Prøv igjen.'
+  if (!mockPassword.value.trim()) {
+    mockPasswordError.value = 'Skriv inn passordet.'
     return
   }
   mockPasswordError.value = null
   mockProcessing.value = true
   apiError.value = null
 
-  let orderId: number
-  let clientSecret: string
+  // 1. Create the draft order — only the first time the user hits Bekreft.
+  //    Subsequent retries (wrong password, network blip) reuse the same id
+  //    so we never double-create.
+  if (mockOrderId.value == null) {
+    try {
+      const resp = await createOrderDraft({
+        deliveryType: checkout.deliveryType,
+        shippingAddress: checkout.deliveryType !== 'Pickup' ? {
+          line1: checkout.address.line1,
+          postalCode: checkout.address.postalCode,
+          city: checkout.address.city,
+          country: 'NO',
+        } : undefined,
+        packingMode: checkout.packingMode,
+        items: cart.items
+          .filter((item) => item.bannerSizeId != null)
+          .map((item) => ({
+            bannerSizeId: item.bannerSizeId!,
+            customWidthCm: item.customWidthCm ?? undefined,
+            quantity: item.quantity,
+            notes: item.notes ?? undefined,
+            eyeletOption: item.eyeletOption,
+          })),
+      })
+      mockOrderId.value = resp.orderId
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string }
+      apiError.value =
+        e.response?.data?.error || e.message || 'Kunne ikke opprette ordre. Prøv igjen.'
+      mockProcessing.value = false
+      closeMockModal()
+      return
+    }
+  }
 
+  // 2. Ask the server to mark the order paid using the testing password.
   try {
-    const resp = await createOrderDraft({
-      deliveryType: checkout.deliveryType,
-      shippingAddress: checkout.deliveryType !== 'Pickup' ? {
-        line1: checkout.address.line1,
-        postalCode: checkout.address.postalCode,
-        city: checkout.address.city,
-        country: 'NO',
-      } : undefined,
-      packingMode: checkout.packingMode,
-      items: cart.items
-        .filter((item) => item.bannerSizeId != null)
-        .map((item) => ({
-          bannerSizeId: item.bannerSizeId!,
-          customWidthCm: item.customWidthCm ?? undefined,
-          quantity: item.quantity,
-          notes: item.notes ?? undefined,
-          eyeletOption: item.eyeletOption,
-        })),
-    })
-    orderId = resp.orderId
-    clientSecret = resp.clientSecret
+    await mockPayOrder(mockOrderId.value, mockPassword.value)
   } catch (err: unknown) {
-    const e = err as { response?: { data?: { error?: string } }; message?: string }
+    const e = err as { response?: { status?: number; data?: { error?: string } }; message?: string }
+    // 401 → wrong password; let the user retry without scrapping the order.
+    if (e.response?.status === 401) {
+      mockPasswordError.value = 'Feil passord. Prøv igjen.'
+      mockProcessing.value = false
+      return
+    }
+    // 404 → mock-pay disabled server-side, or order vanished. Surface the
+    // server's reason if any so the operator knows to flip Testing:EnableMockPayment.
     apiError.value =
-      e.response?.data?.error || e.message || 'Kunne ikke opprette ordre. Prøv igjen.'
+      e.response?.data?.error ||
+      e.message ||
+      'Kunne ikke markere ordre som betalt i testmodus.'
     mockProcessing.value = false
     closeMockModal()
     return
   }
 
-  // Mock bypass — backend returns pi_mock_* when Stripe is not configured
-  if (clientSecret.startsWith('pi_mock_')) {
-    cart.clear()
-    checkout.clear()
-    router.push(`/checkout/confirmation/${orderId}`)
-    return
-  }
-
-  // Unexpected: Stripe is actually configured; fall back to standard pay()
-  mockProcessing.value = false
-  closeMockModal()
-  pay()
+  // 3. Success — clear local state and forward to the confirmation page.
+  cart.clear()
+  checkout.clear()
+  const idToShow = mockOrderId.value
+  mockOrderId.value = null
+  router.push(`/checkout/confirmation/${idToShow}`)
 }
 
 // ── Price calculations (mirror of CheckoutView) ───────────────────────────────
@@ -197,51 +229,68 @@ function formatNok(n: number): string {
   return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
 }
 
+// BANNERSH-182: cache the draft we created on the first click so that a
+// failed Stripe confirmation (bad card, 3DS abort, network blip) followed by
+// a retry reuses the SAME order id + client secret instead of creating a
+// fresh draft on every click. Without this every aborted attempt left an
+// orphan PendingPayment row in the orders list. The cache is scoped to this
+// PaymentView mount — navigating back to /checkout and forward again gives
+// the user a fresh draft, which is the correct behaviour because the cart
+// or address may have changed.
+const payOrderId = ref<number | null>(null)
+const payClientSecret = ref<string | null>(null)
+
 // ── Submit payment ────────────────────────────────────────────────────────────
 async function pay() {
   if (processing.value) return
   paymentError.value = null
   apiError.value = null
 
-  // 1. Create order draft
   processing.value = true
-  let orderId: number
-  let clientSecret: string
 
-  try {
-    const resp = await createOrderDraft({
-      deliveryType: checkout.deliveryType,
-      shippingAddress: checkout.deliveryType !== 'Pickup' ? {
-        line1: checkout.address.line1,
-        postalCode: checkout.address.postalCode,
-        city: checkout.address.city,
-        country: 'NO',
-      } : undefined,
-      packingMode: checkout.packingMode,
-      items: cart.items
-        .filter((item) => item.bannerSizeId != null)
-        .map((item) => ({
-          bannerSizeId: item.bannerSizeId!,
-          customWidthCm: item.customWidthCm ?? undefined,
-          quantity: item.quantity,
-          notes: item.notes ?? undefined,
-          eyeletOption: item.eyeletOption,
-        })),
-    })
-    orderId = resp.orderId
-    clientSecret = resp.clientSecret
-  } catch (err: unknown) {
-    const e = err as { response?: { data?: { error?: string } }; message?: string }
-    apiError.value =
-      e.response?.data?.error || e.message || 'Kunne ikke opprette ordre. Prøv igjen.'
-    processing.value = false
-    return
+  // 1. Create order draft — only on the first attempt; subsequent retries
+  //    reuse the cached id/client-secret so we don't create duplicates.
+  if (payOrderId.value == null || payClientSecret.value == null) {
+    try {
+      const resp = await createOrderDraft({
+        deliveryType: checkout.deliveryType,
+        shippingAddress: checkout.deliveryType !== 'Pickup' ? {
+          line1: checkout.address.line1,
+          postalCode: checkout.address.postalCode,
+          city: checkout.address.city,
+          country: 'NO',
+        } : undefined,
+        packingMode: checkout.packingMode,
+        items: cart.items
+          .filter((item) => item.bannerSizeId != null)
+          .map((item) => ({
+            bannerSizeId: item.bannerSizeId!,
+            customWidthCm: item.customWidthCm ?? undefined,
+            quantity: item.quantity,
+            notes: item.notes ?? undefined,
+            eyeletOption: item.eyeletOption,
+          })),
+      })
+      payOrderId.value = resp.orderId
+      payClientSecret.value = resp.clientSecret
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string }
+      apiError.value =
+        e.response?.data?.error || e.message || 'Kunne ikke opprette ordre. Prøv igjen.'
+      processing.value = false
+      return
+    }
   }
+
+  const orderId = payOrderId.value
+  const clientSecret = payClientSecret.value
 
   // 2. Dev/mock bypass: if the backend returned a mock client secret, skip Stripe
   if (clientSecret.startsWith('pi_mock_')) {
     cart.clear()
     checkout.clear()
+    payOrderId.value = null
+    payClientSecret.value = null
     router.push(`/checkout/confirmation/${orderId}`)
     return
   }
@@ -276,6 +325,8 @@ async function pay() {
   // 4. Success — clear cart and go to confirmation
   cart.clear()
   checkout.clear()
+  payOrderId.value = null
+  payClientSecret.value = null
   router.push(`/checkout/confirmation/${orderId}`)
 }
 </script>
