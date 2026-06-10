@@ -79,6 +79,38 @@ const ratioOptions = [
 const creditsRemaining = ref<number | null>(null)
 const hasUsedFreeGeneration = ref<boolean | null>(null)
 
+// ── Generation progress bar ───────────────────────────────────────────────────
+const genProgress = ref(0)
+let genProgressRaf: number | null = null
+let genProgressStart = 0
+
+function startProgressBar() {
+  genProgress.value = 0
+  genProgressStart = Date.now()
+  function tick() {
+    const elapsed = (Date.now() - genProgressStart) / 1000
+    let p: number
+    if (elapsed <= 60) {
+      // Linear phase: 0 → 90% over 60 seconds
+      p = (elapsed / 60) * 90
+    } else {
+      // Logarithmic slowdown after 90%: asymptotically approaches ~99.5%
+      p = 90 + 9.5 * (1 - Math.exp(-(elapsed - 60) / 120))
+    }
+    genProgress.value = Math.min(99.5, p)
+    genProgressRaf = requestAnimationFrame(tick)
+  }
+  genProgressRaf = requestAnimationFrame(tick)
+}
+
+function stopProgressBar() {
+  if (genProgressRaf !== null) {
+    cancelAnimationFrame(genProgressRaf)
+    genProgressRaf = null
+  }
+  genProgress.value = 0
+}
+
 // ── Paywall state ─────────────────────────────────────────────────────────────
 const paywallOpen = ref(false)
 const paywallData = ref<AiPaywallData | null>(null)
@@ -676,8 +708,18 @@ watch(selectedAspectRatio, () => {
   }
 })
 
+// Start / stop the progress bar whenever the generation phase changes
+watch(genPhase, (phase) => {
+  if (phase === 'generating') {
+    startProgressBar()
+  } else {
+    stopProgressBar()
+  }
+})
+
 onBeforeUnmount(() => {
   cleanupGeneration()
+  stopProgressBar()
   if (photoPreviewUrl.value) URL.revokeObjectURL(photoPreviewUrl.value)
 })
 </script>
@@ -992,6 +1034,15 @@ onBeforeUnmount(() => {
             <p v-if="genPhase === 'generating'" style="font-size:13.5px;color:var(--muted)">
               AI-en jobber med designet ditt. Dette tar vanligvis 20–60 sekunder.
             </p>
+          </div>
+          <!-- Generation progress bar -->
+          <div v-if="genPhase === 'generating'" style="width:100%;max-width:260px">
+            <div style="width:100%;height:4px;background:var(--surface-2);border-radius:999px;overflow:hidden">
+              <div
+                style="height:100%;background:var(--accent);border-radius:999px;transition:width .4s ease"
+                :style="{ width: `${genProgress}%` }"
+              />
+            </div>
           </div>
         </div>
 
@@ -1434,6 +1485,15 @@ onBeforeUnmount(() => {
             <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:var(--faint)">
               <span style="width:18px;height:18px;border-radius:50%;background:var(--surface-2);border:1px solid var(--line);flex-shrink:0"></span>
               Klart til godkjenning
+            </div>
+          </div>
+          <!-- Generation progress bar -->
+          <div style="width:240px">
+            <div style="width:100%;height:5px;background:var(--surface-2);border-radius:999px;overflow:hidden">
+              <div
+                style="height:100%;background:var(--accent);border-radius:999px;transition:width .4s ease"
+                :style="{ width: `${genProgress}%` }"
+              />
             </div>
           </div>
         </div>
