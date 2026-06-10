@@ -58,7 +58,12 @@ public class DesignRequest
     /// <summary>Number of designer revisions completed so far (capped at 1 for Manual in service layer).</summary>
     public int RevisionCount { get; set; }
 
-    /// <summary>How many free AI re-runs the customer still has on this paid request.</summary>
+    /// <summary>
+    /// Display-only counter set at creation time (0 for anonymous, 1 for authenticated
+    /// requests). Since BANNERSH-67 regeneration is gated by <see cref="IAiCreditService"/>
+    /// (credit consumption), not by this field. It is never decremented or checked as a
+    /// business gate and exists only for informational display in the admin panel.
+    /// </summary>
     public int RegenerationsRemaining { get; set; } = 1;
 
     /// <summary>
@@ -94,7 +99,14 @@ public class DesignRequest
     /// </summary>
     public int? CustomBannerWidthCm { get; set; }
 
-    /// <summary>Stripe PaymentIntent id (one per request — DesignRequests are mini-orders).</summary>
+    /// <summary>
+    /// Stripe PaymentIntent id. Kept as a dead-code guard for in-flight legacy Manual
+    /// design requests created before BANNERSH-136 that still have a standalone PI.
+    /// The current AI flow (BANNERSH-67) and Manual flow (BANNERSH-104) no longer write
+    /// this field on new rows — the PI is instead stamped on the associated <see cref="Order"/>.
+    /// <see cref="DesignRequestService.MarkPaidAndEnqueueAsync"/> reads it only for those
+    /// legacy rows and is itself a dead-code guard retained for the cutover window.
+    /// </summary>
     public string? StripePaymentIntentId { get; set; }
 
     /// <summary>Relative storage path of the AI-generated PNG (uncropped 4K source).</summary>

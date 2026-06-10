@@ -169,7 +169,6 @@ if (replicateConfigured)
 // When the token isn't set, admin endpoints that depend on RealEsrganUpscalingService
 // will return 503 (see AdminDesignRequestsController.Upscale).
 
-builder.Services.AddSingleton<IPhotoCompositor, PhotoCompositorNotImplemented>();
 builder.Services.AddSingleton<IBannerPromptService, BannerPromptService>();
 builder.Services.AddSingleton<IDesignRequestJobQueue, DesignRequestJobQueue>();
 builder.Services.AddScoped<DesignRequestService>();          // concrete type needed by AdminDesignRequestService

@@ -20,7 +20,7 @@ namespace BannerShop.Api.Services.DesignRequests.OpenAi;
 /// BANNERSH-161: The API key is read EXCLUSIVELY from the database
 /// (system_settings.openai_api_key) — there is no appsettings fallback any
 /// more. If the row is blank or a placeholder, a solid-colour placeholder PNG
-/// is returned instead of calling the OpenAI API (mirroring MockAiImageService),
+/// is returned instead of calling the OpenAI API (solid-colour placeholder),
 /// so the service can always be registered even before the admin enters a key.
 ///
 /// BANNERSH-127: ImageModel + ImageQuality keep the DB-first / appsettings-fallback
@@ -204,8 +204,7 @@ public sealed class OpenAiImageService : IAiImageService
     }
 
     /// <summary>
-    /// Generates a solid-colour placeholder PNG (same as MockAiImageService)
-    /// when no API key is configured.
+    /// Generates a solid-colour placeholder PNG when no API key is configured.
     /// </summary>
     private async Task<AiImageResult> GeneratePlaceholderAsync(AiImageRequest request, CancellationToken ct)
     {
