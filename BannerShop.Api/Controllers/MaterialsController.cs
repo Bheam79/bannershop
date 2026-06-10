@@ -26,6 +26,7 @@ public class MaterialsController : ControllerBase
             Id = m.Id,
             Name = m.Name,
             WidthCm = m.WidthCm,
+            MaxBannerWidthCm = m.MaxBannerWidthCm > 0 ? m.MaxBannerWidthCm : m.WidthCm,
             WeightGsm = m.WeightGsm,
             PricePerSqm = m.PricePerSqm,
             AvailableFrom = m.AvailableFrom

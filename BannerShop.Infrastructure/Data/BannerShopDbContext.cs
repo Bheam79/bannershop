@@ -413,7 +413,8 @@ public class BannerShopDbContext : DbContext
             new BannerSize { Id = 4, WidthCm = 450, HeightCm = 150, IsCustomWidth = false, Name = "450 × 150 cm", IsActive = true, MaterialId = 1, FixedPrice = null, SortOrder = 4 },
             new BannerSize { Id = 5, WidthCm = 500, HeightCm = 150, IsCustomWidth = false, Name = "500 × 150 cm", IsActive = true, MaterialId = 1, FixedPrice = null, SortOrder = 5 },
             new BannerSize { Id = 6, WidthCm = null, HeightCm = 150, IsCustomWidth = true, Name = "Valgfri bredde × 150 cm", IsActive = true, MaterialId = 1, FixedPrice = null, SortOrder = 6 },
-            new BannerSize { Id = 7, WidthCm = 300, HeightCm = 180, IsCustomWidth = false, Name = "300 × 180 cm", IsActive = true, MaterialId = 2, FixedPrice = 699m, SortOrder = 7 }
+            new BannerSize { Id = 7, WidthCm = 300, HeightCm = 180, IsCustomWidth = false, Name = "300 × 180 cm", IsActive = true, MaterialId = 2, FixedPrice = 699m, SortOrder = 7 },
+            new BannerSize { Id = 100, WidthCm = null, HeightCm = 180, IsCustomWidth = true, Name = "Valgfri bredde × 180 cm", IsActive = true, MaterialId = 2, FixedPrice = null, SortOrder = 8 }
         );
 
         // Seed PricingParameters

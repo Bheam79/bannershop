@@ -1,5 +1,13 @@
 import apiClient from './client'
-import type { BannerSize, ShippingEstimate } from '@/types'
+import type { BannerSize, Material, ShippingEstimate } from '@/types'
+
+// ─── Materials endpoint ──────────────────────────────────────────────────────
+
+/** Fetches all active materials (roll widths, gsm, availability). */
+export async function fetchMaterials(): Promise<Material[]> {
+  const { data } = await apiClient.get<Material[]>('/materials')
+  return data
+}
 
 // ─── Banner size endpoints ──────────────────────────────────────────────────
 
