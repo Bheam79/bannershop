@@ -738,13 +738,15 @@ async function reorder() {
         <div class="approved-header">
           <i class="fa-solid fa-circle-check approved-icon"></i>
           <h2 class="approved-title">
-            {{ request.status === 'Final' ? 'Banneret er levert!' : 'Bestillingen er godkjent og sendes i produksjon' }}
+            <template v-if="request.status === 'Final'">Banneret er levert!</template>
+            <template v-else-if="isManual">Bestillingen er godkjent og sendes i produksjon</template>
+            <template v-else>Design godkjent — klar til bestilling</template>
           </h2>
         </div>
         <p class="approved-body">
-          {{ request.status === 'Final'
-            ? 'Banneret ditt er ferdig produsert og levert.'
-            : 'Takk! Banneret ditt er nå i produksjon.' }}
+          <template v-if="request.status === 'Final'">Banneret ditt er ferdig produsert og levert.</template>
+          <template v-else-if="isManual">Takk! Banneret ditt er nå i produksjon.</template>
+          <template v-else>Designet ditt er godkjent. Legg det i handlekurven for å fullføre bestillingen.</template>
         </p>
 
         <img
@@ -767,6 +769,16 @@ async function reorder() {
 
         <!-- BANNERSH-130: reorder / copy actions for approved/final designs -->
         <div class="reorder-actions">
+          <!-- AI Approved without finalBannerDesignId: link back to wizard so
+               the customer can complete the eyelet-picker + cart flow. -->
+          <RouterLink
+            v-if="isAi && request.status === 'Approved' && !request.finalBannerDesignId"
+            :to="`/banner-builder/ai?dr=${request.id}`"
+            class="btn btn-reorder"
+          >
+            <i class="fa-solid fa-arrow-right"></i>
+            Gå til bestilling
+          </RouterLink>
           <button
             v-if="request.finalBannerDesignId"
             type="button"

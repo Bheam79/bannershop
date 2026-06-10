@@ -1001,8 +1001,10 @@ async function approve() {
     localStorage.removeItem('ai_banner_draft_id')
 
     // Resolve pricing for the produced BannerDesign so the tilpass phase can render
-    // the running total. If the lookup fails we still hand the user off to the
-    // design-request detail page rather than throwing them onto a broken screen.
+    // the running total. If the lookup fails, surface an error in the wizard and
+    // let the user retry — never silently route away (that showed a misleading
+    // "Bestillingen er godkjent og sendes i produksjon" page before the customer
+    // had selected eyelets or paid).
     if (approved.finalBannerDesignId) {
       try {
         await loadTilpassPricing(approved.finalBannerDesignId)
@@ -1012,13 +1014,14 @@ async function approve() {
         window.scrollTo({ top: 0, behavior: 'smooth' })
         return
       } catch {
-        // Non-fatal: if pricing fails, fall through to the design-request detail page
+        approveError.value = 'Prisberegning er ikke tilgjengelig. Prøv igjen.'
+        return
       }
     }
 
-    // Fallback: navigate to the design-request detail page where the user can
-    // manually proceed to order.
-    router.push(`/account/design-requests/${designRequestId.value}`)
+    // finalBannerDesignId is null — the backend could not create a BannerDesign
+    // (e.g. the AI result file is missing). Show an error so the user can retry.
+    approveError.value = 'Designet ble godkjent, men vi kunne ikke opprette bannerdesignet. Prøv igjen eller kontakt support.'
   } catch (e: unknown) {
     const ex = e as { response?: { data?: { error?: string } }; message?: string }
     approveError.value =

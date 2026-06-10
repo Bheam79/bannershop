@@ -801,7 +801,10 @@ public sealed class DesignRequestService : IDesignRequestService
         if (r.FinalBannerDesignId.HasValue)
             return; // Already created — idempotent.
 
-        var finalPath = r.FinalCroppedStoragePath ?? r.DesignerPreviewPath;
+        // Prefer the admin-cropped path, then the designer preview, then the raw AI result.
+        // AiResultStoragePath is the full-res AI-generated image — for customers approving
+        // an AI banner that hasn't yet been admin-processed, this is the correct source file.
+        var finalPath = r.FinalCroppedStoragePath ?? r.DesignerPreviewPath ?? r.AiResultStoragePath;
         if (string.IsNullOrEmpty(finalPath))
         {
             _log.LogWarning(
