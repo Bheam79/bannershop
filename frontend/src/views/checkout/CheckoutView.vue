@@ -9,6 +9,7 @@ import type { PackingMode, ParcelDimensions } from '@/api/shop'
 import { getBannerDesign } from '@/api/bannerBuilder'
 import type { DeliveryType, EyeletOption, ShippingEstimate } from '@/types'
 import { countEyelets } from '@/types'
+import { formatNok, formatDateLong } from '@/utils/format'
 
 const router = useRouter()
 const cart = useCartStore()
@@ -253,7 +254,7 @@ const estimatedDeliveryText = computed(() => {
   if (estimatedDays.value == null) return null
   const d = new Date()
   d.setDate(d.getDate() + estimatedDays.value)
-  return d.toLocaleDateString('nb-NO', { day: '2-digit', month: 'long', year: 'numeric' })
+  return formatDateLong(d.toISOString())
 })
 
 // ── Form validation ──────────────────────────────────────────────────────────
@@ -300,11 +301,6 @@ function proceed() {
   }
 
   router.push('/checkout/payment')
-}
-
-// ── Formatting helpers ───────────────────────────────────────────────────────
-function formatNok(n: number): string {
-  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
 }
 
 // Eyelet labels — kept consistent with BannerBuilderView / AiBannerBuilderView wording.

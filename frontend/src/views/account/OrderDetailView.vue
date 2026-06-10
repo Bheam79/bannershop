@@ -3,6 +3,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { getOrder, deleteOrder } from '@/api/orders'
 import type { OrderDetailResponse, OrderItemDetail, ProductionStatusEntry } from '@/api/orders'
+import { formatNok, formatDateLong, formatDateTime } from '@/utils/format'
+import { orderStatusLabel as statusLabel, orderStatusClass as statusClass } from '@/utils/orderStatus'
 
 const route = useRoute()
 const router = useRouter()
@@ -48,46 +50,8 @@ onMounted(async () => {
   }
 })
 
-// ── Formatting ────────────────────────────────────────────────────────────────
-function formatNok(n: number): string {
-  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
-}
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('nb-NO', { day: '2-digit', month: 'long', year: 'numeric' })
-}
-function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('nb-NO', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
-}
-
-// ── Status helpers ────────────────────────────────────────────────────────────
-const STATUS_LABELS: Record<string, string> = {
-  Draft: 'Utkast',
-  PendingPayment: 'Venter betaling',
-  Paid: 'Betalt',
-  InProduction: 'Under produksjon',
-  ReadyToShip: 'Klar til frakt',
-  Shipped: 'Sendt',
-  Delivered: 'Levert',
-  Cancelled: 'Kansellert',
-}
-const STATUS_CLASSES: Record<string, string> = {
-  Draft:          'badge-draft',
-  PendingPayment: 'badge-pending',
-  Paid:           'badge-paid',
-  InProduction:   'badge-paid',
-  ReadyToShip:    'badge-ready',
-  Shipped:        'badge-shipped',
-  Delivered:      'badge-shipped',
-  Cancelled:      'badge-cancelled',
-}
-
-function statusLabel(s: string) { return STATUS_LABELS[s] ?? s }
-function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'badge-draft' }
+// formatDate alias for templates in this view (long-month format for detail views)
+const formatDate = formatDateLong
 
 // ── Production stage helpers ──────────────────────────────────────────────────
 const PRODUCTION_STEPS = [

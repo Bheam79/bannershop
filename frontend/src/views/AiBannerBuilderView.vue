@@ -28,6 +28,7 @@ import type { CartItem } from '@/types'
 import { getAiCreditsBalance, buyCreditPack, type CreditPackTier } from '@/api/aiCredits'
 import { generateRequestIntegrity } from '@/composables/useRequestIntegrity'
 import { useAiCreditsStore } from '@/stores/aiCredits'
+import { formatNok } from '@/utils/format'
 
 // ── Router / auth / cart ──────────────────────────────────────────────────────
 const router = useRouter()
@@ -1365,12 +1366,6 @@ async function confirmCreditPackPayment() {
       void regenerate()
     }
   }, 1400)
-}
-
-// ── Utils ─────────────────────────────────────────────────────────────────────
-function formatNok(n: number | null | undefined): string {
-  if (n == null) return '–'
-  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
 }
 
 // ── Manual mode (BANNERSH-189) ────────────────────────────────────────────────

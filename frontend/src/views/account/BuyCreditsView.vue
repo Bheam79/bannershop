@@ -23,6 +23,7 @@ import {
   getAiCreditsBalance,
   type CreditPackInfo,
 } from '@/api/aiCredits'
+import { formatNok } from '@/utils/format'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -224,9 +225,10 @@ function pricePerCreditFor(creditCount: number, priceNok: number): number {
   return Math.round((priceNok / creditCount) * 10) / 10
 }
 
-function formatNok(n: number | null | undefined): string {
-  if (n == null) return '–'
-  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 1 }).format(n) + ' kr'
+// Per-credit prices may be fractional (e.g. 163,3 kr) — format with 1 decimal.
+// Wrap the shared formatNok with the correct decimal count.
+function formatNokDecimal(n: number | null | undefined): string {
+  return formatNok(n, 1)
 }
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -298,7 +300,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="pack-price">{{ formatNok(packs.small.priceNok) }}</div>
           <div class="pack-per">
-            {{ formatNok(pricePerCreditFor(packs.small.creditCount, packs.small.priceNok)) }}
+            {{ formatNokDecimal(pricePerCreditFor(packs.small.creditCount, packs.small.priceNok)) }}
             per kreditt
           </div>
         </button>
@@ -318,7 +320,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="pack-price">{{ formatNok(packs.large.priceNok) }}</div>
           <div class="pack-per">
-            {{ formatNok(pricePerCreditFor(packs.large.creditCount, packs.large.priceNok)) }}
+            {{ formatNokDecimal(pricePerCreditFor(packs.large.creditCount, packs.large.priceNok)) }}
             per kreditt
           </div>
         </button>
@@ -352,7 +354,7 @@ onBeforeUnmount(() => {
         </button>
         <p v-if="perCreditPrice !== null" class="cta-sub">
           <i class="fa-solid fa-shield-halved"></i>
-          Sikret betaling via Stripe — {{ formatNok(perCreditPrice) }} per AI-bilde
+          Sikret betaling via Stripe — {{ formatNokDecimal(perCreditPrice) }} per AI-bilde
         </p>
       </div>
     </template>
@@ -376,7 +378,7 @@ onBeforeUnmount(() => {
             <span v-else class="summary-pack-badge summary-pack-badge--neutral">liten</span>
           </div>
           <div class="summary-sub">
-            {{ formatNok(pricePerCreditFor(packDetails.creditCount, packDetails.priceNok)) }} per kreditt
+            {{ formatNokDecimal(pricePerCreditFor(packDetails.creditCount, packDetails.priceNok)) }} per kreditt
           </div>
         </div>
         <div class="summary-total">{{ formatNok(packDetails.priceNok) }}</div>

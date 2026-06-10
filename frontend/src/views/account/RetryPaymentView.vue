@@ -4,6 +4,7 @@ import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { loadStripe } from '@stripe/stripe-js'
 import type { Stripe, StripeCardElement } from '@stripe/stripe-js'
 import { retryOrderPayment } from '@/api/orders'
+import { formatNok } from '@/utils/format'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BANNERSH-185: dedicated retry-payment view for orders the customer never
@@ -169,9 +170,6 @@ async function pay() {
   router.push(`/checkout/confirmation/${orderId}`)
 }
 
-function formatNok(n: number): string {
-  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
-}
 </script>
 
 <template>

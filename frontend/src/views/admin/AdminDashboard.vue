@@ -4,6 +4,8 @@ import { useRouter, RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { listAdminOrders } from '@/api/admin'
 import type { OrderListItem } from '@/api/orders'
+import { formatNok, formatDate } from '@/utils/format'
+import { orderStatusLabel as statusLabel, orderStatusAdminClass as statusClass } from '@/utils/orderStatus'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -60,26 +62,6 @@ onMounted(async () => {
   }
 })
 
-function formatNok(n: number): string {
-  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
-}
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('nb-NO', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  Draft: 'Utkast', PendingPayment: 'Venter betaling', Paid: 'Betalt',
-  InProduction: 'Under produksjon', ReadyToShip: 'Klar til frakt',
-  Shipped: 'Sendt', Delivered: 'Levert', Cancelled: 'Kansellert',
-}
-const STATUS_CLASSES: Record<string, string> = {
-  Draft: 'bg-gray-100 text-gray-600', PendingPayment: 'bg-yellow-100 text-yellow-800',
-  Paid: 'bg-blue-100 text-blue-800', InProduction: 'bg-blue-100 text-blue-800',
-  ReadyToShip: 'bg-purple-100 text-purple-800', Shipped: 'bg-green-100 text-green-800',
-  Delivered: 'bg-green-100 text-green-700', Cancelled: 'bg-red-100 text-red-700',
-}
-function statusLabel(s: string) { return STATUS_LABELS[s] ?? s }
-function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'bg-gray-100 text-gray-600' }
 </script>
 
 <template>

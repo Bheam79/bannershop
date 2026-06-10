@@ -7,6 +7,8 @@ import {
   uploadDesignRequestPreview,
 } from '@/api/admin'
 import type { AdminDesignRequestDetail } from '@/api/admin'
+import { formatNok, formatDateTime } from '@/utils/format'
+import { drStatusLabel as statusLabel, drStatusAdminClass as statusClass } from '@/utils/orderStatus'
 
 const route = useRoute()
 const requestId = Number(route.params.id)
@@ -119,47 +121,9 @@ async function uploadPreview() {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const STATUS_LABELS: Record<string, string> = {
-  Pending:           'Venter',
-  InProgress:        'Under arbeid',
-  AwaitingApproval:  'Venter godkjenning',
-  Approved:          'Godkjent',
-  RevisionRequested: 'Revisjon bedt',
-  Revised:           'Revidert',
-  Final:             'Levert',
-  Failed:            'Feilet',
-  Cancelled:         'Kansellert',
-}
-const STATUS_CLASSES: Record<string, string> = {
-  Pending:           'bg-yellow-100 text-yellow-800',
-  InProgress:        'bg-blue-100 text-blue-800',
-  AwaitingApproval:  'bg-purple-100 text-purple-800',
-  Approved:          'bg-green-100 text-green-700',
-  RevisionRequested: 'bg-orange-100 text-orange-800',
-  Revised:           'bg-sky-100 text-sky-800',
-  Final:             'bg-green-100 text-green-800',
-  Failed:            'bg-red-100 text-red-700',
-  Cancelled:         'bg-red-100 text-red-700',
-}
-
-function statusLabel(s: string) { return STATUS_LABELS[s] ?? s }
-function statusClass(s: string) { return STATUS_CLASSES[s] ?? 'bg-gray-100 text-gray-600' }
-
 function modeLabel(m: string) { return m === 'Manual' ? 'Manuell' : 'AI' }
 
 function langLabel(l: string) { return l === 'nb' ? 'Norsk' : l === 'en' ? 'Engelsk' : l }
-
-function formatNok(n: number): string {
-  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
-}
-
-function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('nb-NO', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
-}
 
 // Latest revision comment for RevisionRequested state
 const latestRevision = computed(() => {

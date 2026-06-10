@@ -7,6 +7,7 @@ import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore } from '@/stores/checkout'
 import { useAuthStore } from '@/stores/auth'
 import { createOrderDraft, mockPayOrder } from '@/api/orders'
+import { formatNok } from '@/utils/format'
 
 const router = useRouter()
 const cart = useCartStore()
@@ -225,9 +226,6 @@ const expressFee = computed(() => checkout.expressFeeNok)
 const total = computed(() => subtotal.value + shippingCost.value + expressFee.value)
 const vatAmount = computed(() => total.value * 0.2)
 
-function formatNok(n: number): string {
-  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
-}
 
 // BANNERSH-182: cache the draft we created on the first click so that a
 // failed Stripe confirmation (bad card, 3DS abort, network blip) followed by

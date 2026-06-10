@@ -3,6 +3,13 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { listOrders, deleteOrder } from '@/api/orders'
 import { listDesignRequests } from '@/api/designRequests'
+import { formatNok, formatDate } from '@/utils/format'
+import {
+  ORDER_STATUS_LABELS,
+  ORDER_STATUS_CLASSES,
+  DR_STATUS_CUSTOMER_LABELS as DR_STATUS_LABELS,
+  DR_STATUS_CLASSES,
+} from '@/utils/orderStatus'
 
 const router = useRouter()
 
@@ -40,50 +47,6 @@ const pagedItems = computed(() =>
 const totalCount = computed(() => allItems.value.length)
 const hasPrev = computed(() => page.value > 1)
 const hasNext = computed(() => page.value < totalPages.value)
-
-// ── Status maps ───────────────────────────────────────────────────────────────
-const ORDER_STATUS_LABELS: Record<string, string> = {
-  Draft:          'Utkast',
-  PendingPayment: 'Venter betaling',
-  Paid:           'Betalt',
-  InProduction:   'I produksjon',
-  ReadyToShip:    'Klar til frakt',
-  Shipped:        'Sendt',
-  Delivered:      'Levert',
-  Cancelled:      'Kansellert',
-}
-const ORDER_STATUS_CLASSES: Record<string, string> = {
-  Draft:          'badge-draft',
-  PendingPayment: 'badge-pending',
-  Paid:           'badge-paid',
-  InProduction:   'badge-paid',
-  ReadyToShip:    'badge-ready',
-  Shipped:        'badge-shipped',
-  Delivered:      'badge-shipped',
-  Cancelled:      'badge-cancelled',
-}
-const DR_STATUS_LABELS: Record<string, string> = {
-  Pending:           'Venter',
-  InProgress:        'Under arbeid',
-  AwaitingApproval:  'Til godkjenning',
-  Approved:          'Design klar',
-  RevisionRequested: 'Revisjon',
-  Revised:           'Revidert',
-  Final:             'Levert',
-  Failed:            'Feilet',
-  Cancelled:         'Kansellert',
-}
-const DR_STATUS_CLASSES: Record<string, string> = {
-  Pending:           'badge-pending',
-  InProgress:        'badge-inprogress',
-  AwaitingApproval:  'badge-awaiting',
-  Approved:          'badge-approved',
-  RevisionRequested: 'badge-revision',
-  Revised:           'badge-revised',
-  Final:             'badge-approved',
-  Failed:            'badge-cancelled',
-  Cancelled:         'badge-cancelled',
-}
 
 async function load() {
   loading.value = true
@@ -187,15 +150,6 @@ function isDeleting(item: UnifiedItem): boolean {
   return item.kind === 'order' && deletingIds.value.has(item.id)
 }
 
-function formatNok(n: number): string {
-  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('nb-NO', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  })
-}
 </script>
 
 <template>

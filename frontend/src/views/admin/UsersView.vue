@@ -2,6 +2,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { listAdminUsers, type AdminUserListItem } from '@/api/admin'
+import { formatDate } from '@/utils/format'
 
 const router = useRouter()
 
@@ -52,10 +53,6 @@ onMounted(() => load(1))
 
 const hasPrev = computed(() => page.value > 1)
 const hasNext = computed(() => page.value < totalPages.value)
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('nb-NO', { day: '2-digit', month: 'short', year: 'numeric' })
-}
 
 function roleLabel(role: string): string {
   return role === 'Admin' ? 'Admin' : 'Kunde'

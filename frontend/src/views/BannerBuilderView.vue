@@ -10,6 +10,7 @@ import UploadZone from '@/components/banner-builder/UploadZone.vue'
 import EyeletPreview from '@/components/shop/EyeletPreview.vue'
 import { getBannerDesign, rotateBanner, setBannerHeight, fetchPreviewBlobUrl } from '@/api/bannerBuilder'
 import type { UploadResponse } from '@/api/bannerBuilder'
+import { formatNok } from '@/utils/format'
 
 const router = useRouter()
 const route = useRoute()
@@ -313,9 +314,6 @@ const lineTotal = computed(() =>
   ((customPriceNok.value ?? 0) + eyeletFeePerUnit.value) * qty.value,
 )
 
-function formatNok(n: number): string {
-  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
-}
 
 // ── Upload callback ───────────────────────────────────────────────────────────
 function onUploaded(resp: UploadResponse) {

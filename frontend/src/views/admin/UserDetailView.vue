@@ -7,6 +7,7 @@ import {
   type AdminUserDetail,
   type AdminAiCreditTransaction,
 } from '@/api/admin'
+import { formatDateTime as formatDate } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -63,16 +64,6 @@ async function submitGrant() {
   } finally {
     granting.value = false
   }
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('nb-NO', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 const REASON_LABELS: Record<string, string> = {

@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
 import { getOrder } from '@/api/orders'
 import type { OrderDetailResponse } from '@/api/orders'
+import { formatNok, formatDateLong } from '@/utils/format'
 
 const route = useRoute()
 const orderId = Number(route.params.orderId)
@@ -21,18 +22,7 @@ onMounted(async () => {
   }
 })
 
-function formatNok(n: number): string {
-  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
-}
-
-function formatDate(isoDate: string | null): string {
-  if (!isoDate) return '—'
-  return new Date(isoDate).toLocaleDateString('nb-NO', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-  })
-}
+const formatDate = formatDateLong
 </script>
 
 <template>

@@ -4,6 +4,7 @@ import { useRouter, RouterLink } from 'vue-router'
 import { listDesignRequests, type DesignRequestListItem } from '@/api/designRequests'
 import { listMyUploads, type UploadedDesignListItem } from '@/api/bannerBuilder'
 import { useAuthStore } from '@/stores/auth'
+import { formatDate } from '@/utils/format'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -61,12 +62,6 @@ function statusDot(s: string): string {
 
 function modeLabel(m: string): string {
   return m === 'Manual' ? 'Designer' : 'AI'
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('nb-NO', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  })
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────

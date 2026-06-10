@@ -2,6 +2,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { listDesignRequests, type DesignRequestListItem } from '@/api/designRequests'
+import { formatDate } from '@/utils/format'
+import { drStatusCustomerLabel as statusLabel, drStatusClass as statusClass } from '@/utils/orderStatus'
 
 const router = useRouter()
 
@@ -15,47 +17,11 @@ const sortedItems = computed(() =>
   ),
 )
 
-const STATUS_LABELS: Record<string, string> = {
-  Pending:           'Venter',
-  InProgress:        'Under arbeid',
-  AwaitingApproval:  'Til godkjenning',
-  Approved:          'Design klar',
-  RevisionRequested: 'Revisjon',
-  Revised:           'Revidert',
-  Final:             'Levert',
-  Failed:            'Feilet',
-  Cancelled:         'Kansellert',
-}
-const STATUS_CLASSES: Record<string, string> = {
-  Pending:           'badge-pending',
-  InProgress:        'badge-inprogress',
-  AwaitingApproval:  'badge-awaiting',
-  Approved:          'badge-approved',
-  RevisionRequested: 'badge-revision',
-  Revised:           'badge-revised',
-  Final:             'badge-approved',
-  Failed:            'badge-cancelled',
-  Cancelled:         'badge-cancelled',
-}
-
-function statusLabel(s: string): string {
-  return STATUS_LABELS[s] ?? s
-}
-function statusClass(s: string): string {
-  return STATUS_CLASSES[s] ?? 'badge-draft'
-}
-
 function modeLabel(m: string): string {
   return m === 'Manual' ? 'Designer' : 'AI'
 }
 function modeClass(m: string): string {
   return m === 'Manual' ? 'badge-manual' : 'badge-ai'
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('nb-NO', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  })
 }
 
 function goToDetail(id: number) {

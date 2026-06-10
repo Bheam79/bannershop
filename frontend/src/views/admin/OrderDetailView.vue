@@ -10,6 +10,7 @@ import {
   uploadDesignRequestPreview,
 } from '@/api/admin'
 import type { OrderDetailResponse, OrderItemDetail } from '@/api/orders'
+import { formatNok, formatDateLong, formatDateTime } from '@/utils/format'
 
 const route = useRoute()
 const orderId = Number(route.params.id)
@@ -357,17 +358,7 @@ function itemLabel(item: OrderItemDetail): string {
   if (item.customWidthCm) return `${item.customWidthCm} × ${item.heightCm} cm`
   return `Banner ${item.heightCm} cm`
 }
-function formatNok(n: number): string {
-  return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
-}
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('nb-NO', { day: '2-digit', month: 'long', year: 'numeric' })
-}
-function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('nb-NO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
+const formatDate = formatDateLong
 
 const deliveryLabel = computed(() => {
   if (order.value?.deliveryType === 'Express') return 'Ekspress'
