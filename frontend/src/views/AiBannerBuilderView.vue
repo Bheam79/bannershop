@@ -3525,15 +3525,15 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   border: 2px solid var(--line);
   border-radius: 12px;
-  padding: 10px 10px 8px;
+  padding: 14px 18px 12px;
   background: var(--surface-2);
   cursor: pointer;
   font-family: var(--font-ui);
   transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
-  min-width: 62px;
+  min-width: 78px;
 }
 .ratio-btn:hover {
   border-color: var(--line-soft);
@@ -3560,14 +3560,14 @@ onBeforeUnmount(() => {
 }
 .ratio-btn-active .ratio-icon { opacity: 1; }
 .ratio-label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--text);
   line-height: 1;
   white-space: nowrap;
 }
 .ratio-sub {
-  font-size: 10px;
+  font-size: 13px;
   color: var(--faint);
   line-height: 1;
   white-space: nowrap;
