@@ -6,7 +6,7 @@ import { useCheckoutStore } from '@/stores/checkout'
 import { useAuthStore } from '@/stores/auth'
 import { calculateShipping, previewParcel } from '@/api/shop'
 import type { PackingMode, ParcelDimensions } from '@/api/shop'
-import { getBannerDesign } from '@/api/bannerBuilder'
+import { generateBannerPreview } from '@/api/bannerBuilder'
 import type { DeliveryType, EyeletOption, ShippingEstimate } from '@/types'
 import { countEyelets } from '@/types'
 import { formatNok, formatDateLong } from '@/utils/format'
@@ -28,7 +28,7 @@ function thumbFor(designId: number | undefined): string | null {
   return thumbCache.value.get(designId) ?? null
 }
 
-async function ensureThumb(designId: number | undefined): Promise<void> {
+async function ensureThumb(designId: number | undefined, eyelet: EyeletOption = 'None'): Promise<void> {
   if (designId == null) return
   if (thumbCache.value.has(designId)) return
   if (thumbInflight.has(designId)) {
@@ -37,10 +37,8 @@ async function ensureThumb(designId: number | undefined): Promise<void> {
   }
   const p = (async () => {
     try {
-      const design = await getBannerDesign(designId)
-      // The preview endpoint is [AllowAnonymous] so the URL can be used directly
-      // in an <img src>. Fall back to empty string if the backend ever returns null.
-      const url = design.previewUrl || ''
+      // Route through the unified preview engine so the thumbnail carries eyelet overlays.
+      const url = await generateBannerPreview(designId, eyelet)
       if (url) thumbCache.value.set(designId, url)
       return url || null
     } catch {
@@ -59,7 +57,7 @@ function preloadThumbnails() {
       thumbCache.value.set(item.designId, item.previewUrl)
     }
     if (item.designId != null && !thumbCache.value.has(item.designId)) {
-      void ensureThumb(item.designId)
+      void ensureThumb(item.designId, item.eyeletOption)
     }
   }
 }

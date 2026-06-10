@@ -1,4 +1,5 @@
 import apiClient from './client'
+import type { EyeletOption } from '@/types'
 
 // ─── DTOs (match BannerShop.Api.Models.BannerBuilder) ───────────────────────
 
@@ -102,14 +103,20 @@ export async function listMyUploads(): Promise<UploadedDesignListItem[]> {
 }
 
 /**
- * Fetches the preview image as a blob URL (object URL).
- * The GET endpoint requires auth, so we cannot use the URL directly in an &lt;img src&gt;.
- * Caller is responsible for `URL.revokeObjectURL()` when done.
+ * Calls the unified preview engine (BannerPreviewController) to generate (or return
+ * a cached) banner preview JPEG with the specified eyelet overlay.
+ *
+ * Returns the opaque GUID-keyed URL (`/api/banner-preview/{guid}`) that can be used
+ * directly in an `<img src>` — no blob management needed. The server caches previews
+ * by a deterministic GUID so the same inputs always reuse the same file.
  */
-export async function fetchPreviewBlobUrl(designId: number): Promise<string> {
-  const { data } = await apiClient.get<Blob>(
-    `/banner-builder/${designId}/preview`,
-    { responseType: 'blob' },
+export async function generateBannerPreview(
+  designId: number,
+  eyelet: EyeletOption = 'None',
+): Promise<string> {
+  const { data } = await apiClient.get<{ previewUrl: string; guid: string }>(
+    `/banner-preview/generate`,
+    { params: { designId, eyelet } },
   )
-  return URL.createObjectURL(data)
+  return data.previewUrl
 }

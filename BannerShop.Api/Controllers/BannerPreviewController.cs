@@ -95,6 +95,11 @@ public class BannerPreviewController : ControllerBase
     /// Serves a cached banner preview JPEG by its opaque GUID.
     /// The GUID is validated server-side — only exact 32-char lowercase hex strings
     /// produced by the generate endpoint are accepted.
+    ///
+    /// Caching: because the GUID is a deterministic MD5 of all inputs (source path +
+    /// dimensions + eyelet option), the same GUID always maps to the same pixels.
+    /// We therefore respond with a strong ETag equal to the GUID and allow
+    /// public caching for 24 hours so browsers and CDNs do not re-fetch unchanged previews.
     /// </summary>
     [HttpGet("{guid}")]
     public IActionResult Serve(string guid)
@@ -102,7 +107,15 @@ public class BannerPreviewController : ControllerBase
         var path = _previews.ResolvePreviewPath(guid);
         if (path is null) return NotFound();
 
-        // Stream directly; no ETag / caching headers needed for MVP.
+        // Strong ETag equals the GUID (which is itself a deterministic MD5 of all inputs),
+        // so the same GUID always means the same bytes.
+        var etag = $"\"{guid}\"";
+        if (Request.Headers.IfNoneMatch.ToString() == etag)
+            return StatusCode(304); // Not Modified
+
+        // Public, 24-hour cache. The GUID is content-addressed, so stale-data risk is zero.
+        Response.Headers.ETag = etag;
+        Response.Headers.CacheControl = "public, max-age=86400, immutable";
         var stream = System.IO.File.OpenRead(path);
         return File(stream, "image/jpeg");
     }

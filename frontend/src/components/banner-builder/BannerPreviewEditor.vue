@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import {
   rotateBanner,
   setBannerHeight,
-  fetchPreviewBlobUrl,
+  generateBannerPreview,
 } from '@/api/bannerBuilder'
 
 const props = defineProps<{
@@ -21,8 +21,8 @@ const emit = defineEmits<{
   }): void
 }>()
 
+// Server-generated GUID-keyed URL — no blob management needed.
 const previewSrc = ref<string | null>(null)
-const previewBlobUrl = ref<string | null>(null)
 const loadingPreview = ref(false)
 const previewError = ref<string | null>(null)
 
@@ -46,13 +46,7 @@ async function loadPreview() {
   loadingPreview.value = true
   previewError.value = null
   try {
-    if (previewBlobUrl.value) {
-      URL.revokeObjectURL(previewBlobUrl.value)
-      previewBlobUrl.value = null
-    }
-    const url = await fetchPreviewBlobUrl(props.designId)
-    previewBlobUrl.value = url
-    previewSrc.value = url
+    previewSrc.value = await generateBannerPreview(props.designId)
   } catch (e: unknown) {
     const ex = e as { response?: { status?: number }; message?: string }
     previewError.value =
@@ -113,10 +107,6 @@ watch(() => props.designId, () => {
   rotationDegrees.value = props.initialRotationDegrees
   void loadPreview()
   notify()
-})
-
-onUnmounted(() => {
-  if (previewBlobUrl.value) URL.revokeObjectURL(previewBlobUrl.value)
 })
 </script>
 

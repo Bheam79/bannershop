@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
@@ -8,7 +8,7 @@ import type { BannerSize, CartItem, EyeletOption } from '@/types'
 import { countEyelets } from '@/types'
 import UploadZone from '@/components/banner-builder/UploadZone.vue'
 import EyeletPreview from '@/components/shop/EyeletPreview.vue'
-import { getBannerDesign, rotateBanner, setBannerHeight, fetchPreviewBlobUrl } from '@/api/bannerBuilder'
+import { getBannerDesign, rotateBanner, setBannerHeight, generateBannerPreview } from '@/api/bannerBuilder'
 import type { UploadResponse } from '@/api/bannerBuilder'
 import { formatNok } from '@/utils/format'
 
@@ -28,8 +28,10 @@ const heightCm = ref<number>(150)
 const computedWidthCm = ref<number>(0)
 const rotationDegrees = ref<number>(0)
 
-// ── Preview (single blob URL used by EyeletPreview) ───────────────────────────
-const previewBlobUrl = ref<string | null>(null)
+// ── Preview URL (served by the unified BannerPreviewService, GUID-keyed) ────────
+// No blob management needed — the URL is a stable server path that can be used
+// directly in <img src> without URL.createObjectURL / revokeObjectURL.
+const previewBlobUrl = ref<string | null>(null) // kept as 'previewBlobUrl' for template compat
 const previewLoading = ref(false)
 const previewError = ref<string | null>(null)
 
@@ -38,11 +40,9 @@ async function loadPreview() {
   previewLoading.value = true
   previewError.value = null
   try {
-    if (previewBlobUrl.value) {
-      URL.revokeObjectURL(previewBlobUrl.value)
-      previewBlobUrl.value = null
-    }
-    previewBlobUrl.value = await fetchPreviewBlobUrl(design.value.designId)
+    // Fetch a plain (no-eyelet) server preview; the EyeletPreview SVG overlay adds
+    // eyelet circles interactively so the builder feels instant without extra round-trips.
+    previewBlobUrl.value = await generateBannerPreview(design.value.designId)
   } catch (e: unknown) {
     const ex = e as { response?: { status?: number }; message?: string }
     previewError.value =
@@ -53,10 +53,6 @@ async function loadPreview() {
     previewLoading.value = false
   }
 }
-
-onUnmounted(() => {
-  if (previewBlobUrl.value) URL.revokeObjectURL(previewBlobUrl.value)
-})
 
 // ── Rotation ──────────────────────────────────────────────────────────────────
 const rotating = ref(false)
