@@ -37,6 +37,9 @@ export default defineConfig({
 
   // Pass through as global variables accessible in tests
   globalSetup: './helpers/global-setup.ts',
+  // Merges Istanbul coverage data and generates HTML report when
+  // VITE_COVERAGE=true.  Runs after all tests complete.
+  globalTeardown: './helpers/global-teardown.ts',
 })
 
 export { BASE_URL, API_URL }

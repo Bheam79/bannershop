@@ -4,7 +4,7 @@
  * Tests admin login, access control, size management, pricing parameters,
  * order management, production stage updates, and shipping tracking.
  */
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../helpers/fixtures'
 import { loginViaApi, loginViaUI, clearAuth, getTestUserEmail, getTestUserPassword, getAdminEmail, getAdminPassword } from '../helpers/auth'
 import {
   apiLogin,

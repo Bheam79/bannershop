@@ -88,7 +88,8 @@ DOCKER        := $(shell command -v docker 2>/dev/null)
 # ─────────────────────────────────────────────────────────────────────────────
 .PHONY: help up down restart status logs build publish frontend config secrets \
         db-up db-down install-service stop-service start-service uninstall \
-        check-tools print-admin-password
+        check-tools print-admin-password \
+        test test-coverage e2e-coverage
 
 help:
 	@echo "BannerShop — production Makefile"
@@ -343,6 +344,21 @@ install-service: build
 		journalctl --user -u $(SERVICE_NAME) -n 60 --no-pager >&2; \
 		exit 1; \
 	fi
+
+# ── Test & coverage ──────────────────────────────────────────────────────────
+# Run unit tests (no coverage)
+test:
+	dotnet test $(ROOT_DIR)/BannerShop.slnx --nologo -v quiet
+
+# Run unit tests and generate an HTML coverage report → ./coverage-report/
+# Requires the dotnet-reportgenerator-globaltool local tool (see dotnet-tools.json).
+test-coverage:
+	@bash $(ROOT_DIR)/scripts/test-coverage.sh
+
+# Run Playwright e2e tests with Istanbul frontend coverage → e2e/coverage/
+# Requires: API backend running on localhost:5000 (dotnet run or make up).
+e2e-coverage:
+	@bash $(ROOT_DIR)/scripts/e2e-coverage.sh
 
 stop-service:
 	-@systemctl --user stop $(SERVICE_NAME) 2>/dev/null || true

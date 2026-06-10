@@ -16,7 +16,7 @@
  * test owns its own IP regardless of what the surrounding CI runner / proxy
  * looks like. This makes the suite repeatable across runs without a DB wipe.
  */
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page } from '../helpers/fixtures'
 import {
   apiRegister,
   apiCreateAiDesignRequest,

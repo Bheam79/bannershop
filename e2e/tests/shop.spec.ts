@@ -5,7 +5,7 @@
  * preview panel, and navigation to banner-builder flows.
  * No authentication required.
  */
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../helpers/fixtures'
 
 test.describe('Public shop', () => {
   test.beforeEach(async ({ page }) => {

@@ -59,6 +59,32 @@ cd /workspace/repo/frontend && npm run build-only
 cd /workspace/repo/BannerShop.Api && dotnet run
 ```
 
+## Coverage testing (BANNERSH-195)
+
+### Unit test coverage (C# / Coverlet → HTML)
+```bash
+# Install local tool once (dotnet-tools.json tracks the version):
+dotnet tool restore
+# Run tests + generate HTML report → coverage-report/index.html
+bash scripts/test-coverage.sh
+# or:
+make test-coverage
+```
+- Uses `coverlet.collector` (already in `BannerShop.Tests.csproj`) + `dotnet-reportgenerator-globaltool` (local tool, pinned in `dotnet-tools.json`).
+- Output: `TestResults/` (Cobertura XML) + `coverage-report/` (HTML).
+
+### E2E coverage (Vue/TS frontend / Istanbul → HTML)
+```bash
+# Requires API backend already running on localhost:5000
+bash scripts/e2e-coverage.sh
+# or:
+make e2e-coverage
+```
+- `vite-plugin-istanbul` instruments the frontend when `VITE_COVERAGE=true`; normal builds are unaffected.
+- Each Playwright test extracts `window.__coverage__` via the `e2e/helpers/fixtures.ts` extended `test` fixture.
+- Global teardown (`e2e/helpers/global-teardown.ts`) merges all per-test JSON files and generates `e2e/coverage/index.html`.
+- All spec files import `test`/`expect` from `../helpers/fixtures` (drop-in replacement for `@playwright/test`).
+
 ## Ports
 - Backend API: `http://localhost:5000` (or port 80 via container)
 - Frontend dev: `http://localhost:5173` → mapped to `31780` on host? (Vite on :5173 exposed on :80 → host :31780)

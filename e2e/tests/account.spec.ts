@@ -4,7 +4,7 @@
  * Tests registration, login (valid & invalid), order list, order detail
  * with production stages, and shipped order tracking info.
  */
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../helpers/fixtures'
 import { loginViaUI, loginViaApi, clearAuth, getTestUserEmail, getTestUserPassword } from '../helpers/auth'
 import {
   apiLogin,

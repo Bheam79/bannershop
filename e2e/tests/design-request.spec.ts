@@ -15,7 +15,7 @@
  * Stripe webhook cannot advance status. All status progression is done via
  * the admin status API (apiAdminUpdateDesignRequestStatus).
  */
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../helpers/fixtures'
 import {
   injectAuth,
   loginViaApi,

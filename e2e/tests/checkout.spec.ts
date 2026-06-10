@@ -8,7 +8,7 @@
  * client secret the frontend skips real Stripe and navigates directly
  * to the confirmation page.
  */
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page } from '../helpers/fixtures'
 import { loginViaApi, getTestUserEmail, getTestUserPassword } from '../helpers/auth'
 import { apiCreateOrder, apiFetchSizes, apiLogin } from '../helpers/api'
 
