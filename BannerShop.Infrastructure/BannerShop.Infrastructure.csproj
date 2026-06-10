@@ -12,6 +12,11 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <!-- Pin Relational to 9.0.5 so it matches InMemory 9.0.5 used in BannerShop.Tests.
+         Pomelo 9.0.0 (latest stable) only requires Relational >= 9.0.0, so 9.0.5 is
+         compatible. This explicit reference overrides the 9.0.0 Pomelo pulls transitively
+         and eliminates the MSB3277 build warning about the version conflict. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.5" />
     <PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="9.0.0" />
   </ItemGroup>
 
