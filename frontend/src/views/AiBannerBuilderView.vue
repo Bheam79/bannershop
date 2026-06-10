@@ -13,6 +13,7 @@ import EyeletPreview from '@/components/shop/EyeletPreview.vue'
 import {
   fetchTemplates,
   createAiRequest,
+  createManualRequest,
   getDesignRequest,
   approveDesignRequest,
   regenerateDesignRequest,
@@ -23,6 +24,7 @@ import {
   type AiPaywallData,
   type PaywallOptions,
 } from '@/api/designRequests'
+import type { CartItem } from '@/types'
 import { getAiCreditsBalance, buyCreditPack, type CreditPackTier } from '@/api/aiCredits'
 import { generateRequestIntegrity } from '@/composables/useRequestIntegrity'
 import { useAiCreditsStore } from '@/stores/aiCredits'
@@ -36,6 +38,34 @@ const cart = useCartStore()
 // update into the store so the header pill stays accurate without forcing the
 // user to navigate away from the wizard.
 const creditsStore = useAiCreditsStore()
+
+// ── Mode (BANNERSH-189) ───────────────────────────────────────────────────────
+// Single component, two routes:
+//   /banner-builder/ai     → mode = 'ai'     (calls OpenAI, paywall, credits, …)
+//   /banner-builder/manual → mode = 'manual' (no AI, "Ditt banner" placeholder, no paywall;
+//                                              the designer takes over after checkout)
+// All AI-only UI elements (credit badge, paywall modal, regenerate panel, anon-pending
+// auth nudge, "Generer ny versjon" button) are hidden in manual mode by a `mode === 'ai'`
+// guard. The rest of the wizard (template grid, personalization form, ratio picker,
+// quality picker, eyelet picker / tilpass step) renders the same in both modes.
+const mode = computed<'ai' | 'manual'>(() =>
+  route.path.endsWith('/manual') ? 'manual' : 'ai',
+)
+const isManual = computed(() => mode.value === 'manual')
+
+const MANUAL_DESIGN_FEE_NOK = 495
+const MANUAL_SESSION_KEY = 'manual_banner_builder_state'
+
+const manualSubmitting = ref(false)
+const manualSubmitError = ref<string | null>(null)
+/** Design request id created by `createManualRequest` when the user clicks "Gå videre". */
+const manualDesignRequestId = ref<number | null>(null)
+/** Banner production cost portion returned by `createManualRequest`. */
+const manualBannerPriceNok = ref<number>(0)
+/** Design fee portion (495 kr) returned by `createManualRequest`. */
+const manualDesignPriceNok = ref<number>(MANUAL_DESIGN_FEE_NOK)
+/** Data-URL of the canvas-rendered "Ditt banner" placeholder shown in manual mode. */
+const manualPlaceholderUrl = ref<string | null>(null)
 
 // ── Step state ────────────────────────────────────────────────────────────────
 const step = ref<1 | 2 | 3>(1)
@@ -77,7 +107,7 @@ const ratioOptions = [
   { value: '4:1' as AspectRatioOption, label: '4:1', sub: 'superlangt', iconW: 28, iconH: 7 },
 ] as const
 
-// ── Step 2: Quality / size selection (mirrors ManualBannerBuilderView) ────────
+// ── Step 2: Quality / size selection ────────────────────────────────────────
 // BANNERSH-162: quality/size picker only appears AFTER a banner has been
 // generated, and the displayed widths are derived from the actual aspect ratio
 // of the AI image (set via the preview <img>'s @load handler).
@@ -145,7 +175,12 @@ const tilpassEyeletFeeNok = computed(() =>
   tilpassEyeletCount.value * tilpassEyeletPriceNok.value,
 )
 const tilpassTotalNok = computed(() =>
-  tilpassBannerPriceNok.value + tilpassEyeletFeeNok.value,
+  tilpassBannerPriceNok.value
+  + tilpassEyeletFeeNok.value
+  // BANNERSH-189: in manual mode the cart adds a 495 kr designer-fee line, so the
+  // running total must include it here too — otherwise the summary would
+  // under-report what the customer pays at checkout.
+  + (isManual.value ? manualDesignPriceNok.value : 0),
 )
 
 // ── Credits badge (auth users only) ──────────────────────────────────────────
@@ -272,12 +307,15 @@ const step1Valid = computed(() => selectedTemplateId.value !== null)
 // so pre-generation validation must NOT require custom width/height. The custom
 // validation only matters after the user has actually selected 'Egendefinert'
 // in the (post-generation) picker — guarded by genPhase === 'ready'.
+// BANNERSH-189: manual mode additionally requires a portrait photo (the designer
+// needs it as reference) — checked once `mode === 'manual'`.
 const step2Valid = computed(() => {
   if (
     personName.value.trim().length === 0 ||
     textContent.value.trim().length === 0 ||
     themeDescription.value.trim().length === 0
   ) return false
+  if (isManual.value && uploadedPhotoBannerDesignId.value === null) return false
   if (genPhase.value === 'ready' && selectedQuality.value === 'custom') {
     return (customWidth.value ?? 0) > 0 && (customHeight.value ?? 0) > 0
   }
@@ -406,6 +444,26 @@ watch(customHeight, (h) => {
   customLinkLock = true
   customWidth.value = Math.max(1, Math.round(h * r))
   releaseCustomLink()
+})
+
+// BANNERSH-189: in manual mode, regenerate the placeholder when the user
+// changes the aspect ratio AFTER an initial generation — the placeholder must
+// stay in sync with the customer's chosen ratio (the "Se forhåndsvisning" button
+// is hidden once we're in 'ready' phase to keep the manual flow linear).
+watch(selectedAspectRatio, () => {
+  if (isManual.value && genPhase.value === 'ready' && currentDesignRequest.value) {
+    const parts = selectedAspectRatio.value.split(':')
+    const rW = parseInt(parts[0] ?? '0', 10) || 16
+    const rH = parseInt(parts[1] ?? '0', 10) || 9
+    manualPlaceholderUrl.value = generatePlaceholderDataUrl(rW, rH)
+    aiImageNaturalRatio.value = rW / rH
+    // Mutate the synthetic detail so the <img :src> updates.
+    currentDesignRequest.value = {
+      ...currentDesignRequest.value,
+      previewUrl: manualPlaceholderUrl.value,
+      aspectRatio: aspectRatioForBackend.value,
+    }
+  }
 })
 
 // BANNERSH-162: when the user opens the 'Egendefinert' tab for the first time
@@ -603,16 +661,20 @@ async function loadCreditsBalance() {
 }
 
 // ── Past designs (auth only, BANNERSH-83) ────────────────────────────────────
+// BANNERSH-189: filter by mode so the AI wizard shows AI designs and the manual
+// wizard shows previously-ordered Manual designs (per the task spec). Manual
+// designs may not have a previewUrl yet (designer hasn't uploaded one) — still
+// surface them with a placeholder thumbnail in that case.
 async function loadPastDesigns() {
   if (!auth.isLoggedIn) return
   pastDesignsLoading.value = true
   try {
     const all = await listDesignRequests()
-    // Show only AI designs that produced a viewable image — Manual designs live in
-    // their own /account/design-requests area and shouldn't clutter the wizard.
-    pastDesigns.value = all.filter(
-      (d) => d.mode === 'Ai' && d.previewUrl !== null,
-    )
+    if (isManual.value) {
+      pastDesigns.value = all.filter((d) => d.mode === 'Manual')
+    } else {
+      pastDesigns.value = all.filter((d) => d.mode === 'Ai' && d.previewUrl !== null)
+    }
   } catch {
     // Non-critical — gallery just stays empty.
     pastDesigns.value = []
@@ -623,6 +685,13 @@ async function loadPastDesigns() {
 
 // ── Pick a past banner: load it into the wizard's "ready" view ───────────────
 async function selectPastDesign(item: DesignRequestListItem) {
+  // BANNERSH-189: in manual mode the wizard's purpose is to start a new order —
+  // a previously-ordered manual design is already in the customer's order
+  // history, so route there instead of trying to "reopen" it in the wizard.
+  if (isManual.value) {
+    void router.push(`/account/design-requests/${item.id}`)
+    return
+  }
   // Load full detail so all the action-button logic in the ready phase has the
   // data it expects (status, revisionsRemaining, etc.).
   try {
@@ -678,6 +747,9 @@ function returnToWizardIdle() {
   // BANNERSH-162: drop the cached natural ratio so the quality picker is
   // ready for whatever ratio the next generation produces.
   aiImageNaturalRatio.value = null
+  // BANNERSH-189: drop the manual placeholder so a fresh ratio renders next time.
+  manualPlaceholderUrl.value = null
+  manualSubmitError.value = null
   localStorage.removeItem('ai_banner_draft_id')
   step.value = 2
 }
@@ -989,6 +1061,12 @@ async function loadTilpassPricing(bannerDesignId: number) {
 
 // ── Tilpass: add to cart + go to checkout ────────────────────────────────────
 function addTilpassToCartAndCheckout() {
+  // BANNERSH-189: manual mode uses a different cart-add path (two items: banner
+  // + 495 kr designer-fee line) — dispatch there.
+  if (isManual.value) {
+    addManualToCartAndCheckout()
+    return
+  }
   const d = currentDesignRequest.value
   const size = tilpassBannerSize.value
   if (!d?.finalBannerDesignId || !size) return
@@ -1292,10 +1370,276 @@ function formatNok(n: number | null | undefined): string {
   return new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(n) + ' kr'
 }
 
+// ── Manual mode (BANNERSH-189) ────────────────────────────────────────────────
+// Generate a canvas-based "Ditt banner" placeholder image with the customer's
+// chosen aspect ratio. The placeholder serves three purposes:
+//   1. Gives the customer something visual to confirm the banner shape.
+//   2. Feeds `aiImageNaturalRatio` so the quality/size picker computes widths
+//      against the actual chosen ratio (same code path as AI mode).
+//   3. Lets the existing template render the preview <img> unchanged.
+function generatePlaceholderDataUrl(widthUnits: number, heightUnits: number): string {
+  const targetH = 600
+  const targetW = Math.max(1, Math.round((targetH * widthUnits) / Math.max(1, heightUnits)))
+  const canvas = document.createElement('canvas')
+  canvas.width = targetW
+  canvas.height = targetH
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    // Fallback: 1×1 transparent PNG. The text-less preview still works since the
+    // quality picker uses `aiImageNaturalRatio` (set separately) for dimensions.
+    return canvas.toDataURL('image/png')
+  }
+  // Warm dark gradient background — matches the site palette.
+  const gradient = ctx.createLinearGradient(0, 0, targetW, targetH)
+  gradient.addColorStop(0, '#3a2e22')
+  gradient.addColorStop(1, '#1e1813')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, targetW, targetH)
+  // Subtle inner border so the empty banner reads as a "frame".
+  ctx.strokeStyle = 'rgba(231, 185, 78, 0.45)'
+  ctx.lineWidth = 4
+  ctx.strokeRect(8, 8, targetW - 16, targetH - 16)
+  // Centred "Ditt banner" title.
+  const titleSize = Math.round(Math.min(targetW, targetH * 1.4) * 0.13)
+  ctx.fillStyle = '#e7b94e'
+  ctx.font = `bold ${titleSize}px Georgia, serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('Ditt banner', targetW / 2, targetH / 2 - titleSize * 0.15)
+  // Hint line — small, muted.
+  const subSize = Math.max(12, Math.round(titleSize * 0.32))
+  ctx.fillStyle = 'rgba(244, 239, 232, 0.55)'
+  ctx.font = `${subSize}px Hanken Grotesk, ui-sans-serif, system-ui, sans-serif`
+  ctx.fillText('Designer lager forhåndsvisning innen 2–3 virkedager', targetW / 2, targetH / 2 + titleSize * 0.8)
+  return canvas.toDataURL('image/png')
+}
+
+/**
+ * Manual-mode "generate": no API call. Builds a placeholder image at the chosen
+ * aspect ratio and synthesises a `DesignRequestDetail`-shaped object so the rest
+ * of the wizard template renders unchanged. The real `DesignRequest` row is
+ * created later in `manualGoVidere()` (the "Gå videre" button) — that's when we
+ * gate auth and persist the customer's inputs server-side.
+ */
+function generateManualPlaceholder() {
+  const parts = selectedAspectRatio.value.split(':')
+  const rW = parseInt(parts[0] ?? '0', 10) || 16
+  const rH = parseInt(parts[1] ?? '0', 10) || 9
+  manualPlaceholderUrl.value = generatePlaceholderDataUrl(rW, rH)
+  aiImageNaturalRatio.value = rW / rH
+
+  // Synthesise a minimal DesignRequestDetail so the existing 'ready' phase template
+  // (which keys off `currentDesignRequest.previewUrl` / .status) renders the preview
+  // and the "Gå videre" button without conditional plumbing.
+  currentDesignRequest.value = {
+    id: 0,
+    userId: null,
+    bannerTemplateId: selectedTemplateId.value ?? 0,
+    mode: 'Manual',
+    status: 'AwaitingApproval',
+    language: language.value,
+    personName: personName.value.trim(),
+    personAge: personAge.value ?? null,
+    textContent: textContent.value.trim(),
+    themeDescription: themeDescription.value.trim(),
+    aspectRatio: aspectRatioForBackend.value,
+    revisionCount: 0,
+    regenerationsRemaining: 0,
+    priceNok: 0,
+    stripePaymentIntentId: null,
+    previewUrl: manualPlaceholderUrl.value,
+    finalCroppedUrl: null,
+    finalBannerDesignId: null,
+    currentGenerationId: null,
+    lastError: null,
+    generationHistory: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+  genPhase.value = 'ready'
+  // Scroll to top so the placeholder is immediately visible (mirrors AI flow).
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function saveManualSessionState() {
+  try {
+    sessionStorage.setItem(MANUAL_SESSION_KEY, JSON.stringify({
+      selectedTemplateId: selectedTemplateId.value,
+      language: language.value,
+      uploadedPhotoBannerDesignId: uploadedPhotoBannerDesignId.value,
+      personName: personName.value,
+      personAge: personAge.value,
+      textContent: textContent.value,
+      themeDescription: themeDescription.value,
+      selectedAspectRatio: selectedAspectRatio.value,
+      selectedQuality: selectedQuality.value,
+      customWidth: customWidth.value,
+      customHeight: customHeight.value,
+      customMaterialGsm: customMaterialGsm.value,
+    }))
+  } catch { /* non-fatal */ }
+}
+
+function restoreManualSessionState(): boolean {
+  const saved = sessionStorage.getItem(MANUAL_SESSION_KEY)
+  if (!saved) return false
+  try {
+    const s = JSON.parse(saved) as {
+      selectedTemplateId: number | null
+      language: 'nb' | 'en'
+      uploadedPhotoBannerDesignId: number | null
+      personName: string
+      personAge: number | null
+      textContent: string
+      themeDescription: string
+      selectedAspectRatio?: AspectRatioOption
+      selectedQuality?: QualityOption
+      customWidth?: number | null
+      customHeight?: number | null
+      customMaterialGsm?: 400 | 680
+    }
+    if (s.selectedTemplateId !== null) selectedTemplateId.value = s.selectedTemplateId
+    language.value = s.language
+    uploadedPhotoBannerDesignId.value = s.uploadedPhotoBannerDesignId
+    personName.value = s.personName
+    personAge.value = s.personAge
+    textContent.value = s.textContent
+    themeDescription.value = s.themeDescription
+    if (s.selectedAspectRatio) selectedAspectRatio.value = s.selectedAspectRatio
+    if (s.selectedQuality) selectedQuality.value = s.selectedQuality
+    if (s.customWidth != null) customWidth.value = s.customWidth
+    if (s.customHeight != null) customHeight.value = s.customHeight
+    if (s.customMaterialGsm) customMaterialGsm.value = s.customMaterialGsm
+    sessionStorage.removeItem(MANUAL_SESSION_KEY)
+    return true
+  } catch {
+    sessionStorage.removeItem(MANUAL_SESSION_KEY)
+    return false
+  }
+}
+
+/**
+ * Manual-mode "Gå videre" handler — the equivalent of `approve()` in the AI flow.
+ * Auth-gates, persists the customer's inputs by creating a real `DesignRequest`
+ * via `createManualRequest`, then transitions to the tilpass (eyelet picker) step
+ * just like the AI approve flow does.
+ */
+async function manualGoVidere() {
+  if (manualSubmitting.value) return
+  manualSubmitError.value = null
+
+  // Auth gate — save form state and bounce through /login, then resume.
+  if (!auth.isLoggedIn) {
+    saveManualSessionState()
+    void router.push('/login?redirect=/banner-builder/manual')
+    return
+  }
+
+  manualSubmitting.value = true
+  try {
+    const resp = await createManualRequest({
+      templateId: selectedTemplateId.value!,
+      language: language.value,
+      personName: personName.value.trim(),
+      personAge: personAge.value ?? undefined,
+      textContent: textContent.value.trim(),
+      themeDescription: themeDescription.value.trim(),
+      aspectRatio: aspectRatioForBackend.value,
+      uploadedPhotoBannerDesignId: uploadedPhotoBannerDesignId.value ?? undefined,
+    })
+    manualDesignRequestId.value = resp.designRequestId
+    manualBannerPriceNok.value = resp.bannerPriceNok
+    manualDesignPriceNok.value = resp.designPriceNok
+
+    // Resolve the BannerSize for the chosen dimensions so the tilpass step can
+    // render the eyelet picker / total. We mirror the AI `loadTilpassPricing`
+    // shape — but without a finalBannerDesignId since the designer hasn't
+    // uploaded the print-ready file yet.
+    const dims = selectedDimensions.value
+    if (dims.width > 0 && dims.height > 0 && sizesLoaded.value) {
+      const picked = pickBannerSize(
+        sizes.value,
+        dims.width,
+        dims.height,
+        selectedQuality.value === 'custom' ? customMaterialGsm.value : undefined,
+      )
+      if (picked) {
+        tilpassDesignWidthCm.value = dims.width
+        tilpassDesignHeightCm.value = dims.height
+        tilpassBannerSize.value = picked.size
+        tilpassBannerPriceNok.value = resp.bannerPriceNok
+        tilpassEyeletOption.value = 'None'
+        try {
+          tilpassEyeletPriceNok.value = await fetchEyeletPriceNok()
+        } catch {
+          tilpassEyeletPriceNok.value = 0
+        }
+        step.value = 3
+        genPhase.value = 'tilpass'
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        return
+      }
+    }
+    // No matching BannerSize — fall back to the account detail page so the
+    // customer can still complete the order via the legacy path.
+    void router.push(`/account/design-requests/${resp.designRequestId}`)
+  } catch (e: unknown) {
+    const ex = e as { response?: { data?: { error?: string } }; message?: string }
+    manualSubmitError.value =
+      ex.response?.data?.error || ex.message || 'Kunne ikke opprette bestilling. Prøv igjen.'
+  } finally {
+    manualSubmitting.value = false
+  }
+}
+
+/**
+ * Manual-mode add-to-cart: drops both the banner line AND the 495 kr designer-fee
+ * line into the cart, then navigates to /checkout. Mirrors the legacy
+ * legacy ManualBannerBuilderView add-to-cart behaviour (deleted in BANNERSH-189).
+ */
+function addManualToCartAndCheckout() {
+  const reqId = manualDesignRequestId.value
+  const size = tilpassBannerSize.value
+  if (!reqId || !size) return
+
+  const bannerItem: CartItem = {
+    bannerSizeId: size.id,
+    bannerSizeName: `Manuelt banner ${tilpassDesignWidthCm.value} × ${tilpassDesignHeightCm.value} cm`,
+    customWidthCm: size.isCustomWidth ? tilpassDesignWidthCm.value : null,
+    heightCm: tilpassDesignHeightCm.value,
+    quantity: 1,
+    unitPriceNok: manualBannerPriceNok.value,
+    eyeletOption: tilpassEyeletOption.value,
+    eyeletFeeNok: tilpassEyeletFeeNok.value,
+    notes: `Manuelt designet banner — bestilling #${reqId}`,
+    designRequestId: reqId,
+  }
+  cart.addItem(bannerItem)
+
+  const designFeeItem: CartItem = {
+    bannerSizeId: null,
+    bannerSizeName: 'Designer-tjeneste (manuelt banner)',
+    customWidthCm: null,
+    heightCm: 0,
+    quantity: 1,
+    unitPriceNok: manualDesignPriceNok.value,
+    eyeletOption: 'None',
+    eyeletFeeNok: 0,
+    notes: `Designhonorar for bestilling #${reqId}`,
+    designRequestId: reqId,
+  }
+  cart.addItem(designFeeItem)
+
+  void router.push('/checkout')
+}
+
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 onMounted(async () => {
   await loadTemplates()
-  await loadCreditsBalance()
+  // BANNERSH-189: credits/paywall logic is AI-only — skip the API call in manual mode.
+  if (!isManual.value) {
+    await loadCreditsBalance()
+  }
   await loadPastDesigns()
 
   // Load banner sizes for quality option price display
@@ -1305,6 +1649,17 @@ onMounted(async () => {
     await refreshAllPrices()
   } catch {
     // Non-critical — prices just won't display
+  }
+
+  // BANNERSH-189: restore manual-mode form state saved before a login redirect.
+  if (isManual.value && auth.isLoggedIn) {
+    const restored = restoreManualSessionState()
+    if (restored && selectedTemplateId.value !== null && personName.value.trim() !== '') {
+      // Drop the user back on step 2 with their inputs intact — they can review
+      // and re-click "Generer banner" → "Gå videre" to complete the order.
+      step.value = 2
+      return
+    }
   }
 
   // BANNERSH-105: when arriving from a front-page category card the matching
@@ -1393,18 +1748,27 @@ onBeforeUnmount(() => {
 <template>
   <div style="max-width:1200px;margin:0 auto;padding:2rem 1.5rem 4rem">
 
-    <!-- Header (with credits badge for logged-in users) -->
+    <!-- Header (with credits badge for logged-in users in AI mode) -->
     <header style="margin-bottom:2.5rem;text-align:center;position:relative">
       <h1 class="display" style="font-size:clamp(28px,4vw,44px);color:var(--text);margin-bottom:12px">
-        AI-generert feiringsbanner
+        <template v-if="isManual">Manuelt designet feiringsbanner</template>
+        <template v-else>AI-generert feiringsbanner</template>
       </h1>
       <p style="font-size:18px;color:var(--muted);max-width:36em;margin:0 auto">
-        Fortell oss om feiringen — vi lager et unikt banner med kunstig intelligens.
-        <strong style="color:var(--text)">Første generering er gratis.</strong>
+        <template v-if="isManual">
+          Beskriv ønsket og legg ved et portrettfoto — vi designer banneret manuelt og sender deg en
+          forhåndsvisning innen 2–3 virkedager. Designhonorar
+          <strong style="color:var(--text)">{{ formatNok(MANUAL_DESIGN_FEE_NOK) }}</strong>
+          + bannerproduksjon.
+        </template>
+        <template v-else>
+          Fortell oss om feiringen — vi lager et unikt banner med kunstig intelligens.
+          <strong style="color:var(--text)">Første generering er gratis.</strong>
+        </template>
       </p>
-      <!-- Credits badge -->
+      <!-- Credits badge — AI mode only -->
       <div
-        v-if="auth.isLoggedIn && creditsRemaining !== null"
+        v-if="!isManual && auth.isLoggedIn && creditsRemaining !== null"
         style="display:inline-flex;align-items:center;gap:7px;margin-top:14px;background:rgba(255,106,61,.12);border:1px solid rgba(255,106,61,.3);border-radius:99px;padding:5px 14px;font-size:13px;font-weight:700;color:var(--accent)"
       >
         <i class="fa-solid fa-wand-magic-sparkles" style="font-size:11px"></i>
@@ -1414,7 +1778,8 @@ onBeforeUnmount(() => {
     </header>
 
     <!-- Soft auth hint (anonymous user after creation) — full-width, above the grid -->
-    <div v-if="requiresAuthHint" class="notice-gold" style="margin-bottom:2rem">
+    <!-- AI mode only — manual mode auth-gates at "Gå videre" instead of generation. -->
+    <div v-if="!isManual && requiresAuthHint" class="notice-gold" style="margin-bottom:2rem">
       <i class="fa-solid fa-circle-info" style="margin-top:2px;flex-shrink:0"></i>
       <span>
         <strong>Opprett konto for å godkjenne og bestille.</strong>
@@ -1463,10 +1828,11 @@ onBeforeUnmount(() => {
     <div :class="auth.isLoggedIn && pastDesigns.length > 0 ? 'wizard-with-sidebar' : ''">
 
       <!-- Left column: past banners sidebar -->
+      <!-- BANNERSH-189: filtered by mode (Ai vs Manual) in loadPastDesigns(). -->
       <aside
         v-if="auth.isLoggedIn && pastDesigns.length > 0"
         class="past-sidebar"
-        aria-label="Tidligere genererte banner"
+        :aria-label="isManual ? 'Tidligere manuelle banner' : 'Tidligere genererte banner'"
       >
         <div class="past-sidebar-hd">
           <span class="display past-title">
@@ -1475,7 +1841,10 @@ onBeforeUnmount(() => {
           </span>
           <span class="past-count">{{ pastDesigns.length }}</span>
         </div>
-        <p class="past-sub">Klikk for å åpne — godkjenn eller bruk som utgangspunkt.</p>
+        <p class="past-sub">
+          <template v-if="isManual">Tidligere manuelle bestillinger — klikk for detaljer.</template>
+          <template v-else>Klikk for å åpne — godkjenn eller bruk som utgangspunkt.</template>
+        </p>
         <div class="past-sidebar-list">
           <button
             v-for="d in pastDesigns"
@@ -1487,6 +1856,9 @@ onBeforeUnmount(() => {
           >
             <div class="past-thumb">
               <img v-if="d.previewUrl" :src="d.previewUrl" :alt="`Tidligere banner for ${d.personName}`" />
+              <!-- BANNERSH-189: manual designs may not have a preview yet (designer hasn't uploaded).
+                   Show a palette icon as a neutral placeholder so the card still reads correctly. -->
+              <i v-else class="fa-solid fa-palette" style="font-size:24px;color:var(--faint)"></i>
             </div>
             <div class="past-meta">
               <div class="past-name">{{ d.personName || 'Uten navn' }}</div>
@@ -1610,12 +1982,22 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Portrait photo upload (moved here from step 1) -->
+        <!-- BANNERSH-189: in manual mode the photo is REQUIRED (designer needs the
+             reference); in AI mode it's optional (only the person-centred templates
+             use it, and the AI degrades gracefully without it). -->
         <div>
           <div class="field-label" style="margin-bottom:4px">
-            Portrettfoto <span style="font-size:13px;font-weight:400;color:var(--faint)">(valgfritt)</span>
+            Portrettfoto
+            <span v-if="isManual" style="color:var(--accent)">*</span>
+            <span v-else style="font-size:13px;font-weight:400;color:var(--faint)">(valgfritt)</span>
           </div>
           <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
-            Last opp et bilde av personen som feires — AI-en vil inkorporere det i banneret.
+            <template v-if="isManual">
+              Vi trenger et bilde av personen som feires — designeren bruker det som referanse.
+            </template>
+            <template v-else>
+              Last opp et bilde av personen som feires — AI-en vil inkorporere det i banneret.
+            </template>
           </p>
 
           <div v-if="photoPreviewUrl" style="display:flex;align-items:flex-start;gap:18px">
@@ -1736,13 +2118,13 @@ onBeforeUnmount(() => {
           </p>
         </div>
 
-        <!-- Phase: ready — show the generated image -->
+        <!-- Phase: ready — show the generated image (or "Ditt banner" placeholder in manual mode) -->
         <template v-else-if="genPhase === 'ready' && currentDesignRequest">
           <div class="bb-panel" style="padding:0;overflow:hidden;border-radius:0">
             <img
               v-if="currentDesignRequest.previewUrl"
               :src="currentDesignRequest.previewUrl"
-              :alt="`AI-generert banner for ${currentDesignRequest.personName}`"
+              :alt="isManual ? 'Ditt banner — forhåndsvisning' : `AI-generert banner for ${currentDesignRequest.personName}`"
               style="width:100%;height:auto;object-fit:contain;display:block"
               @load="onPreviewImageLoaded"
             />
@@ -1922,24 +2304,32 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- "Gå videre" — AwaitingApproval: approve → tilpass (step 3) -->
+          <!-- BANNERSH-189: manual mode wires this button to manualGoVidere() which
+               creates the DesignRequest via /design-requests/manual instead of the
+               AI-only approve endpoint. -->
           <button
             v-if="genPhase === 'ready' && currentDesignRequest?.status === 'AwaitingApproval'"
             type="button"
             class="btn"
             style="width:100%;justify-content:center;padding:14px;font-size:16px;border-radius:12px;background:#3a9d7e;color:#fff"
-            :disabled="approving"
-            @click="approve"
+            :disabled="isManual ? manualSubmitting : approving"
+            @click="isManual ? manualGoVidere() : approve()"
           >
-            <i v-if="approving" class="fa-solid fa-circle-notch fa-spin"></i>
+            <i v-if="isManual ? manualSubmitting : approving" class="fa-solid fa-circle-notch fa-spin"></i>
             <i v-else class="fa-solid fa-arrow-right"></i>
-            {{ approving ? 'Behandler…' : 'Gå videre' }}
+            <template v-if="isManual">{{ manualSubmitting ? 'Behandler…' : 'Gå videre' }}</template>
+            <template v-else>{{ approving ? 'Behandler…' : 'Gå videre' }}</template>
           </button>
+          <!-- Manual mode error surface (mirrors approveError below). -->
+          <div v-if="isManual && manualSubmitError" class="error-box">
+            <i class="fa-solid fa-circle-exclamation"></i> {{ manualSubmitError }}
+          </div>
 
-          <!-- "Bestill" / "Bestill på nytt" — Approved / Final -->
+          <!-- "Bestill" / "Bestill på nytt" — Approved / Final (AI only) -->
           <!-- Approved = approved but never ordered (first purchase).
                Final    = already ordered at least once (re-order). -->
           <button
-            v-if="genPhase === 'ready' && currentDesignRequest?.finalBannerDesignId && (currentDesignRequest?.status === 'Approved' || currentDesignRequest?.status === 'Final')"
+            v-if="!isManual && genPhase === 'ready' && currentDesignRequest?.finalBannerDesignId && (currentDesignRequest?.status === 'Approved' || currentDesignRequest?.status === 'Final')"
             type="button"
             class="btn"
             style="width:100%;justify-content:center;padding:14px;font-size:16px;border-radius:12px;background:#3a9d7e;color:#fff"
@@ -1952,17 +2342,29 @@ onBeforeUnmount(() => {
           </button>
 
           <!-- Generate (idle) / Regenerate (ready/error) button -->
+          <!-- BANNERSH-189: manual mode generates a "Ditt banner" placeholder client-side
+               (no API call, no credit), and the "ready" phase has NO regenerate option
+               — only "Gå videre" → tilpass. So the button is hidden in manual mode once
+               we're on the ready phase. -->
           <button
+            v-if="!(isManual && genPhase === 'ready')"
             type="button"
             class="btn btn-primary"
             style="width:100%;justify-content:center;padding:14px;font-size:16px;border-radius:12px"
             :disabled="!step2Valid"
-            @click="genPhase === 'ready' ? regenerate() : generateBanner()"
+            @click="isManual
+              ? (genPhase === 'ready' ? null : generateManualPlaceholder())
+              : (genPhase === 'ready' ? regenerate() : generateBanner())"
           >
             <i v-if="genPhase === 'error'" class="fa-solid fa-rotate"></i>
-            <i v-else-if="isOutOfGenerations && genPhase !== 'ready'" class="fa-solid fa-bag-shopping"></i>
+            <i v-else-if="!isManual && isOutOfGenerations && genPhase !== 'ready'" class="fa-solid fa-bag-shopping"></i>
+            <i v-else-if="isManual" class="fa-solid fa-image"></i>
             <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
-            <template v-if="genPhase === 'ready'">
+            <template v-if="isManual">
+              <template v-if="genPhase === 'error'">Prøv igjen</template>
+              <template v-else>Se forhåndsvisning</template>
+            </template>
+            <template v-else-if="genPhase === 'ready'">
               <template v-if="canGenerateForFree === true">Generer ny versjon (gratis)</template>
               <template v-else-if="hasCreditsAvailable">Generer ny versjon (1 kreditt)</template>
               <template v-else>Generer ny versjon</template>
@@ -1971,9 +2373,13 @@ onBeforeUnmount(() => {
             <template v-else>Prøv igjen</template>
           </button>
 
-          <!-- Credits text (per task: "Du har xx gratis ai bilder igjen" / "Du har xx ai kreditter igjen") -->
+          <!-- Credits / hint text — AI mode shows credits state, manual mode shows the workflow hint. -->
           <p style="font-size:13px;color:var(--faint);text-align:center;margin:0">
-            <template v-if="canGenerateForFree === true">
+            <template v-if="isManual">
+              <i class="fa-solid fa-palette" style="color:var(--accent);margin-right:5px"></i>
+              Designeren vår lager forhåndsvisningen og sender den til godkjenning innen 2–3 virkedager.
+            </template>
+            <template v-else-if="canGenerateForFree === true">
               <i class="fa-solid fa-gift" style="color:var(--accent);margin-right:5px"></i>
               Du har 1 gratis AI bilde igjen
             </template>
@@ -2171,7 +2577,7 @@ onBeforeUnmount(() => {
           <img
             v-if="currentDesignRequest.previewUrl"
             :src="currentDesignRequest.previewUrl"
-            :alt="`AI-generert banner for ${currentDesignRequest.personName}`"
+            :alt="isManual ? 'Ditt banner — forhåndsvisning' : `AI-generert banner for ${currentDesignRequest.personName}`"
             style="width:100%;height:auto;object-fit:contain;display:block"
             @load="onPreviewImageLoaded"
           />
@@ -2406,7 +2812,7 @@ onBeforeUnmount(() => {
           <img
             v-if="currentDesignRequest.previewUrl"
             :src="currentDesignRequest.previewUrl"
-            :alt="`AI-generert banner for ${currentDesignRequest.personName}`"
+            :alt="isManual ? 'Ditt banner — forhåndsvisning' : `AI-generert banner for ${currentDesignRequest.personName}`"
             style="width:100%;height:auto;object-fit:contain;display:block"
             @load="onPreviewImageLoaded"
           />
@@ -2491,6 +2897,12 @@ onBeforeUnmount(() => {
 
           <!-- Sum -->
           <div class="bb-panel" style="display:grid;gap:10px">
+            <!-- BANNERSH-189: manual mode adds a designer-fee line (cart will charge
+                 it as a second item — keep the summary honest here). -->
+            <div v-if="isManual" style="display:flex;justify-content:space-between;font-size:14.5px">
+              <span style="color:var(--muted)">Designer-tjeneste</span>
+              <span style="color:var(--text);font-weight:500">{{ formatNok(manualDesignPriceNok) }}</span>
+            </div>
             <div style="display:flex;justify-content:space-between;font-size:14.5px">
               <span style="color:var(--muted)">Bannerpris</span>
               <span style="color:var(--text);font-weight:500">{{ formatNok(tilpassBannerPriceNok) }}</span>

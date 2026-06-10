@@ -114,6 +114,19 @@ callers).
 - Dimension math lives in pure helper `BannerDimensions` (covered by unit tests in `BannerDimensionsTests`).
 - Only `SixLabors.ImageSharp` (3.1.5) is referenced — `SixLabors.ImageSharp.Drawing` is NOT, so `Fill`/`DrawText` extensions on `IImageProcessingContext` are unavailable. Use `Image<Rgba32>` constructor with a fill colour, or `Mutate(ctx => ctx.Crop(...))` for crops.
 
+## Banner wizard consolidation (BANNERSH-189)
+`AiBannerBuilderView.vue` is now a dual-mode wizard — both `/banner-builder/ai`
+and `/banner-builder/manual` route to it. The mode is derived from the URL via
+`route.path.endsWith('/manual')`. Manual mode (a) skips the OpenAI call and
+generates a canvas-based "Ditt banner" placeholder (sized by the chosen ratio)
+that also feeds `aiImageNaturalRatio` so the quality picker works, (b) hides the
+credit badge / paywall / regenerate UI, (c) filters past designs by
+`mode === 'Manual'` (clicking a past Manual design routes to its account detail
+page rather than reopening in the wizard), (d) requires the portrait photo, and
+(e) "Gå videre" calls `createManualRequest` to persist the request and adds the
+banner + 495 kr designer-fee lines to the cart. The legacy
+`ManualBannerBuilderView.vue` was deleted.
+
 ## Manual design requests (BANNERSH-19 / BANNERSH-104)
 - `POST /api/design-requests/manual` charges the customer **design fee (495 kr) + physical-banner production cost** in a single Stripe PaymentIntent. Pre-BANNERSH-104 only the 495 kr design fee was collected, which silently left the printed banner unpaid.
 - `DesignRequest.PriceNok` stays the design fee (495). New columns `BannerPriceNok`, `BannerSizeId`, `CustomBannerWidthCm` hold the production cost breakdown (migration `AddBannerPriceToManualDesignRequest`).

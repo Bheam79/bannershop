@@ -26,9 +26,12 @@ const router = createRouter({
       component: () => import('@/views/AiBannerBuilderView.vue'),
     },
     {
+      // BANNERSH-189: manual designer reuses the AI wizard component with mode='manual'
+      // — same form/flow, conditionally hides AI-only UI, generates a "Ditt banner"
+      // placeholder instead of calling the AI image API.
       path: '/banner-builder/manual',
       name: 'banner-builder-manual',
-      component: () => import('@/views/ManualBannerBuilderView.vue'),
+      component: () => import('@/views/AiBannerBuilderView.vue'),
     },
     {
       path: '/checkout',
