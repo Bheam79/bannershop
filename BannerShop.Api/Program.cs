@@ -124,6 +124,8 @@ builder.Services.AddSingleton<UploadValidator>();
 builder.Services.AddSingleton<BannerFileStorage>();
 #pragma warning restore CS0618
 builder.Services.AddSingleton<IImageProcessingService, ImageProcessingService>();
+// BannerPreviewService: generates GUID-keyed cached previews with eyelet overlays.
+builder.Services.AddSingleton<BannerPreviewService>();
 
 // ─── AI Credit Pool (BANNERSH-65) ────────────────────────────────────────────
 builder.Services.AddScoped<IAiCreditService, AiCreditService>();
