@@ -19,10 +19,10 @@ public class CreateOrderDraftRequest
     /// <summary>
     /// How the customer wants the order packaged. Affects the Bring quote computed
     /// server-side at order draft time so the persisted shipping cost matches the
-    /// price the customer saw in the cart (BANNERSH-143). Defaults to
-    /// <see cref="PackingMode.Rolled"/>.
+    /// price the customer saw in the cart (BANNERSH-143).
+    /// Defaults to <see cref="PackingMode.Folded"/> per BANNERSH-174.
     /// </summary>
-    public PackingMode PackingMode { get; set; } = PackingMode.Rolled;
+    public PackingMode PackingMode { get; set; } = PackingMode.Folded;
 
     [Required, MinLength(1)]
     public List<OrderItemInputDto> Items { get; set; } = new();

@@ -17,7 +17,7 @@ const emit = defineEmits<{
 
 const postalCode = ref('')
 const city = ref('')
-const packingMode = ref<PackingMode>('Rolled')
+const packingMode = ref<PackingMode>('Folded')
 const estimate = ref<ShippingEstimate | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -79,25 +79,10 @@ watch(
       Skriv inn postnummer for å se fraktpris og estimert leveringsdato.
     </p>
 
-    <!-- BANNERSH-143: rolled vs folded selector -->
+    <!-- BANNERSH-143/174: folded (default) vs rolled selector -->
     <fieldset class="mb-4">
       <legend class="text-sm font-medium text-gray-700 mb-2">Pakking</legend>
       <div class="flex gap-2">
-        <label
-          class="flex-1 cursor-pointer border rounded-lg px-3 py-2 text-sm transition"
-          :class="packingMode === 'Rolled'
-            ? 'border-blue-600 bg-blue-50 text-blue-900'
-            : 'border-gray-300 text-gray-700 hover:bg-gray-50'"
-        >
-          <input
-            v-model="packingMode"
-            type="radio"
-            value="Rolled"
-            class="sr-only"
-          />
-          <span class="font-semibold">Rullet</span>
-          <span class="block text-xs text-gray-600">Sendt som rør (anbefalt)</span>
-        </label>
         <label
           class="flex-1 cursor-pointer border rounded-lg px-3 py-2 text-sm transition"
           :class="packingMode === 'Folded'
@@ -111,7 +96,22 @@ watch(
             class="sr-only"
           />
           <span class="font-semibold">Brettet</span>
-          <span class="block text-xs text-gray-600">Flat eske 50×60 cm</span>
+          <span class="block text-xs text-gray-600">Flat eske 50×60 cm (standard)</span>
+        </label>
+        <label
+          class="flex-1 cursor-pointer border rounded-lg px-3 py-2 text-sm transition"
+          :class="packingMode === 'Rolled'
+            ? 'border-blue-600 bg-blue-50 text-blue-900'
+            : 'border-gray-300 text-gray-700 hover:bg-gray-50'"
+        >
+          <input
+            v-model="packingMode"
+            type="radio"
+            value="Rolled"
+            class="sr-only"
+          />
+          <span class="font-semibold">Rullet</span>
+          <span class="block text-xs text-gray-600">Sendt som rør</span>
         </label>
       </div>
     </fieldset>

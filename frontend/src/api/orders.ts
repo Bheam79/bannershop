@@ -12,6 +12,12 @@ export interface OrderDraftRequest {
     city: string
     country?: string
   }
+  /**
+   * Cart-level packaging choice (BANNERSH-174). All items share one mode.
+   * "Folded" = flat 50×60 cm box; "Rolled" = tube.
+   * Defaults to "Folded" when omitted.
+   */
+  packingMode?: 'Rolled' | 'Folded'
   items: Array<{
     bannerSizeId: number
     customWidthCm?: number

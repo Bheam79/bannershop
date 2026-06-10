@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { DeliveryType } from '@/types'
+import type { PackingMode } from '@/api/shop'
 
 export interface CheckoutAddress {
   line1: string
@@ -14,6 +15,8 @@ export interface CheckoutState {
   deliveryType: DeliveryType
   shippingCostNok: number
   expressFeeNok: number
+  /** BANNERSH-174: cart-level packaging choice (Folded = default). */
+  packingMode: PackingMode
 }
 
 export const useCheckoutStore = defineStore('checkout', () => {
@@ -22,6 +25,8 @@ export const useCheckoutStore = defineStore('checkout', () => {
   const deliveryType = ref<DeliveryType>('Standard')
   const shippingCostNok = ref(0)
   const expressFeeNok = ref(0)
+  /** Default Folded per BANNERSH-174 spec. */
+  const packingMode = ref<PackingMode>('Folded')
 
   const isReady = () => {
     if (!recipientName.value.trim()) return false
@@ -39,6 +44,7 @@ export const useCheckoutStore = defineStore('checkout', () => {
     deliveryType.value = state.deliveryType
     shippingCostNok.value = state.shippingCostNok
     expressFeeNok.value = state.expressFeeNok
+    packingMode.value = state.packingMode
   }
 
   function clear() {
@@ -47,6 +53,7 @@ export const useCheckoutStore = defineStore('checkout', () => {
     deliveryType.value = 'Standard'
     shippingCostNok.value = 0
     expressFeeNok.value = 0
+    packingMode.value = 'Folded'
   }
 
   return {
@@ -55,6 +62,7 @@ export const useCheckoutStore = defineStore('checkout', () => {
     deliveryType,
     shippingCostNok,
     expressFeeNok,
+    packingMode,
     isReady,
     setCheckout,
     clear,

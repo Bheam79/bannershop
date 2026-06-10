@@ -150,6 +150,7 @@ async function confirmMockPayment() {
         city: checkout.address.city,
         country: 'NO',
       } : undefined,
+      packingMode: checkout.packingMode,
       items: cart.items
         .filter((item) => item.bannerSizeId != null)
         .map((item) => ({
@@ -216,6 +217,7 @@ async function pay() {
         city: checkout.address.city,
         country: 'NO',
       } : undefined,
+      packingMode: checkout.packingMode,
       items: cart.items
         .filter((item) => item.bannerSizeId != null)
         .map((item) => ({

@@ -22,8 +22,8 @@ public class CalculateShippingRequest
     public int Qty { get; set; } = 1;
 
     /// <summary>
-    /// How the customer wants the order packaged. Defaults to <see cref="PackingMode.Rolled"/>
-    /// (matches the historical behaviour). BANNERSH-143.
+    /// How the customer wants the order packaged. Defaults to <see cref="PackingMode.Folded"/>
+    /// per BANNERSH-174. BANNERSH-143.
     /// </summary>
-    public PackingMode PackingMode { get; set; } = PackingMode.Rolled;
+    public PackingMode PackingMode { get; set; } = PackingMode.Folded;
 }

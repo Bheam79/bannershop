@@ -5,6 +5,7 @@ import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore } from '@/stores/checkout'
 import { useAuthStore } from '@/stores/auth'
 import { calculateShipping } from '@/api/shop'
+import type { PackingMode } from '@/api/shop'
 import { getBannerDesign } from '@/api/bannerBuilder'
 import type { DeliveryType, EyeletOption, ShippingEstimate } from '@/types'
 import { countEyelets } from '@/types'
@@ -98,6 +99,8 @@ const addressLine1 = ref(checkout.address.line1)
 const postalCode = ref(checkout.address.postalCode)
 const city = ref(checkout.address.city)
 const deliveryType = ref<DeliveryType>(checkout.deliveryType)
+/** BANNERSH-174: cart-level packaging method. Default Folded, then Rolled. */
+const packingMode = ref<PackingMode>(checkout.packingMode)
 
 // ── Shipping calculation ─────────────────────────────────────────────────────
 const shippingEstimate = ref<ShippingEstimate | null>(null)
@@ -124,6 +127,7 @@ async function computeShipping() {
       bannerSizeId: firstItem.bannerSizeId,
       customWidthCm: firstItem.customWidthCm ?? undefined,
       qty: cart.itemCount,
+      packingMode: packingMode.value,
     })
   } catch {
     shippingError.value = 'Kunne ikke beregne frakt. Sjekk postnummeret og prøv igjen.'
@@ -140,6 +144,10 @@ function scheduleShipping() {
 }
 watch(postalCode, scheduleShipping)
 watch(city, () => {
+  if (/^\d{4}$/.test(postalCode.value.trim())) scheduleShipping()
+})
+// Recompute when packing mode changes (Folded vs Rolled affects parcel size + price).
+watch(packingMode, () => {
   if (/^\d{4}$/.test(postalCode.value.trim())) scheduleShipping()
 })
 
@@ -214,6 +222,7 @@ function proceed() {
     deliveryType: deliveryType.value,
     shippingCostNok: shippingCost.value,
     expressFeeNok: expressFee.value,
+    packingMode: packingMode.value,
   })
 
   // Auth gate: cart + address survive in localStorage/store — the user just needs
@@ -410,6 +419,64 @@ function eyeletCountFor(item: import('@/types').CartItem): number {
           </div>
         </section>
 
+        <!-- Packaging method — BANNERSH-174 -->
+        <!-- Only relevant for shipped orders; pickup customers pack their own. -->
+        <section v-if="deliveryType !== 'Pickup'" class="panel">
+          <h2 class="section-title">Pakkemetode</h2>
+          <p style="font-size:0.8125rem;color:var(--muted);margin-bottom:1rem">
+            Alle varer i handlekurven pakkes på samme måte. Pakkemetoden påvirker fraktkostnaden.
+          </p>
+          <div class="packing-grid">
+            <!-- Folded (default) -->
+            <button
+              type="button"
+              class="packing-btn"
+              :class="{ 'packing-btn--active': packingMode === 'Folded' }"
+              @click="packingMode = 'Folded'"
+            >
+              <div class="packing-btn__inner">
+                <div class="packing-btn__icon" :class="{ 'packing-btn__icon--active': packingMode === 'Folded' }">
+                  <i class="fa-solid fa-box"></i>
+                </div>
+                <div class="packing-btn__body">
+                  <div class="packing-btn__title">
+                    Brettet
+                    <span class="badge-packing-default">Anbefalt</span>
+                  </div>
+                  <div class="packing-btn__sub">Flat eske 50 × 60 cm</div>
+                </div>
+                <div class="packing-btn__radio">
+                  <div class="radio-outer" :class="{ 'radio-outer--active': packingMode === 'Folded' }">
+                    <div v-if="packingMode === 'Folded'" class="radio-inner"></div>
+                  </div>
+                </div>
+              </div>
+            </button>
+            <!-- Rolled -->
+            <button
+              type="button"
+              class="packing-btn"
+              :class="{ 'packing-btn--active': packingMode === 'Rolled' }"
+              @click="packingMode = 'Rolled'"
+            >
+              <div class="packing-btn__inner">
+                <div class="packing-btn__icon" :class="{ 'packing-btn__icon--active': packingMode === 'Rolled' }">
+                  <i class="fa-solid fa-scroll"></i>
+                </div>
+                <div class="packing-btn__body">
+                  <div class="packing-btn__title">Rullet</div>
+                  <div class="packing-btn__sub">Sendt som rør (tubes)</div>
+                </div>
+                <div class="packing-btn__radio">
+                  <div class="radio-outer" :class="{ 'radio-outer--active': packingMode === 'Rolled' }">
+                    <div v-if="packingMode === 'Rolled'" class="radio-inner"></div>
+                  </div>
+                </div>
+              </div>
+            </button>
+          </div>
+        </section>
+
         <!-- Delivery type -->
         <section class="panel">
           <h2 class="section-title">Leveringstype</h2>
@@ -528,6 +595,14 @@ function eyeletCountFor(item: import('@/types').CartItem): number {
             <div class="summary-row">
               <dt class="summary-label">Varer ({{ cart.itemCount }} stk)</dt>
               <dd class="summary-value">{{ formatNok(subtotal) }}</dd>
+            </div>
+
+            <!-- Packing mode line (only for shipped orders) -->
+            <div v-if="deliveryType !== 'Pickup'" class="summary-row">
+              <dt class="summary-label">Pakking</dt>
+              <dd class="summary-value summary-faint" style="font-size:0.8125rem">
+                {{ packingMode === 'Folded' ? 'Brettet (50×60 cm)' : 'Rullet (rør)' }}
+              </dd>
             </div>
 
             <div class="summary-row">
@@ -793,6 +868,81 @@ function eyeletCountFor(item: import('@/types').CartItem): number {
   margin-top: 4px;
   font-size: 0.75rem;
   color: #f4a57a;
+}
+
+/* ── Packaging buttons (BANNERSH-174) ───────────────────────── */
+.packing-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+@media (max-width: 500px) { .packing-grid { grid-template-columns: 1fr; } }
+
+.packing-btn {
+  text-align: left;
+  background: var(--surface-2);
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  padding: 0.875rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+.packing-btn:hover { border-color: var(--muted); }
+.packing-btn--active {
+  border-color: var(--accent) !important;
+  background: rgba(255, 106, 61, 0.08) !important;
+}
+.packing-btn__inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.packing-btn__icon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 14px;
+  margin-top: 1px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.packing-btn--active .packing-btn__icon {
+  background: rgba(255, 106, 61, 0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.packing-btn__body { flex: 1; min-width: 0; }
+.packing-btn__title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.packing-btn__sub {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.packing-btn__radio { flex-shrink: 0; margin-top: 2px; }
+.badge-packing-default {
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: rgba(78, 201, 132, 0.18);
+  color: #4ec984;
+  border: 1px solid rgba(78, 201, 132, 0.35);
+  padding: 1px 7px;
+  border-radius: 99px;
 }
 
 /* ── Delivery buttons ───────────────────────────────────────── */
