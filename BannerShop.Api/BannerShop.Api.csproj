@@ -15,7 +15,7 @@
     </PackageReference>
     <PackageReference Include="Stripe.net" Version="48.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.5" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
     <PackageReference Include="PDFtoImage" Version="4.1.1" />
   </ItemGroup>
 
