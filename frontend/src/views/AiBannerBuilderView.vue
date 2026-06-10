@@ -61,6 +61,21 @@ const personAge = ref<number | null>(null)
 const textContent = ref('')
 const themeDescription = ref('')
 
+// ── Step 2: Aspect ratio selection (BANNERSH-170) ────────────────────────────
+// Ratio buttons shown on one line below the image upload — sets the shape for
+// AI generation BEFORE the banner is produced.
+type AspectRatioOption = '16:9' | '1:2' | '1:1' | '2:1' | '3:1' | '4:1'
+const selectedAspectRatio = ref<AspectRatioOption>('16:9')
+
+const ratioOptions = [
+  { value: '16:9' as AspectRatioOption, label: '16:9', sub: 'anbefalt', iconW: 28, iconH: 16 },
+  { value: '1:2' as AspectRatioOption, label: '1:2', sub: 'loddrett',  iconW: 11, iconH: 22 },
+  { value: '1:1' as AspectRatioOption, label: '1:1', sub: 'firkantet', iconW: 20, iconH: 20 },
+  { value: '2:1' as AspectRatioOption, label: '2:1', sub: 'avlangt',   iconW: 28, iconH: 14 },
+  { value: '3:1' as AspectRatioOption, label: '3:1', sub: 'veldig langt', iconW: 28, iconH: 9 },
+  { value: '4:1' as AspectRatioOption, label: '4:1', sub: 'superlangt', iconW: 28, iconH: 7 },
+] as const
+
 // ── Step 2: Quality / size selection (mirrors ManualBannerBuilderView) ────────
 // BANNERSH-162: quality/size picker only appears AFTER a banner has been
 // generated, and the displayed widths are derived from the actual aspect ratio
@@ -223,9 +238,30 @@ const selectedDimensions = computed(() => {
 })
 
 // Aspect ratio string sent to the backend
+// BANNERSH-170: pre-generation uses the user's chosen ratio button; post-generation
+// (quality picker visible) uses the selected print dimensions.
 const aspectRatioForBackend = computed(() => {
-  const { width, height } = selectedDimensions.value
-  if (width > 0 && height > 0) return `${width}x${height}`
+  // Post-generation: derive from the quality/size picker (used by approve(), not generate())
+  if (genPhase.value === 'ready') {
+    const { width, height } = selectedDimensions.value
+    if (width > 0 && height > 0) return `${width}x${height}`
+  }
+  // Pre-generation: derive from the ratio selection buttons
+  const parts = selectedAspectRatio.value.split(':')
+  const rW = parseInt(parts[0] ?? '0', 10)
+  const rH = parseInt(parts[1] ?? '0', 10)
+  if (rW > 0 && rH > 0) {
+    const ratio = rW / rH
+    if (ratio < 1) {
+      // Portrait: anchor height to 180 cm
+      const h = 180
+      return `${Math.max(1, Math.round(h * ratio))}x${h}`
+    } else {
+      // Landscape / square: anchor height to 150 cm
+      const h = 150
+      return `${Math.round(h * ratio)}x${h}`
+    }
+  }
   return '360x150'
 })
 
@@ -1618,6 +1654,31 @@ onBeforeUnmount(() => {
             <div v-if="photoUploadError" class="error-box" style="margin-top:10px">
               <i class="fa-solid fa-circle-exclamation"></i> {{ photoUploadError }}
             </div>
+          </div>
+        </div>
+
+        <!-- BANNERSH-170: Aspect-ratio selection — one row of buttons below image upload -->
+        <div>
+          <div class="field-label" style="margin-bottom:10px">
+            Bildeforhold
+            <span style="font-size:11px;font-weight:400;color:var(--faint);text-transform:none;letter-spacing:0;margin-left:4px">— velg formen på banneret</span>
+          </div>
+          <div class="ratio-row">
+            <button
+              v-for="opt in ratioOptions"
+              :key="opt.value"
+              type="button"
+              class="ratio-btn"
+              :class="{ 'ratio-btn-active': selectedAspectRatio === opt.value }"
+              @click="selectedAspectRatio = opt.value"
+            >
+              <!-- small rectangle icon visualising the aspect ratio -->
+              <div class="ratio-icon-wrap">
+                <div class="ratio-icon" :style="{ width: opt.iconW + 'px', height: opt.iconH + 'px' }" />
+              </div>
+              <span class="ratio-label">{{ opt.label }}</span>
+              <span class="ratio-sub">{{ opt.sub }}</span>
+            </button>
           </div>
         </div>
 
@@ -3447,4 +3508,70 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   background: var(--accent);
 }
+
+/* ── BANNERSH-170: Aspect-ratio selector row ─────────────────── */
+.ratio-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  /* hide scrollbar on desktop while keeping it functional */
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.ratio-btn {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 10px 8px;
+  background: var(--surface-2);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  min-width: 62px;
+}
+.ratio-btn:hover {
+  border-color: var(--line-soft);
+  background: var(--surface);
+}
+.ratio-btn-active {
+  border-color: var(--accent);
+  background: rgba(255, 106, 61, 0.08);
+  box-shadow: 0 0 0 2px rgba(255, 106, 61, 0.2);
+}
+.ratio-icon-wrap {
+  width: 34px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.ratio-icon {
+  border: 2px solid currentColor;
+  border-radius: 3px;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+.ratio-btn-active .ratio-icon { opacity: 1; }
+.ratio-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+  white-space: nowrap;
+}
+.ratio-sub {
+  font-size: 10px;
+  color: var(--faint);
+  line-height: 1;
+  white-space: nowrap;
+}
+.ratio-btn-active .ratio-label { color: var(--accent-2); }
+.ratio-btn-active .ratio-sub   { color: var(--accent);   }
 </style>
