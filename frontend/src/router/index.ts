@@ -193,6 +193,33 @@ const router = createRouter({
       meta: { requiresAdmin: true },
     },
 
+    // ── Info / legal (BANNERSH-222) ──────────────────────────────────────────
+    {
+      path: '/info/shipping',
+      name: 'info-shipping',
+      component: () => import('@/views/info/InfoShippingView.vue'),
+    },
+    {
+      path: '/info/materials',
+      name: 'info-materials',
+      component: () => import('@/views/info/InfoMaterialsView.vue'),
+    },
+    {
+      path: '/info/contact',
+      name: 'info-contact',
+      component: () => import('@/views/info/InfoContactView.vue'),
+    },
+    {
+      path: '/info/terms',
+      name: 'info-terms',
+      component: () => import('@/views/info/InfoTermsView.vue'),
+    },
+    {
+      path: '/info/privacy',
+      name: 'info-privacy',
+      component: () => import('@/views/info/InfoPrivacyView.vue'),
+    },
+
     // ── 404 ───────────────────────────────────────────────────────────────────
     {
       path: '/:pathMatch(.*)*',

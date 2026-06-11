@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { RouterView, useRoute } from 'vue-router'
+import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import NavBar from '@/components/layout/NavBar.vue'
 import AdminNavBar from '@/components/layout/AdminNavBar.vue'
@@ -71,9 +71,28 @@ watch(
     <!-- Minimal footer for non-home pages -->
     <footer v-if="!isHome && !isAdmin" class="py-8 mt-16 border-t" style="border-color:var(--line-soft)">
       <div class="wrap text-center" style="color:var(--faint);font-size:13.5px">
+        <!-- BANNERSH-222: keep legal + support links reachable from every page -->
+        <p style="display:flex;justify-content:center;gap:18px;flex-wrap:wrap;margin-bottom:10px">
+          <RouterLink to="/info/shipping" class="footer-mini-link">Frakt &amp; levering</RouterLink>
+          <RouterLink to="/info/materials" class="footer-mini-link">Materialer</RouterLink>
+          <RouterLink to="/info/contact" class="footer-mini-link">Kontakt oss</RouterLink>
+          <RouterLink to="/info/terms" class="footer-mini-link">Brukervilkår</RouterLink>
+          <RouterLink to="/info/privacy" class="footer-mini-link">Personvern</RouterLink>
+        </p>
         <p>© 2026 BannerShop.no — Kvalitetsbannere fra norsk trykkeri</p>
         <p class="mt-1">Beatgrid AS · Org.nr. NO 928 177 572 MVA</p>
       </div>
     </footer>
   </div>
 </template>
+
+<style scoped>
+.footer-mini-link {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color .15s;
+}
+.footer-mini-link:hover {
+  color: var(--text);
+}
+</style>
