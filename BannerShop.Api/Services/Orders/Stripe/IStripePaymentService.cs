@@ -58,6 +58,18 @@ public interface IStripePaymentService
         CancellationToken ct = default);
 
     /// <summary>
+    /// Checks whether a PaymentIntent is in "succeeded" state and belongs to an
+    /// <c>ai_credit_pack</c> purchase. Used by <c>POST /api/ai-credits/packs/activate</c>
+    /// so credits are granted synchronously on the frontend payment confirmation,
+    /// without waiting for the webhook to arrive (BANNERSH-213).
+    ///
+    /// Returns <c>true</c> when the PI has succeeded; <c>false</c> when it hasn't
+    /// yet (or on any error). The mock implementation always returns <c>true</c> so
+    /// the full flow is exercisable in tests without real Stripe credentials.
+    /// </summary>
+    Task<bool> IsPaymentIntentSucceededAsync(string paymentIntentId, CancellationToken ct = default);
+
+    /// <summary>
     /// Verifies a Stripe webhook signature and returns the parsed event.
     /// Returns null when the signature is invalid.
     /// </summary>

@@ -267,6 +267,110 @@ public class CreditPackOrderTests : IClassFixture<TestWebApplicationFactory>
             "credit-pack orders never enter production, so MarkPaidAsync must not seed Queued rows");
     }
 
+    // ── 7. Activate endpoint grants credits synchronously (BANNERSH-213) ───────
+
+    [Fact]
+    public async Task ActivateCreditPack_GrantsCredits_AfterSuccessfulPayment()
+    {
+        // Buy creates an order + a mock PI
+        var client = RegisterAndGetAuthenticatedClient(out var userId);
+        var buyResp = await client.PostAsJsonAsync("/api/ai-credits/packs/buy", new { pack = "small" });
+        buyResp.EnsureSuccessStatusCode();
+        var buyDoc = JsonSerializer.Deserialize<JsonElement>(
+            await buyResp.Content.ReadAsStringAsync(), _json);
+        var clientSecret = buyDoc.GetProperty("clientSecret").GetString()!;
+
+        // Extract PI id from clientSecret: "pi_mock_pack_{uid}_{key}_secret_dev" → prefix before "_secret_"
+        var piId = clientSecret.Split("_secret_")[0];
+
+        // Registration grants a signup bonus — capture the pre-activation balance.
+        int creditsBeforeActivation;
+        using (var preScope = _factory.Services.CreateScope())
+        {
+            var preDb = preScope.ServiceProvider.GetRequiredService<BannerShop.Infrastructure.Data.BannerShopDbContext>();
+            creditsBeforeActivation = preDb.Users.Find(userId)!.AiCreditsRemaining;
+        }
+
+        // Call the activate endpoint (MockStripePaymentService always reports PI as succeeded)
+        var activateResp = await client.PostAsJsonAsync(
+            "/api/ai-credits/packs/activate",
+            new { paymentIntentId = piId });
+        activateResp.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var activateDoc = JsonSerializer.Deserialize<JsonElement>(
+            await activateResp.Content.ReadAsStringAsync(), _json);
+        var expectedAfterActivation = creditsBeforeActivation + 5; // small pack = +5
+        activateDoc.GetProperty("creditsRemaining").GetInt32().Should().Be(expectedAfterActivation,
+            "small pack must add 5 credits to the existing balance");
+
+        // Verify credits persisted in DB
+        using var verifyScope = _factory.Services.CreateScope();
+        var freshDb = verifyScope.ServiceProvider.GetRequiredService<BannerShop.Infrastructure.Data.BannerShopDbContext>();
+        var userAfter = freshDb.Users.Find(userId)!;
+        userAfter.AiCreditsRemaining.Should().Be(expectedAfterActivation,
+            "activate must persist credit grant to DB");
+
+        // Verify idempotency: calling activate twice must not double-grant
+        var activateResp2 = await client.PostAsJsonAsync(
+            "/api/ai-credits/packs/activate",
+            new { paymentIntentId = piId });
+        activateResp2.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var verifyScope2 = _factory.Services.CreateScope();
+        var freshDb2 = verifyScope2.ServiceProvider.GetRequiredService<BannerShop.Infrastructure.Data.BannerShopDbContext>();
+        freshDb2.Users.Find(userId)!.AiCreditsRemaining.Should().Be(expectedAfterActivation,
+            "second activate call must be idempotent — no double grant");
+    }
+
+    [Fact]
+    public async Task ActivateCreditPack_WithoutAuth_Returns401()
+    {
+        var client = _factory.CreateClient(); // no auth
+        var resp = await client.PostAsJsonAsync(
+            "/api/ai-credits/packs/activate",
+            new { paymentIntentId = "pi_test_abc" });
+        resp.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task ActivateCreditPack_UnknownPiId_Returns404()
+    {
+        var client = RegisterAndGetAuthenticatedClient(out _);
+        var resp = await client.PostAsJsonAsync(
+            "/api/ai-credits/packs/activate",
+            new { paymentIntentId = "pi_totally_unknown" });
+        resp.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task ActivateCreditPack_LargePack_Grants20Credits()
+    {
+        var client = RegisterAndGetAuthenticatedClient(out var userId);
+        var buyResp = await client.PostAsJsonAsync("/api/ai-credits/packs/buy", new { pack = "large" });
+        buyResp.EnsureSuccessStatusCode();
+        var buyDoc = JsonSerializer.Deserialize<JsonElement>(
+            await buyResp.Content.ReadAsStringAsync(), _json);
+        var piId = buyDoc.GetProperty("clientSecret").GetString()!.Split("_secret_")[0];
+
+        // Capture pre-activation balance (includes signup bonus)
+        int creditsBeforeActivation;
+        using (var preScope = _factory.Services.CreateScope())
+        {
+            var preDb = preScope.ServiceProvider.GetRequiredService<BannerShop.Infrastructure.Data.BannerShopDbContext>();
+            creditsBeforeActivation = preDb.Users.Find(userId)!.AiCreditsRemaining;
+        }
+
+        var activateResp = await client.PostAsJsonAsync(
+            "/api/ai-credits/packs/activate",
+            new { paymentIntentId = piId });
+        activateResp.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var doc = JsonSerializer.Deserialize<JsonElement>(
+            await activateResp.Content.ReadAsStringAsync(), _json);
+        doc.GetProperty("creditsRemaining").GetInt32().Should().Be(creditsBeforeActivation + 20,
+            "large pack must add 20 credits to the existing balance");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private HttpClient RegisterAndGetAuthenticatedClient(out int userId)

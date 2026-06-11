@@ -149,6 +149,28 @@ public class StripePaymentService : IStripePaymentService
         }
     }
 
+    public async Task<bool> IsPaymentIntentSucceededAsync(
+        string paymentIntentId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(paymentIntentId)) return false;
+        try
+        {
+            var apiKey = await GetEffectiveSecretKeyAsync(ct);
+            var reqOpts = new RequestOptions { ApiKey = apiKey };
+
+            var service = new PaymentIntentService();
+            var intent = await service.GetAsync(paymentIntentId, requestOptions: reqOpts, cancellationToken: ct);
+
+            return intent.Status == "succeeded";
+        }
+        catch (StripeException ex)
+        {
+            _logger.LogWarning(ex, "IsPaymentIntentSucceededAsync: PI {Pi} lookup failed: {Msg}",
+                paymentIntentId, ex.Message);
+            return false;
+        }
+    }
+
     public async Task<StripeWebhookEvent?> VerifyAndParseEventAsync(
         string requestBody, string signatureHeader, CancellationToken ct = default)
     {

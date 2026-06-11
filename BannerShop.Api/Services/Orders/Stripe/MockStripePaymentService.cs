@@ -31,6 +31,13 @@ public class MockStripePaymentService : IStripePaymentService
     public Task CancelPaymentIntentAsync(string paymentIntentId, CancellationToken ct = default)
         => Task.CompletedTask;
 
+    public Task<bool> IsPaymentIntentSucceededAsync(string paymentIntentId, CancellationToken ct = default)
+    {
+        // In test/mock mode every PI is considered "succeeded" so the activate flow
+        // is exercisable without real Stripe credentials.
+        return Task.FromResult(!string.IsNullOrWhiteSpace(paymentIntentId));
+    }
+
     public Task<StripeIntentResult?> RetrievePaymentIntentAsync(string paymentIntentId, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(paymentIntentId))

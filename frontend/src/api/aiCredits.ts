@@ -53,3 +53,24 @@ export async function buyCreditPack(pack: 'small' | 'large' = 'small'): Promise<
   const { data } = await apiClient.post<CreditPackBuyResponse>('/ai-credits/packs/buy', { pack })
   return data
 }
+
+export interface ActivateCreditPackResponse {
+  creditsRemaining: number
+}
+
+/**
+ * POST /api/ai-credits/packs/activate — requires auth.
+ * Called immediately after `confirmCardPayment` succeeds to grant credits
+ * synchronously, without waiting for the Stripe webhook (BANNERSH-213).
+ * Idempotent — safe to call even if the webhook already ran.
+ *
+ * @param paymentIntentId  The PI id extracted from the clientSecret:
+ *                         `clientSecret.split('_secret_')[0]`
+ */
+export async function activateCreditPack(paymentIntentId: string): Promise<ActivateCreditPackResponse> {
+  const { data } = await apiClient.post<ActivateCreditPackResponse>(
+    '/ai-credits/packs/activate',
+    { paymentIntentId },
+  )
+  return data
+}

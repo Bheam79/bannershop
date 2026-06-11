@@ -20,6 +20,7 @@ import { useAiCreditsStore } from '@/stores/aiCredits'
 import {
   getCreditPackInfo,
   buyCreditPack,
+  activateCreditPack,
   getAiCreditsBalance,
   type CreditPackInfo,
 } from '@/api/aiCredits'
@@ -183,15 +184,27 @@ async function confirmPayment() {
     return
   }
 
-  // Payment succeeded — credits are granted by the Stripe webhook asynchronously.
-  // Optimistically refresh balance so the badge updates the moment we land back.
-  phase.value = 'done'
+  // Payment confirmed client-side. Call the activate endpoint so credits are
+  // granted synchronously — without waiting for the Stripe webhook (BANNERSH-213).
+  // The PI id lives at the start of the clientSecret before "_secret_".
+  // clientSecret format: "pi_xxx_secret_yyy" → PI id is the part before "_secret_"
+  const piId = packDetails.value.clientSecret.split('_secret_')[0] ?? packDetails.value.clientSecret
   try {
-    const balance = await getAiCreditsBalance()
-    creditsStore.setBalance(balance.creditsRemaining, balance.hasUsedFreeGeneration)
+    const result = await activateCreditPack(piId)
+    // Update the store from the server's authoritative balance.
+    creditsStore.setBalance(result.creditsRemaining)
   } catch {
-    // Non-critical — visibilitychange in App.vue will re-sync on next focus.
+    // Activate failed (e.g. network blip) — fall back to a plain balance refresh
+    // so the badge still updates once the webhook fires.
+    try {
+      const balance = await getAiCreditsBalance()
+      creditsStore.setBalance(balance.creditsRemaining, balance.hasUsedFreeGeneration)
+    } catch {
+      // Non-critical — visibilitychange in App.vue will re-sync on next focus.
+    }
   }
+
+  phase.value = 'done'
 }
 
 function resetForNewPurchase() {
