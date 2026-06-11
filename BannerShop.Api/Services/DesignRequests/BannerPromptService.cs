@@ -74,7 +74,29 @@ public sealed class BannerPromptService : IBannerPromptService
           .Append(AspectRatioPhrase(input.AspectRatio))
           .Append(", sharp, no watermarks, no logos.");
 
+        // BANNERSH-215: explicitly tell the image generator to avoid copyrighted
+        // movie / TV / video-game characters. The instruction is localised to
+        // match the customer's banner language so the model isn't getting mixed
+        // English + Norwegian directives (the overlay text is already in the
+        // customer's language, so a same-language safety instruction sits next
+        // to it more cleanly than an English one).
+        sb.Append(' ').Append(CopyrightAvoidanceInstruction(input.Language));
+
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Short, language-matched instruction to the image generator that it must
+    /// NOT include copyrighted movie / TV / video-game / book characters in the
+    /// final banner image. Examples are listed so the model gets concrete cues,
+    /// not just an abstract rule.
+    /// </summary>
+    private static string CopyrightAvoidanceInstruction(string? language)
+    {
+        var isNorwegian = !string.Equals(language, "en", StringComparison.OrdinalIgnoreCase);
+        return isNorwegian
+            ? "Ikke bruk opphavsrettsbeskyttede figurer fra filmer, TV-serier, videospill, tegneserier eller bøker (f.eks. Spider-Man, Superman, Batman, Elsa, Pikachu, Mario, Harry Potter) — bruk kun generiske, beskrivende motiver."
+            : "Do not include any copyrighted movie, TV, video-game, comic, or book characters (e.g. Spider-Man, Superman, Batman, Elsa, Pikachu, Mario, Harry Potter) — use only generic, descriptive motifs.";
     }
 
     private static string CategoryOpener(BannerTemplateCategory category) => category switch

@@ -70,7 +70,49 @@ public class BannerPromptServiceTests
             HasPortrait: false));
 
         prompt.Should().NotBeNullOrWhiteSpace();
-        prompt.Should().EndWith("no logos.");
+        // Photorealistic clause must still appear; "no logos" sits in the middle
+        // now that the copyright-avoidance instruction (BANNERSH-215) follows it.
+        prompt.Should().Contain("no logos.");
+    }
+
+    [Fact]
+    public void Includes_copyright_avoidance_instruction_in_norwegian_for_nb_banner()
+    {
+        var prompt = _sut.BuildPrompt(new BannerPromptInput(
+            Category: BannerTemplateCategory.Birthday,
+            Language: "nb",
+            PersonName: "Ola",
+            PersonAge: 40,
+            TextContent: "Gratulerer med 40!",
+            ThemeDescription: "tropisk, lilla",
+            AspectRatio: "16:9",
+            HasPortrait: false));
+
+        prompt.Should().Contain("Ikke bruk opphavsrettsbeskyttede figurer");
+        prompt.Should().Contain("Spider-Man");
+        prompt.Should().Contain("Superman");
+        // English copy must NOT be appended for Norwegian banners — would just
+        // confuse the image generator with mixed-language instructions.
+        prompt.Should().NotContain("Do not include any copyrighted");
+    }
+
+    [Fact]
+    public void Includes_copyright_avoidance_instruction_in_english_for_en_banner()
+    {
+        var prompt = _sut.BuildPrompt(new BannerPromptInput(
+            Category: BannerTemplateCategory.Wedding,
+            Language: "en",
+            PersonName: "Alice",
+            PersonAge: null,
+            TextContent: "Just Married",
+            ThemeDescription: "garden, white",
+            AspectRatio: "18:9",
+            HasPortrait: false));
+
+        prompt.Should().Contain("Do not include any copyrighted");
+        prompt.Should().Contain("Spider-Man");
+        prompt.Should().Contain("Superman");
+        prompt.Should().NotContain("Ikke bruk opphavsrettsbeskyttede");
     }
 
     [Fact]

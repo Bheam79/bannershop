@@ -317,8 +317,17 @@ public class CopyrightTermRewriterTests
             AspectRatio: "16:9",
             HasPortrait: false));
 
-        prompt.Should().NotContainEquivalentOf("spiderman");
-        prompt.Should().NotContainEquivalentOf("spider-man");
+        // The rewriter must rewrite the theme; the resulting prompt must NOT
+        // describe the banner *style* as "Spiderman" — instead it should
+        // describe a "spider-themed superhero" style. The safety instruction
+        // at the end of the prompt (BANNERSH-215) intentionally names Spider-Man
+        // as an example of what the image generator must avoid, so we only
+        // check the theme/style clause here.
+        var themeClauseEnd = prompt.IndexOf(" Photorealistic", StringComparison.OrdinalIgnoreCase);
+        themeClauseEnd.Should().BeGreaterThan(0);
+        var bodyBeforeInstruction = prompt[..themeClauseEnd];
+        bodyBeforeInstruction.Should().NotContainEquivalentOf("spiderman");
+        bodyBeforeInstruction.Should().NotContainEquivalentOf("spider-man");
         prompt.Should().ContainEquivalentOf("spider-themed superhero");
     }
 
