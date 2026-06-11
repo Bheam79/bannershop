@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
@@ -13,8 +13,32 @@ const cart = useCartStore()
 const SESSION_KEY = 'bannershop_campaign_dismissed'
 const campaignDismissed = ref(false)
 
+/* ── Mobile nav menu (BANNERSH-220) ─────────────────────────── */
+const mobileMenuOpen = ref(false)
+const mobileMenuRef = ref<HTMLElement | null>(null)
+
+function closeMobileMenu() {
+  mobileMenuOpen.value = false
+}
+
+function handleOutsideClick(e: MouseEvent) {
+  if (mobileMenuRef.value && !mobileMenuRef.value.contains(e.target as Node)) {
+    mobileMenuOpen.value = false
+  }
+}
+
+function scrollToAndCloseMenu(id: string) {
+  closeMobileMenu()
+  scrollTo(id)
+}
+
 onMounted(() => {
   campaignDismissed.value = sessionStorage.getItem(SESSION_KEY) === '1'
+  document.addEventListener('click', handleOutsideClick, true)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleOutsideClick, true)
 })
 
 function dismissCampaign() {
@@ -111,8 +135,8 @@ async function handleLogout() {
           <span>Banner<b style="color:var(--accent)">Shop</b>.no</span>
         </a>
 
-        <!-- Links -->
-        <nav style="display:flex;align-items:center;gap:30px">
+        <!-- Links (hidden on mobile) -->
+        <nav class="guest-nav-links" style="display:flex;align-items:center;gap:30px">
           <a href="#anledninger" @click.prevent="scrollTo('anledninger')" style="color:var(--muted);font-weight:500;font-size:15.5px;transition:color .15s;text-decoration:none" class="nav-link">Anledninger</a>
           <a href="#bestill" @click.prevent="scrollTo('bestill')" style="color:var(--muted);font-weight:500;font-size:15.5px;transition:color .15s;text-decoration:none" class="nav-link">Bestill</a>
           <a href="#lagselv" @click.prevent="scrollTo('lagselv')" style="color:var(--muted);font-weight:500;font-size:15.5px;transition:color .15s;text-decoration:none" class="nav-link">Lag ditt banner</a>
@@ -120,20 +144,71 @@ async function handleLogout() {
         </nav>
 
         <!-- CTA -->
-        <div style="display:flex;align-items:center;gap:14px">
+        <div class="guest-cta" style="display:flex;align-items:center;gap:14px">
           <template v-if="auth.isLoggedIn">
             <a href="/account" @click.prevent="router.push('/account')" style="color:var(--muted);font-weight:500;font-size:15.5px;text-decoration:none" class="nav-link">Min konto</a>
             <AiCreditBadge />
             <button class="btn btn-ghost" style="font-size:14px;padding:8px 14px" @click="handleLogout">Logg ut</button>
           </template>
           <template v-else>
-            <a href="/login" @click.prevent="router.push('/login')" style="color:var(--muted);font-weight:500;font-size:15.5px;text-decoration:none" class="nav-link">Logg inn</a>
-            <button class="btn btn-primary" @click="router.push('/register')">Registrer</button>
+            <a href="/login" @click.prevent="router.push('/login')" class="nav-link guest-login-link" style="color:var(--muted);font-weight:500;font-size:15.5px;text-decoration:none">Logg inn</a>
+            <button class="btn btn-primary guest-register-btn" @click="router.push('/register')">Registrer</button>
           </template>
           <a v-if="cart.itemCount > 0" href="/checkout" @click.prevent="router.push('/checkout')"
              class="btn btn-primary" style="background:var(--gold);color:#1a0d06;box-shadow:none">
             <i class="fa-solid fa-cart-shopping"></i> ({{ cart.itemCount }})
           </a>
+
+          <!-- Mobile hamburger -->
+          <div ref="mobileMenuRef" class="guest-hamburger-wrap" style="position:relative">
+            <button
+              @click="mobileMenuOpen = !mobileMenuOpen"
+              class="nav-link guest-hamburger-btn"
+              :style="{
+                background: mobileMenuOpen ? 'rgba(255,255,255,.07)' : 'none',
+                border: '1px solid var(--line-soft)',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                color: 'var(--muted)',
+                padding: '8px 11px',
+                fontSize: '15px',
+                fontFamily: 'var(--font-ui)',
+                display: 'none',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'background .15s, color .15s',
+              }"
+              aria-label="Meny"
+            >
+              <i class="fa-solid fa-bars"></i>
+            </button>
+
+            <!-- Dropdown -->
+            <div
+              v-if="mobileMenuOpen"
+              style="
+                position:absolute;
+                top:calc(100% + 8px);
+                right:0;
+                background:rgba(28,23,18,.97);
+                backdrop-filter:saturate(140%) blur(18px);
+                border:1px solid var(--line-soft);
+                border-radius:12px;
+                padding:8px;
+                min-width:220px;
+                box-shadow:0 8px 32px rgba(0,0,0,.45);
+                z-index:100;
+              "
+            >
+              <a href="#anledninger" @click.prevent="scrollToAndCloseMenu('anledninger')" class="hm-item">Anledninger</a>
+              <a href="#bestill" @click.prevent="scrollToAndCloseMenu('bestill')" class="hm-item">Bestill</a>
+              <a href="#lagselv" @click.prevent="scrollToAndCloseMenu('lagselv')" class="hm-item">Lag ditt banner</a>
+              <a href="#om-oss" @click="closeMobileMenu" class="hm-item">Om oss</a>
+              <div style="height:1px;background:var(--line-soft);margin:6px 4px"></div>
+              <a href="/login" @click.prevent="closeMobileMenu(); router.push('/login')" class="hm-item">Logg inn</a>
+              <a href="/register" @click.prevent="closeMobileMenu(); router.push('/register')" class="hm-item" style="color:var(--accent) !important">Registrer</a>
+            </div>
+          </div>
         </div>
       </div>
     </header>
@@ -174,7 +249,7 @@ async function handleLogout() {
       <div style="position:absolute;width:520px;height:520px;border-radius:50%;background:rgba(255,106,61,.18);top:-160px;right:-120px;filter:blur(90px);z-index:0;pointer-events:none"></div>
       <div style="position:absolute;width:420px;height:420px;border-radius:50%;background:rgba(197,65,122,.14);bottom:-200px;left:-140px;filter:blur(90px);z-index:0;pointer-events:none"></div>
 
-      <div class="wrap" style="display:grid;grid-template-columns:1.05fr .95fr;gap:54px;align-items:center;position:relative;z-index:1">
+      <div class="wrap hero-grid" style="display:grid;grid-template-columns:1.05fr .95fr;gap:54px;align-items:center;position:relative;z-index:1">
 
         <!-- Left text -->
         <div>
@@ -237,7 +312,7 @@ async function handleLogout() {
           <p style="color:var(--muted);font-size:18px">Vi har ferdige oppsett for de vanligste feiringene. Trykk på en anledning for å se forhåndsvisning og pris.</p>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px">
+        <div class="cat-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px">
           <!-- Occasion cards -->
           <button
             v-for="cat in CATS"
@@ -276,7 +351,7 @@ async function handleLogout() {
     <!-- ═══════════════════ PREVIEW + PRICE ═══════════════════ -->
     <section id="bestill" style="padding:8px 0 64px;position:relative;z-index:1;scroll-margin-top:90px">
       <div class="wrap">
-        <div style="display:grid;grid-template-columns:1.25fr .85fr;gap:24px;align-items:stretch">
+        <div class="preview-grid" style="display:grid;grid-template-columns:1.25fr .85fr;gap:24px;align-items:stretch">
 
           <!-- Preview panel -->
           <div class="panel">
@@ -343,7 +418,7 @@ async function handleLogout() {
           <p style="color:var(--muted);font-size:18px">Last opp et ferdig design, la AI lage det for deg, eller få proffene våre til å designe – du velger.</p>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px">
+        <div class="make-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px">
 
           <!-- Upload -->
           <div class="make-card" @click="router.push('/banner-builder/upload')" style="cursor:pointer">
@@ -379,7 +454,7 @@ async function handleLogout() {
 
     <!-- ═══════════════════ TRUST STRIP ════════════════════════ -->
     <div style="border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);background:var(--bg-2)">
-      <div class="wrap" style="display:grid;grid-template-columns:repeat(4,1fr);gap:24px;padding:42px 0">
+      <div class="wrap trust-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:24px;padding:42px 0">
         <div class="strip-item">
           <span class="strip-icon"><i class="fa-solid fa-industry"></i></span>
           <h4 class="display" style="font-size:17px;margin-bottom:4px">Eget lokalt trykkeri</h4>
@@ -781,12 +856,66 @@ async function handleLogout() {
   overflow: hidden;
 }
 
+/* ── Dropdown menu items (mobile nav) ───────────────────────── */
+.hm-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: var(--font-ui);
+  text-decoration: none;
+  transition: background .12s, color .12s;
+  cursor: pointer;
+  width: 100%;
+  box-sizing: border-box;
+}
+.hm-item:hover {
+  background: rgba(255,255,255,.07);
+  color: var(--text) !important;
+}
+
 /* ── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 980px) {
+  /* Hero collapses to 1 col on tablet */
   .hero-grid { grid-template-columns: 1fr !important; }
   .order-grid { grid-template-columns: 1fr !important; }
+  /* Preview + price panels stack */
+  .preview-grid { grid-template-columns: 1fr !important; }
 }
+
 @media (max-width: 768px) {
-  nav.links { display: none; }
+  /* Guest header: hide marketing links + login link + register button,
+     show hamburger which replicates them in a dropdown. */
+  .guest-nav-links { display: none !important; }
+  .guest-login-link { display: none !important; }
+  .guest-register-btn { display: none !important; }
+  .guest-hamburger-btn { display: flex !important; }
+
+  /* Trust strip drops to 2 cols */
+  .trust-grid { grid-template-columns: repeat(2, 1fr) !important; }
+}
+
+@media (max-width: 640px) {
+  /* Category and "make your own" grids drop to 2 cols */
+  .cat-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .make-grid { grid-template-columns: repeat(2, 1fr) !important; }
+}
+
+@media (max-width: 480px) {
+  /* Stack everything to 1 col on phones */
+  .cat-grid { grid-template-columns: 1fr !important; }
+  .make-grid { grid-template-columns: 1fr !important; }
+  .trust-grid { grid-template-columns: 1fr !important; }
+  /* Feature list inside preview panel: stack the two columns */
+  .feat-list { grid-template-columns: 1fr !important; }
+  /* Trim inner padding so panel + stage fit inside 480px viewport */
+  .wrap { padding: 0 16px !important; }
+  .panel { padding: 20px !important; }
+  .stage { padding: 20px !important; }
+  .cta-band { padding: 32px 20px !important; }
 }
 </style>
