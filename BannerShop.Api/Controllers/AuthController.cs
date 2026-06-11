@@ -6,6 +6,7 @@ using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace BannerShop.Api.Controllers;
 
@@ -26,6 +27,7 @@ public class AuthController : ControllerBase
 
     // ── POST /api/auth/register ───────────────────────────────────────────────
     [HttpPost("register")]
+    [EnableRateLimiting("auth-register")]
     public async Task<IActionResult> Register([FromBody] RegisterRequest req)
     {
         var result = await _auth.RegisterAsync(req.Email, req.Password, req.Name, req.Phone);
@@ -48,6 +50,7 @@ public class AuthController : ControllerBase
 
     // ── POST /api/auth/login ──────────────────────────────────────────────────
     [HttpPost("login")]
+    [EnableRateLimiting("auth-login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest req)
     {
         var result = await _auth.LoginAsync(req.Email, req.Password);
@@ -58,6 +61,7 @@ public class AuthController : ControllerBase
 
     // ── POST /api/auth/refresh ────────────────────────────────────────────────
     [HttpPost("refresh")]
+    [EnableRateLimiting("auth-refresh")]
     public async Task<IActionResult> Refresh([FromBody] RefreshRequest req)
     {
         var result = await _auth.RefreshAsync(req.RefreshToken);
@@ -101,6 +105,7 @@ public class AuthController : ControllerBase
     // ── POST /api/auth/change-password ────────────────────────────────────────
     [Authorize]
     [HttpPost("change-password")]
+    [EnableRateLimiting("auth-change-password")]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest req)
     {
         var userId = GetUserId();

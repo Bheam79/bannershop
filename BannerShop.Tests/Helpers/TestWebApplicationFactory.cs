@@ -48,6 +48,19 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["Jwt:AccessTokenExpiryMinutes"]        = "60",
                 ["Jwt:RefreshTokenExpiryDays"]          = "30",
                 // No Admin:SeedPassword → SeedAdminAsync returns early
+
+                // Rate limiting: set very high permit counts so existing tests that
+                // call auth endpoints multiple times from the same IP (127.0.0.1) are
+                // not throttled.  AuthRateLimitTestFactory overrides these to tight
+                // values to verify that 429 is returned when the limit is exceeded.
+                ["RateLimiting:Login:PermitLimit"]          = "1000",
+                ["RateLimiting:Login:WindowSeconds"]        = "60",
+                ["RateLimiting:Register:PermitLimit"]       = "1000",
+                ["RateLimiting:Register:WindowSeconds"]     = "60",
+                ["RateLimiting:Refresh:PermitLimit"]        = "1000",
+                ["RateLimiting:Refresh:WindowSeconds"]      = "60",
+                ["RateLimiting:ChangePassword:PermitLimit"] = "1000",
+                ["RateLimiting:ChangePassword:WindowSeconds"] = "60",
             });
         });
 

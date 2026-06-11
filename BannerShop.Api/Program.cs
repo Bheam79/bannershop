@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using BannerShop.Api.Services;
 using BannerShop.Api.Services.AiCredits;
 using BannerShop.Api.Services.BannerBuilder;
@@ -232,6 +233,46 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+// ─── Rate Limiting (brute-force protection on auth endpoints) ─────────────────
+// Permit counts and window sizes are NOT read from builder.Configuration inline
+// because WebApplicationFactory.ConfigureWebHost adds test config providers AFTER
+// the top-level Program.cs code runs, so inline reads always see the defaults.
+// Instead, configuration is read lazily inside the per-request partitioner via
+// httpContext.RequestServices — the IConfiguration singleton there includes all
+// providers (including those added by the test factory) by the time any request
+// arrives.  The factory callback inside GetSlidingWindowLimiter is invoked once
+// per unique partition key (first request per IP), so the values are captured
+// freshly from the live config at that moment.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    static RateLimitPartition<string> SlidingAuthPartition(
+        HttpContext httpContext,
+        string cfgKey,
+        int defaultLimit,
+        int defaultWindowSec)
+    {
+        var cfg      = httpContext.RequestServices.GetRequiredService<IConfiguration>();
+        var limit    = cfg.GetValue($"RateLimiting:{cfgKey}:PermitLimit",   defaultLimit);
+        var windowSec = cfg.GetValue($"RateLimiting:{cfgKey}:WindowSeconds", defaultWindowSec);
+        return RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit       = limit,
+                Window            = TimeSpan.FromSeconds(windowSec),
+                SegmentsPerWindow = 2,
+                QueueLimit        = 0,
+            });
+    }
+
+    options.AddPolicy("auth-login",           ctx => SlidingAuthPartition(ctx, "Login",          10, 60));
+    options.AddPolicy("auth-register",        ctx => SlidingAuthPartition(ctx, "Register",         5, 60));
+    options.AddPolicy("auth-refresh",         ctx => SlidingAuthPartition(ctx, "Refresh",         20, 60));
+    options.AddPolicy("auth-change-password", ctx => SlidingAuthPartition(ctx, "ChangePassword",   5, 60));
+});
+
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 var frontendUrl = builder.Configuration["Frontend:Url"] ?? "http://localhost:5173";
 builder.Services.AddCors(options =>
@@ -446,6 +487,10 @@ app.UseStaticFiles();
     }
 }
 
+// Explicit UseRouting is required so endpoint metadata (e.g. [EnableRateLimiting])
+// is resolved before the rate-limiter middleware evaluates the request.
+app.UseRouting();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
