@@ -44,8 +44,9 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick, true
         <span>Banner<b style="color:var(--accent)">Shop</b>.no</span>
       </RouterLink>
 
-      <!-- Centre nav (logged in only) -->
-      <nav v-if="auth.isLoggedIn" style="display:flex;align-items:center;gap:8px">
+      <!-- Centre nav (logged in only) — hidden on narrow viewports;
+           the hamburger dropdown carries the same links on mobile. -->
+      <nav v-if="auth.isLoggedIn" class="nb-centre" style="display:flex;align-items:center;gap:8px">
         <RouterLink
           to="/banner-builder"
           class="nb-link nb-pill"
@@ -114,6 +115,14 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick, true
               z-index:100;
             "
           >
+            <RouterLink
+              to="/banner-builder"
+              class="hm-item"
+              @click="closeMenu"
+            >
+              <i class="fa-solid fa-wand-magic-sparkles" style="width:16px;opacity:.7"></i>
+              Lag ditt banner
+            </RouterLink>
             <RouterLink
               to="/account"
               class="hm-item"
@@ -218,5 +227,17 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick, true
   background: none;
   border: none;
   text-align: left;
+}
+
+/* ── Responsive (BANNERSH-221) ──────────────────────────────── */
+@media (max-width: 640px) {
+  /* Hide the centre nav pills — the hamburger dropdown carries
+     "Lag ditt banner" + "Mine design" on mobile. */
+  .nb-centre { display: none !important; }
+}
+
+@media (max-width: 480px) {
+  /* Trim padding so the brand + badge + hamburger row fits 480px. */
+  nav > div { padding: 0 16px !important; gap: 10px !important; }
 }
 </style>
