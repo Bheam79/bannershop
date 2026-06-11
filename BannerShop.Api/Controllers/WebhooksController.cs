@@ -60,12 +60,39 @@ public class WebhooksController : ControllerBase
         Request.Body.Position = 0;
 
         var signature = Request.Headers["Stripe-Signature"].ToString();
+
+        // BANNERSH-213: unconditional Information-level entry log so admins can
+        // verify in journalctl ("make logs") whether Stripe is actually hitting
+        // the endpoint at all. The signature is intentionally NOT logged in full
+        // — only its length and presence — to avoid leaking it.
+        _logger.LogInformation(
+            "Stripe webhook received: bodyBytes={Len}, hasSignature={HasSig}, sourceIp={Ip}",
+            body.Length,
+            !string.IsNullOrEmpty(signature),
+            HttpContext.Connection.RemoteIpAddress?.ToString() ?? "(unknown)");
+
         if (string.IsNullOrEmpty(signature))
+        {
+            _logger.LogWarning("Stripe webhook rejected: missing Stripe-Signature header.");
             return BadRequest(new { error = "Missing Stripe-Signature header." });
+        }
 
         var evt = await _stripe.VerifyAndParseEventAsync(body, signature, ct);
         if (evt is null)
+        {
+            // VerifyAndParseEventAsync already logs the reason (missing secret /
+            // signature mismatch). Log a higher-visibility line here too so the
+            // rejection is visible at Information level.
+            _logger.LogWarning(
+                "Stripe webhook rejected: signature/secret verification failed. " +
+                "Check that 'stripe_webhook_secret' in /admin/settings matches the " +
+                "signing secret shown in the Stripe Dashboard webhook page.");
             return BadRequest(new { error = "Invalid Stripe signature or payload." });
+        }
+
+        _logger.LogInformation(
+            "Stripe webhook verified: type={Type}, pi={Pi}, metaType={MetaType}",
+            evt.EventType, evt.PaymentIntentId, evt.MetadataType ?? "(none)");
 
         try
         {
@@ -80,7 +107,7 @@ public class WebhooksController : ControllerBase
                     break;
 
                 default:
-                    _logger.LogDebug("Ignored Stripe event type {Type}", evt.EventType);
+                    _logger.LogInformation("Ignored Stripe event type {Type}", evt.EventType);
                     break;
             }
         }

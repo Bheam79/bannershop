@@ -217,6 +217,33 @@ stripe listen --forward-to localhost:5000/api/webhooks/stripe
 # Copy the printed "whsec_…" into /admin/settings → Stripe Webhook Secret
 ```
 
+### Debugging webhook delivery in prod
+All API logs land in the systemd-user journal under unit `bannershop`. Tail
+them with **`make logs`** (= `journalctl --user -u bannershop -f`). The
+webhook controller logs at Information level on EVERY inbound hit, so a quick
+filter answers "did Stripe actually call us?":
+```bash
+# live tail of just webhook lines
+journalctl --user -u bannershop -f | grep -i "Stripe webhook"
+
+# last hour, all webhook activity
+journalctl --user -u bannershop --since "1 hour ago" | grep -i webhook
+```
+Three log lines per successful delivery:
+1. `Stripe webhook received: bodyBytes=…, hasSignature=True, sourceIp=…`  ← endpoint reached
+2. `Stripe webhook verified: type=payment_intent.succeeded, pi=…, metaType=ai_credit_pack` ← signature ok
+3. `Granted N AI credits to user X via credit pack (PI pi_…).` ← side-effect applied
+
+If line 1 never appears, Stripe is not reaching the server — check the dashboard
+webhook endpoint URL, the reverse-proxy from :443 → :17080, and any firewall.
+If line 1 appears but line 2 says "verification failed", the `stripe_webhook_secret`
+in `/admin/settings` doesn't match the signing secret shown in the Stripe Dashboard.
+
+Note: customer-facing credit-pack purchases also call `POST /api/ai-credits/packs/activate`
+synchronously (BANNERSH-213), so credits land immediately even when the webhook
+is mis-configured — but order rows stay in `PendingPayment` until the webhook
+arrives, so transaction reports under-count.
+
 ## Test-mode "Marker som betalt" (BANNERSH-182)
 `POST /api/orders/{id}/mock-pay` (`OrderService.MockMarkPaidAsync`) flips a
 Draft/PendingPayment order to Paid without going through Stripe — same
