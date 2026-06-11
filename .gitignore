@@ -36,6 +36,7 @@ Thumbs.db
 # Unit test coverage (scripts/test-coverage.sh / make test-coverage)
 TestResults/
 coverage-report/
+coverage-report-detail/
 # E2E coverage (scripts/e2e-coverage.sh / make e2e-coverage)
 e2e/.nyc_output/
 e2e/coverage/
