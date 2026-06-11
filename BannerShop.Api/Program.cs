@@ -490,8 +490,20 @@ static async Task SeedAdminAsync(BannerShopDbContext db, IConfiguration config)
     if (string.IsNullOrWhiteSpace(adminPassword))
         return; // No password configured — skip seed
 
-    if (await db.Users.AnyAsync(u => u.Email == adminEmail))
-        return; // Already exists
+    var existing = await db.Users.FirstOrDefaultAsync(u => u.Email == adminEmail);
+    if (existing != null)
+    {
+        // If the configured password no longer matches the stored hash (e.g. the
+        // secrets/admin_password file was rotated or re-created while the DB
+        // volume persisted), update the hash so `make up` always produces a
+        // working admin login.
+        if (!BCrypt.Net.BCrypt.Verify(adminPassword, existing.PasswordHash))
+        {
+            existing.PasswordHash = BCrypt.Net.BCrypt.HashPassword(adminPassword);
+            await db.SaveChangesAsync();
+        }
+        return;
+    }
 
     db.Users.Add(new User
     {
