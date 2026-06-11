@@ -239,6 +239,30 @@ webhook endpoint URL, the reverse-proxy from :443 → :17080, and any firewall.
 If line 1 appears but line 2 says "verification failed", the `stripe_webhook_secret`
 in `/admin/settings` doesn't match the signing secret shown in the Stripe Dashboard.
 
+### Stripe Dashboard shows "no delivery attempts at all"
+When the Stripe Dashboard's webhook page lists zero attempts even though customers
+are paying, the issue is on the Stripe side — Stripe isn't trying to deliver yet.
+Four common causes (in descending order of frequency):
+
+1. **Event types not subscribed on the endpoint.** Stripe sends *nothing* by
+   default — you must add events explicitly. Open the endpoint in the dashboard
+   → "Listening to" section → make sure `payment_intent.succeeded` AND
+   `payment_intent.payment_failed` are both in the list. If the list says
+   "0 events" or only has unrelated events, that's the issue.
+
+2. **Test/Live mode mismatch.** The dashboard has a Test/Live toggle (top right).
+   Test-mode PIs only generate webhook attempts on test-mode endpoints; live-mode
+   PIs only generate attempts on live-mode endpoints. The PI-creation log line
+   `Created Stripe PI pi_xxx in <test|live> mode …` tells you which mode the app
+   is currently using — make sure the dashboard tab you're checking matches.
+
+3. **Endpoint is "Disabled".** The endpoint detail page shows a status badge;
+   if it says Disabled, Stripe won't send. Click "Enable endpoint".
+
+4. **Endpoint registered as a Connect endpoint instead of Account.** We don't
+   use Stripe Connect — the endpoint must be of type "Account". Re-create as
+   a regular endpoint if it was added under Connect by mistake.
+
 Note: customer-facing credit-pack purchases also call `POST /api/ai-credits/packs/activate`
 synchronously (BANNERSH-213), so credits land immediately even when the webhook
 is mis-configured — but order rows stay in `PendingPayment` until the webhook

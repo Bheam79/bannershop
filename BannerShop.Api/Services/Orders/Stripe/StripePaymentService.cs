@@ -53,6 +53,11 @@ public class StripePaymentService : IStripePaymentService
             AutomaticPaymentMethods = new PaymentIntentAutomaticPaymentMethodsOptions { Enabled = true }
         }, reqOpts, cancellationToken: ct);
 
+        _logger.LogInformation(
+            "Created Stripe PI {Pi} in {Mode} mode for banner order (orderId={OrderId}, userId={UserId}, amountNok={Amount}). " +
+            "Webhook deliveries for this PI appear under the matching test/live tab in the Stripe Dashboard.",
+            intent.Id, GetKeyMode(apiKey), orderId, userId, amountNok);
+
         return new StripeIntentResult(intent.Id, intent.ClientSecret);
     }
 
@@ -81,6 +86,11 @@ public class StripePaymentService : IStripePaymentService
             Metadata = metadata,
             AutomaticPaymentMethods = new PaymentIntentAutomaticPaymentMethodsOptions { Enabled = true }
         }, reqOpts, cancellationToken: ct);
+
+        _logger.LogInformation(
+            "Created Stripe PI {Pi} in {Mode} mode for AI credit pack ({Credits} credits, {Amount} NOK, userId={UserId}, orderId={OrderId}). " +
+            "Webhook deliveries for this PI appear under the matching test/live tab in the Stripe Dashboard.",
+            intent.Id, GetKeyMode(apiKey), creditCount, amountNok, userId, orderId);
 
         return new StripeIntentResult(intent.Id, intent.ClientSecret);
     }
@@ -287,6 +297,24 @@ public class StripePaymentService : IStripePaymentService
         key.StartsWith("sk_test_REPLACE_", StringComparison.OrdinalIgnoreCase) ||
         key.StartsWith("whsec_REPLACE_", StringComparison.OrdinalIgnoreCase) ||
         key.StartsWith("REPLACE_", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Returns "test" / "live" / "unknown" from a Stripe secret-key prefix.
+    /// Used in PI-creation logs so admins can verify their app's mode matches
+    /// the Stripe Dashboard tab they're checking webhook deliveries on
+    /// (test PIs only show in test webhooks; live PIs only show in live webhooks).
+    /// </summary>
+    private static string GetKeyMode(string? apiKey)
+    {
+        if (string.IsNullOrEmpty(apiKey)) return "unknown";
+        if (apiKey.StartsWith("sk_test_", StringComparison.OrdinalIgnoreCase) ||
+            apiKey.StartsWith("rk_test_", StringComparison.OrdinalIgnoreCase))
+            return "test";
+        if (apiKey.StartsWith("sk_live_", StringComparison.OrdinalIgnoreCase) ||
+            apiKey.StartsWith("rk_live_", StringComparison.OrdinalIgnoreCase))
+            return "live";
+        return "unknown";
+    }
 
     private static string DescribeKey(string? key)
     {
