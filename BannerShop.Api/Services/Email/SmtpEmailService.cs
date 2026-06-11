@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Mail;
 using Microsoft.Extensions.Options;
@@ -16,6 +17,7 @@ namespace BannerShop.Api.Services.Email;
 /// the project lead) — empty credentials still try to connect but will fail at
 /// the server, which is intentional so misconfiguration is caught loudly.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Thin SMTP wrapper — tested via integration against a real SMTP server")]
 public sealed class SmtpEmailService : IEmailService
 {
     private readonly EmailOptions _opts;

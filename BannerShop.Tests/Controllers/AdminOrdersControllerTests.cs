@@ -247,6 +247,176 @@ public class AdminOrdersControllerTests : IClassFixture<TestWebApplicationFactor
         found.Should().BeTrue($"order {orderId} should appear in search results for query '{orderId}'");
     }
 
+    // ── POST /api/admin/orders/{id}/advance ──────────────────────────────────
+
+    [Fact]
+    public async Task Advance_ValidTransition_Returns200WithUpdatedState()
+    {
+        var customerClient = RegisterAndGetAuthenticatedClient();
+        var orderId = await CreateDraftAndGetId(customerClient);
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        // Draft → Paid (valid for CustomBanner)
+        var response = await adminClient.PostAsJsonAsync(
+            $"/api/admin/orders/{orderId}/advance",
+            new { next = "Paid" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await response.ReadJsonAsync<JsonElement>();
+        doc.GetProperty("orderState").GetString().Should().Be("Paid");
+    }
+
+    [Fact]
+    public async Task Advance_InvalidTransition_Returns422()
+    {
+        var customerClient = RegisterAndGetAuthenticatedClient();
+        var orderId = await CreateDraftAndGetId(customerClient);
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        // Draft → Delivered is not a valid single step
+        var response = await adminClient.PostAsJsonAsync(
+            $"/api/admin/orders/{orderId}/advance",
+            new { next = "Delivered" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+    }
+
+    [Fact]
+    public async Task Advance_NonExistentOrder_Returns404()
+    {
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        var response = await adminClient.PostAsJsonAsync(
+            "/api/admin/orders/99999990/advance",
+            new { next = "Paid" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // ── POST /api/admin/orders/{id}/advance-state ─────────────────────────────
+
+    [Fact]
+    public async Task AdvanceState_ValidTransition_Returns200WithUpdatedState()
+    {
+        var customerClient = RegisterAndGetAuthenticatedClient();
+        var orderId = await CreateDraftAndGetId(customerClient);
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        // Draft → Paid using the alternative endpoint
+        var response = await adminClient.PostAsJsonAsync(
+            $"/api/admin/orders/{orderId}/advance-state",
+            new { toState = "Paid" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await response.ReadJsonAsync<JsonElement>();
+        doc.GetProperty("orderState").GetString().Should().Be("Paid");
+    }
+
+    [Fact]
+    public async Task AdvanceState_FullSequence_TracksThroughInProduction()
+    {
+        var customerClient = RegisterAndGetAuthenticatedClient();
+        var orderId = await CreateDraftAndGetId(customerClient);
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        // Draft → Paid → InProduction (should trigger production-started email attempt)
+        await adminClient.PostAsJsonAsync(
+            $"/api/admin/orders/{orderId}/advance-state", new { toState = "Paid" });
+
+        var response = await adminClient.PostAsJsonAsync(
+            $"/api/admin/orders/{orderId}/advance-state",
+            new { toState = "InProduction" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await response.ReadJsonAsync<JsonElement>();
+        doc.GetProperty("orderState").GetString().Should().Be("InProduction");
+    }
+
+    [Fact]
+    public async Task AdvanceState_NonExistentOrder_Returns404()
+    {
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        var response = await adminClient.PostAsJsonAsync(
+            "/api/admin/orders/99999989/advance-state",
+            new { toState = "Paid" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task AdvanceState_CancelledTransition_Returns200()
+    {
+        var customerClient = RegisterAndGetAuthenticatedClient();
+        var orderId = await CreateDraftAndGetId(customerClient);
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        // Cancel from Draft state
+        var response = await adminClient.PostAsJsonAsync(
+            $"/api/admin/orders/{orderId}/advance-state",
+            new { toState = "Cancelled" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await response.ReadJsonAsync<JsonElement>();
+        doc.GetProperty("orderState").GetString().Should().Be("Cancelled");
+    }
+
+    [Fact]
+    public async Task AdvanceState_FullLifecycle_ThroughShipped()
+    {
+        var customerClient = RegisterAndGetAuthenticatedClient();
+        var orderId = await CreateDraftAndGetId(customerClient);
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        // Draft → Paid → InProduction → Shipped
+        await adminClient.PostAsJsonAsync($"/api/admin/orders/{orderId}/advance-state", new { toState = "Paid" });
+        await adminClient.PostAsJsonAsync($"/api/admin/orders/{orderId}/advance-state", new { toState = "InProduction" });
+
+        var response = await adminClient.PostAsJsonAsync(
+            $"/api/admin/orders/{orderId}/advance-state", new { toState = "Shipped" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await response.ReadJsonAsync<JsonElement>();
+        doc.GetProperty("orderState").GetString().Should().Be("Shipped");
+    }
+
+    [Fact]
+    public async Task Advance_FullLifecycle_ThroughDelivered()
+    {
+        var customerClient = RegisterAndGetAuthenticatedClient();
+        var orderId = await CreateDraftAndGetId(customerClient);
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        // Draft → Paid → InProduction → Shipped → Delivered
+        await adminClient.PostAsJsonAsync($"/api/admin/orders/{orderId}/advance", new { next = "Paid" });
+        await adminClient.PostAsJsonAsync($"/api/admin/orders/{orderId}/advance", new { next = "InProduction" });
+        await adminClient.PostAsJsonAsync($"/api/admin/orders/{orderId}/advance", new { next = "Shipped" });
+
+        var response = await adminClient.PostAsJsonAsync(
+            $"/api/admin/orders/{orderId}/advance", new { next = "Delivered" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await response.ReadJsonAsync<JsonElement>();
+        doc.GetProperty("orderState").GetString().Should().Be("Delivered");
+    }
+
+    [Fact]
+    public async Task Advance_ToCancelledOnPaidOrder_Returns200()
+    {
+        var customerClient = RegisterAndGetAuthenticatedClient();
+        var orderId = await CreateDraftAndGetId(customerClient);
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        // Advance to Paid first, then cancel
+        await adminClient.PostAsJsonAsync($"/api/admin/orders/{orderId}/advance", new { next = "Paid" });
+        var response = await adminClient.PostAsJsonAsync(
+            $"/api/admin/orders/{orderId}/advance", new { next = "Cancelled" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await response.ReadJsonAsync<JsonElement>();
+        doc.GetProperty("orderState").GetString().Should().Be("Cancelled");
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /// <summary>Registers a fresh customer user and returns an authenticated HttpClient.</summary>

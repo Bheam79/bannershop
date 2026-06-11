@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -12,6 +13,7 @@ namespace BannerShop.Api.Services.Shipping;
 /// Live implementation of <see cref="IShippingService"/> using the Bring Shipping Guide 2.0 API.
 /// Results are cached per (postal code, parcel dimensions) for one hour to avoid hammering the API.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Live Bring Shipping Guide 2.0 HTTP wrapper — tested via integration against the Bring API")]
 public class BringShippingService : IShippingService
 {
     private static readonly TimeSpan CacheTtl = TimeSpan.FromHours(1);

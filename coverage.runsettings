@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <!-- Exclude EF Core auto-generated migration files and model snapshot -->
+          <ExcludeByFile>
+            **/Migrations/*.cs,
+            **/BannerShopDbContextModelSnapshot.cs,
+            **/DesignTimeDbContextFactory.cs,
+            **/Services/Shipping/BringApiModels.cs
+          </ExcludeByFile>
+          <!-- Exclude generated/boilerplate classes that don't need direct testing -->
+          <Exclude>
+            [*]*.Migrations.*,
+            [BannerShop.Infrastructure]BannerShop.Infrastructure.Data.DesignTimeDbContextFactory,
+            [BannerShop.Infrastructure]BannerShop.Infrastructure.Data.Migrations.*
+          </Exclude>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

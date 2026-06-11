@@ -267,4 +267,80 @@ public class WebhookCreditPackTests
 
         result.Should().BeOfType<BadRequestObjectResult>();
     }
+
+    // ── Missing Stripe-Signature header ──────────────────────────────────────
+
+    [Fact]
+    public async Task Webhook_MissingSignatureHeader_Returns400()
+    {
+        var (_, stripeMock, creditsMock, ordersMock, designMock) = MakeController();
+
+        // Build controller without Stripe-Signature header
+        var controller = new WebhooksController(
+            stripeMock.Object,
+            ordersMock.Object,
+            designMock.Object,
+            creditsMock.Object,
+            NullLogger<WebhooksController>.Instance);
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("{}"));
+        // Deliberately NOT setting Stripe-Signature header
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var result = await controller.Stripe(CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        var bad = (BadRequestObjectResult)result;
+        bad.Value.ToString().Should().Contain("Stripe-Signature");
+    }
+
+    // ── Unknown event type (default branch) ──────────────────────────────────
+
+    [Fact]
+    public async Task Webhook_UnknownEventType_Returns200Received()
+    {
+        var (controller, stripeMock, _, _, _) = MakeController();
+
+        stripeMock.Setup(s => s.VerifyAndParseEventAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StripeWebhookEvent(
+                EventType: "charge.refunded",       // unknown type
+                PaymentIntentId: "pi_unknown",
+                OrderIdFromMetadata: null,
+                FailureMessage: null,
+                MetadataType: null,
+                MetadataUserId: null,
+                MetadataCreditCount: null));
+
+        var result = await controller.Stripe(CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>();
+    }
+
+    // ── Handler exception triggers 500 ──────────────────────────────────────
+
+    [Fact]
+    public async Task Webhook_HandlerThrows_Returns500()
+    {
+        var (controller, stripeMock, _, ordersMock, _) = MakeController();
+
+        stripeMock.Setup(s => s.VerifyAndParseEventAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StripeWebhookEvent(
+                EventType: "payment_intent.payment_failed",
+                PaymentIntentId: "pi_throws",
+                OrderIdFromMetadata: null,
+                FailureMessage: "Declined",
+                MetadataType: null,
+                MetadataUserId: null,
+                MetadataCreditCount: null));
+
+        // Make the order service throw so the catch block is hit
+        ordersMock.Setup(o => o.MarkPaymentFailedAsync(
+                It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("DB error"));
+
+        var result = await controller.Stripe(CancellationToken.None);
+
+        ((ObjectResult)result).StatusCode.Should().Be(500);
+    }
 }

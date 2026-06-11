@@ -44,8 +44,8 @@ rm -rf "$RESULTS_DIR"
 dotnet test "$REPO_ROOT/BannerShop.slnx" \
   --collect:"XPlat Code Coverage" \
   --results-directory "$RESULTS_DIR" \
-  --nologo \
-  -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+  --settings "$REPO_ROOT/coverage.runsettings" \
+  --nologo
 
 echo "      ✓ Tests complete"
 

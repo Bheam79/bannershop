@@ -82,6 +82,20 @@ public class AiCreditsControllerTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [Fact]
+    public async Task GetMe_WithAuth_Returns200WithBalanceInfo()
+    {
+        var client = RegisterAndGetAuthenticatedClient();
+
+        var response = await client.GetAsync("/api/ai-credits/me");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = JsonSerializer.Deserialize<JsonElement>(
+            await response.Content.ReadAsStringAsync(), _json);
+        doc.TryGetProperty("creditsRemaining", out _).Should().BeTrue();
+        doc.TryGetProperty("hasUsedFreeGeneration", out _).Should().BeTrue();
+    }
+
     // ── Happy path — small pack ───────────────────────────────────────────────
 
     [Fact]

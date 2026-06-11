@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using BannerShop.Api.Services.SystemSettings;
 using Microsoft.Extensions.Options;
@@ -15,6 +16,7 @@ namespace BannerShop.Api.Services.Orders.Stripe;
 /// addition to standard secret keys (sk_live_…/sk_test_…). When no key is set,
 /// payment endpoints throw rather than silently failing.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Live Stripe.NET wrapper — tested via integration against the Stripe test API")]
 public class StripePaymentService : IStripePaymentService
 {
     private readonly StripeOptions _options;

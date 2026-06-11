@@ -424,4 +424,306 @@ public class DesignRequestServiceTests
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("Forbidden");
     }
+
+    // ── ApproveAsync: selectedHeightCm + linked Order state advancement ───────
+
+    [Fact]
+    public async Task ApproveAsync_WithSelectedHeight_UpdatesAspectRatioAndAdvancesOrder()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var (svc, _, _, _) = MakeService(db);
+
+        // Create a linked Order in CustomerApproval state
+        var order = new Order
+        {
+            UserId      = 1,
+            OrderType   = OrderType.ManualDesign,
+            OrderState  = OrderState.CustomerApproval,
+            Status      = OrderStatus.Paid,
+            TotalNok    = 495m,
+            CreatedAt   = DateTime.UtcNow,
+            UpdatedAt   = DateTime.UtcNow
+        };
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(); // order.Id is now set
+
+        var request = new DesignRequest
+        {
+            Id               = 60,
+            UserId           = 1,
+            BannerTemplateId = 1,
+            Mode             = DesignRequestMode.Manual,
+            Language         = "nb",
+            PersonName       = "Ola",
+            TextContent      = "Hi",
+            ThemeDescription = "x",
+            AspectRatio      = "300x150",
+            Status           = DesignRequestStatus.AwaitingApproval,
+            PriceNok         = 495m,
+            RevisionCount    = 0,
+            OrderId          = order.Id,
+            CreatedAt        = DateTime.UtcNow,
+            UpdatedAt        = DateTime.UtcNow
+        };
+        db.DesignRequests.Add(request);
+        await db.SaveChangesAsync();
+
+        var result = await svc.ApproveAsync(60, callerUserId: 1, selectedHeightCm: 200);
+
+        result.Success.Should().BeTrue();
+        var savedDr = db.DesignRequests.Single(r => r.Id == 60);
+        savedDr.Status.Should().Be(DesignRequestStatus.Approved);
+        // selectedHeightCm=200 rewrites AspectRatio to "300x200" (width preserved, height updated)
+        savedDr.AspectRatio.Should().Contain("200");
+
+        // Linked order should advance: CustomerApproval → InProduction
+        var savedOrder = db.Orders.Single(o => o.Id == order.Id);
+        savedOrder.OrderState.Should().Be(OrderState.InProduction);
+    }
+
+    // ── ListMineAsync ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ListMineAsync_WithExistingRequest_ReturnsItemsWithPreviewUrl()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        db.DesignRequests.Add(new DesignRequest
+        {
+            UserId           = 1,
+            BannerTemplateId = 1,
+            Mode             = DesignRequestMode.Ai,
+            Language         = "nb",
+            PersonName       = "Ola",
+            TextContent      = "Gratulerer",
+            ThemeDescription = "tropisk",
+            AspectRatio      = "16:9",
+            Status           = DesignRequestStatus.AwaitingApproval,
+            PriceNok         = 0m,
+            AiPreviewPath    = "design-requests/1/preview.jpg",
+            CreatedAt        = DateTime.UtcNow,
+            UpdatedAt        = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+        var (svc, _, _, _) = MakeService(db);
+
+        var items = await svc.ListMineAsync(1);
+
+        items.Should().HaveCount(1);
+        items[0].PersonName.Should().Be("Ola");
+        items[0].PreviewUrl.Should().NotBeNull(); // AiPreviewPath drives the preview URL
+    }
+
+    // ── RequestRevisionAsync ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RequestRevisionAsync_WrongUser_ReturnsForbiddenError()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        db.Users.Add(DbHelper.MakeUser(2, "other@example.com"));
+        db.DesignRequests.Add(new DesignRequest
+        {
+            Id               = 50,
+            UserId           = 1,
+            BannerTemplateId = 1,
+            Mode             = DesignRequestMode.Manual,
+            Language         = "nb",
+            PersonName       = "Ola",
+            TextContent      = "Hi",
+            ThemeDescription = "x",
+            AspectRatio      = "16:9",
+            Status           = DesignRequestStatus.AwaitingApproval,
+            PriceNok         = 495m,
+            RevisionCount    = 0,
+            CreatedAt        = DateTime.UtcNow,
+            UpdatedAt        = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+        var (svc, _, _, _) = MakeService(db);
+
+        var result = await svc.RequestRevisionAsync(50, callerUserId: 2, comment: "wrong user");
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("Forbidden");
+    }
+
+    [Fact]
+    public async Task RequestRevisionAsync_WrongStatus_ReturnsError()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        db.DesignRequests.Add(new DesignRequest
+        {
+            Id               = 51,
+            UserId           = 1,
+            BannerTemplateId = 1,
+            Mode             = DesignRequestMode.Manual,
+            Language         = "nb",
+            PersonName       = "Ola",
+            TextContent      = "Hi",
+            ThemeDescription = "x",
+            AspectRatio      = "16:9",
+            Status           = DesignRequestStatus.InProgress, // not AwaitingApproval
+            PriceNok         = 495m,
+            RevisionCount    = 0,
+            CreatedAt        = DateTime.UtcNow,
+            UpdatedAt        = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+        var (svc, _, _, _) = MakeService(db);
+
+        var result = await svc.RequestRevisionAsync(51, callerUserId: 1, comment: "change it");
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("Cannot request");
+    }
+
+    [Fact]
+    public async Task RequestRevisionAsync_AiMode_ReturnsRevisionNotAvailableError()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        db.DesignRequests.Add(new DesignRequest
+        {
+            Id               = 52,
+            UserId           = 1,
+            BannerTemplateId = 1,
+            Mode             = DesignRequestMode.Ai, // not Manual
+            Language         = "nb",
+            PersonName       = "Ola",
+            TextContent      = "Hi",
+            ThemeDescription = "x",
+            AspectRatio      = "16:9",
+            Status           = DesignRequestStatus.AwaitingApproval,
+            PriceNok         = 0m,
+            RevisionCount    = 0,
+            CreatedAt        = DateTime.UtcNow,
+            UpdatedAt        = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+        var (svc, _, _, _) = MakeService(db);
+
+        var result = await svc.RequestRevisionAsync(52, callerUserId: 1, comment: "change it");
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("manual");
+    }
+
+    [Fact]
+    public async Task RequestRevisionAsync_MaxRevisionsReached_ReturnsError()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        db.DesignRequests.Add(new DesignRequest
+        {
+            Id               = 53,
+            UserId           = 1,
+            BannerTemplateId = 1,
+            Mode             = DesignRequestMode.Manual,
+            Language         = "nb",
+            PersonName       = "Ola",
+            TextContent      = "Hi",
+            ThemeDescription = "x",
+            AspectRatio      = "16:9",
+            Status           = DesignRequestStatus.AwaitingApproval,
+            PriceNok         = 495m,
+            RevisionCount    = 1, // already used revision
+            CreatedAt        = DateTime.UtcNow,
+            UpdatedAt        = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+        var (svc, _, _, _) = MakeService(db);
+
+        var result = await svc.RequestRevisionAsync(53, callerUserId: 1, comment: "another change");
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("revision");
+    }
+
+    [Fact]
+    public async Task RequestRevisionAsync_ValidRequest_AddsRevisionAndChangesStatus()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        db.DesignRequests.Add(new DesignRequest
+        {
+            Id               = 54,
+            UserId           = 1,
+            BannerTemplateId = 1,
+            Mode             = DesignRequestMode.Manual,
+            Language         = "nb",
+            PersonName       = "Ola",
+            TextContent      = "Hi",
+            ThemeDescription = "x",
+            AspectRatio      = "16:9",
+            Status           = DesignRequestStatus.AwaitingApproval,
+            PriceNok         = 495m,
+            RevisionCount    = 0,
+            CreatedAt        = DateTime.UtcNow,
+            UpdatedAt        = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+        var (svc, _, _, _) = MakeService(db);
+
+        var result = await svc.RequestRevisionAsync(54, callerUserId: 1, comment: "Please change the font");
+
+        result.Success.Should().BeTrue();
+        result.Detail.Should().NotBeNull();
+        result.Detail!.Revisions.Should().HaveCount(1);
+        result.Detail.Revisions[0].CustomerComment.Should().Be("Please change the font");
+
+        var saved = db.DesignRequests.Single(r => r.Id == 54);
+        saved.Status.Should().Be(DesignRequestStatus.RevisionRequested);
+        saved.RevisionCount.Should().Be(1);
+    }
+
+    // ── ParseDimensions: WxH format and fallback ─────────────────────────────
+
+    [Fact]
+    public async Task CreateManualRequestAsync_WxHAspectRatio_ParsesDimensionsCorrectly()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        DbHelper.SeedPricingParameters(db);
+        DbHelper.SeedCatalog(db);
+        var (svc, _, _, _) = MakeService(db);
+
+        var result = await svc.CreateManualRequestAsync(1, new CreateManualDesignRequestDto
+        {
+            TemplateId       = 1,
+            Language         = "nb",
+            PersonName       = "Ola",
+            TextContent      = "Hi",
+            ThemeDescription = "x",
+            AspectRatio      = "300x150" // WxH format → ParseDimensions WxH branch
+        });
+
+        result.Success.Should().BeTrue();
+        db.DesignRequests.Single().AspectRatio.Should().Be("300x150");
+    }
+
+    [Fact]
+    public async Task CreateManualRequestAsync_UnknownAspectRatio_FallsBackToDefault()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        // No catalog seeded — degrade to design-fee-only
+        var (svc, _, _, _) = MakeService(db);
+
+        var result = await svc.CreateManualRequestAsync(1, new CreateManualDesignRequestDto
+        {
+            TemplateId       = 1,
+            Language         = "nb",
+            PersonName       = "Ola",
+            TextContent      = "Hi",
+            ThemeDescription = "x",
+            AspectRatio      = "4:3" // unknown format → ParseDimensions returns (250, 150)
+        });
+
+        result.Success.Should().BeTrue();
+        result.DesignPriceNok.Should().Be(495m);
+        result.BannerPriceNok.Should().Be(0m); // no matching catalog entry → degrade
+    }
 }

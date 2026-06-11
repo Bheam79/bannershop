@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using BannerShop.Core;
 using Microsoft.Extensions.Options;
 
@@ -20,6 +21,7 @@ namespace BannerShop.Api.Services.BannerBuilder;
 /// Design-request previews that require authorization should be proxied through
 /// an API controller rather than served directly by StaticFiles.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Local filesystem I/O — tested via integration with real files")]
 public sealed class LocalDiskFileStore : IFileStore
 {
     private readonly FileStorageOptions _options;

@@ -136,4 +136,19 @@ public class SizesControllerTests : IClassFixture<TestWebApplicationFactory>
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    // ── GET /api/sizes/eyelet-price ───────────────────────────────────────────
+
+    [Fact]
+    public async Task GetEyeletPrice_Returns200WithPrice()
+    {
+        EnsureCatalogSeeded();
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/sizes/eyelet-price");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("pricePerEyeletNok");
+    }
 }

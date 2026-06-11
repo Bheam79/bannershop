@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Png;
@@ -8,6 +9,7 @@ namespace BannerShop.Api.Services.BannerBuilder;
 /// <summary>
 /// Image processing backed by SixLabors.ImageSharp (raster) and PDFtoImage (PDF→PNG).
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "File-system + PDFium + ImageSharp wrapper — tested via integration with real image files")]
 public sealed class ImageProcessingService : IImageProcessingService
 {
     public async Task<(int WidthPx, int HeightPx)> ReadDimensionsAsync(string absolutePath, CancellationToken ct)

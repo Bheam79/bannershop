@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -22,6 +23,7 @@ namespace BannerShop.Api.Services.BannerBuilder;
 /// The GUID is a deterministic MD5 hash of (sourceStoragePath, widthCm, heightCm, eyelet)
 /// so the same inputs always reuse the same cache file without a database lookup.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Image processing + file I/O wrapper — tested via integration with real image files")]
 public sealed class BannerPreviewService
 {
     // ── Fixed server-controlled constants (never exposed to callers) ───────────

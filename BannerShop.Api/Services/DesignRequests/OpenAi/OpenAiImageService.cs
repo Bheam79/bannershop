@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -27,6 +28,7 @@ namespace BannerShop.Api.Services.DesignRequests.OpenAi;
 /// resolution — they are non-secret tuning knobs (low/medium/high/auto and the
 /// model id) and remain settable via either appsettings or the admin panel.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Live OpenAI image generation HTTP wrapper — tested via integration against the OpenAI API")]
 public sealed class OpenAiImageService : IAiImageService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);

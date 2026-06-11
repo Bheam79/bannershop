@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using BannerShop.Core.Entities;
 using BannerShop.Infrastructure.Data;
@@ -32,6 +33,7 @@ internal sealed class TestOnlyControllerExcludingFeatureProvider : IApplicationF
 /// </summary>
 [ApiController]
 [Route("api/test")]
+[ExcludeFromCodeCoverage(Justification = "Development-only endpoints for E2E test seeding — not exercised in unit tests")]
 public class TestOnlyController : ControllerBase
 {
     private readonly BannerShopDbContext _db;

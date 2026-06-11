@@ -1293,4 +1293,260 @@ public class OrderServiceTests
         result.Success.Should().BeFalse();
         result.Error.Should().Be("Order not found.");
     }
+
+    // ── MarkPaymentFailedAsync ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task MarkPaymentFailed_WithKnownPI_UpdatesOrder()
+    {
+        var (service, db, _, _, _) = CreateService();
+        var orderId = await SeedUserAndCreateOrder(service, db, 1, "fail@test.com");
+        // Set the PI id on the order
+        var order = db.Orders.Single(o => o.Id == orderId);
+        order.StripePaymentIntentId = "pi_failed_test";
+        await db.SaveChangesAsync();
+
+        await service.MarkPaymentFailedAsync("pi_failed_test", null, "Card declined");
+
+        var updated = db.Orders.Single(o => o.Id == orderId);
+        // Order should still be at same status but UpdatedAt should be a recent time
+        updated.UpdatedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task MarkPaymentFailed_WithUnknownPI_DoesNotThrow()
+    {
+        var (service, _, _, _, _) = CreateService();
+
+        // Unknown PI → no order resolved → returns early; should not throw
+        var act = async () => await service.MarkPaymentFailedAsync("pi_nonexistent", null, "Declined");
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task MarkPaymentFailed_WithOrderIdHint_ResolvesViaId()
+    {
+        var (service, db, _, _, _) = CreateService();
+        var orderId = await SeedUserAndCreateOrder(service, db, 2, "failhint@test.com");
+
+        // No PI but orderId hint is provided
+        await service.MarkPaymentFailedAsync(string.Empty, orderId, "Test failure");
+
+        var updated = db.Orders.Single(o => o.Id == orderId);
+        updated.UpdatedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(10));
+    }
+
+    // ── ApproveDesignAsync ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ApproveDesign_OrderInCustomerApproval_AdvancesToInProduction()
+    {
+        var (service, db, _, _, _) = CreateService();
+        var orderId = await SeedUserAndCreateOrder(service, db, 3, "approve@test.com");
+
+        // Directly set order to CustomerApproval state (AiBanner-like scenario)
+        var order = db.Orders.Single(o => o.Id == orderId);
+        order.OrderState = OrderState.CustomerApproval;
+        await db.SaveChangesAsync();
+
+        var result = await service.ApproveDesignAsync(orderId, callerUserId: 3);
+
+        result.Success.Should().BeTrue();
+        var updated = db.Orders.Single(o => o.Id == orderId);
+        updated.OrderState.Should().Be(OrderState.InProduction);
+    }
+
+    [Fact]
+    public async Task ApproveDesign_OrderNotInCustomerApproval_ReturnsError()
+    {
+        var (service, db, _, _, _) = CreateService();
+        var orderId = await SeedUserAndCreateOrder(service, db, 4, "noapprove@test.com");
+        // Order is in Draft state — not CustomerApproval
+
+        var result = await service.ApproveDesignAsync(orderId, callerUserId: 4);
+
+        result.Success.Should().BeFalse();
+        result.ErrorType.Should().Be(OrderActionErrorType.InvalidTransition);
+    }
+
+    [Fact]
+    public async Task ApproveDesign_WrongUser_ReturnsNotFound()
+    {
+        var (service, db, _, _, _) = CreateService();
+        var orderId = await SeedUserAndCreateOrder(service, db, 5, "owner@test.com");
+        // DB seed also adds userId=6 user if needed
+        db.Users.Add(new User { Id = 6, Email = "other@test.com", Name = "Other", PasswordHash = "x", Role = UserRole.Customer, CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        var result = await service.ApproveDesignAsync(orderId, callerUserId: 6);
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Be("Order not found.");
+    }
+
+    // ── MockMarkPaid idempotent path ─────────────────────────────────────────
+
+    [Fact]
+    public async Task MockMarkPaid_AlreadyPaidOrder_ReturnsSuccess()
+    {
+        var (service, db, _, _, _) = CreateService();
+        var orderId = await SeedUserAndCreateOrder(service, db, 7, "alreadypaid@test.com");
+
+        // Manually mark the order as Paid
+        var order = db.Orders.Single(o => o.Id == orderId);
+        order.Status = OrderStatus.Paid;
+        order.OrderState = OrderState.Paid;
+        await db.SaveChangesAsync();
+
+        // Call MockMarkPaid on already-paid order → idempotent success
+        var result = await service.MockMarkPaidAsync(userId: 7, orderId: orderId, password: "test1234");
+
+        result.Success.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task MockMarkPaid_InProductionOrder_ReturnsSuccess()
+    {
+        var (service, db, _, _, _) = CreateService();
+        var orderId = await SeedUserAndCreateOrder(service, db, 8, "inprod@test.com");
+
+        // Set order to InProduction (beyond Paid)
+        var order = db.Orders.Single(o => o.Id == orderId);
+        order.Status = OrderStatus.InProduction;
+        order.OrderState = OrderState.InProduction;
+        await db.SaveChangesAsync();
+
+        var result = await service.MockMarkPaidAsync(userId: 8, orderId: orderId, password: "test1234");
+
+        result.Success.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task MockMarkPaid_CancelledOrder_ReturnsError()
+    {
+        var (service, db, _, _, _) = CreateService();
+        var orderId = await SeedUserAndCreateOrder(service, db, 9, "cancelled@test.com");
+
+        // Cancel the order
+        var order = db.Orders.Single(o => o.Id == orderId);
+        order.Status = OrderStatus.Cancelled;
+        await db.SaveChangesAsync();
+
+        var result = await service.MockMarkPaidAsync(userId: 9, orderId: orderId, password: "test1234");
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("cannot be marked paid");
+    }
+
+    // ── CreateDraftAsync: missing ShippingAddress + BannerDesignId ownership ──
+
+    [Fact]
+    public async Task CreateDraft_StandardDelivery_MissingShippingAddress_ReturnsFail()
+    {
+        var (service, _, _, _, _) = CreateService();
+        var req = new CreateOrderDraftRequest
+        {
+            DeliveryType    = DeliveryType.Standard,
+            ShippingAddress = null, // missing — required for non-Pickup
+            Items = new List<OrderItemInputDto>
+            {
+                new OrderItemInputDto { BannerSizeId = 1, Quantity = 1 }
+            }
+        };
+
+        var result = await service.CreateDraftAsync(1, req);
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("ShippingAddress");
+    }
+
+    [Fact]
+    public async Task CreateDraft_WithOwnedBannerDesignId_Succeeds()
+    {
+        var (service, db, _, _, _) = CreateService();
+        // Seed a BannerDesign owned by user 1
+        var design = new BannerDesign
+        {
+            UserId           = 1,
+            OriginalFileName = "test.jpg",
+            StoragePath      = "banner-builder/1/test.jpg",
+            ContentType      = "image/jpeg",
+            WidthPx          = 1920,
+            HeightPx         = 1080,
+            RotationDegrees  = 0,
+            SelectedHeightCm = 150,
+            ComputedWidthCm  = 267,
+            CreatedAt        = DateTime.UtcNow
+        };
+        db.BannerDesigns.Add(design);
+        await db.SaveChangesAsync();
+
+        var req = new CreateOrderDraftRequest
+        {
+            DeliveryType    = DeliveryType.Standard,
+            ShippingAddress = new AddressInputDto
+            {
+                Line1 = "Test St 1", PostalCode = "0001", City = "Oslo", Country = "NO"
+            },
+            Items = new List<OrderItemInputDto>
+            {
+                new OrderItemInputDto
+                {
+                    BannerSizeId   = 1,
+                    Quantity       = 1,
+                    BannerDesignId = design.Id
+                }
+            }
+        };
+
+        var result = await service.CreateDraftAsync(1, req);
+
+        result.Success.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CreateDraft_WithUnownedBannerDesignId_ReturnsFail()
+    {
+        var (service, db, _, _, _) = CreateService();
+        // Seed a BannerDesign owned by user 2
+        var design = new BannerDesign
+        {
+            UserId           = 2,
+            OriginalFileName = "other.jpg",
+            StoragePath      = "banner-builder/2/other.jpg",
+            ContentType      = "image/jpeg",
+            WidthPx          = 800,
+            HeightPx         = 600,
+            RotationDegrees  = 0,
+            SelectedHeightCm = 100,
+            ComputedWidthCm  = 150,
+            CreatedAt        = DateTime.UtcNow
+        };
+        db.BannerDesigns.Add(design);
+        await db.SaveChangesAsync();
+
+        var req = new CreateOrderDraftRequest
+        {
+            DeliveryType    = DeliveryType.Standard,
+            ShippingAddress = new AddressInputDto
+            {
+                Line1 = "Test St 1", PostalCode = "0001", City = "Oslo", Country = "NO"
+            },
+            Items = new List<OrderItemInputDto>
+            {
+                new OrderItemInputDto
+                {
+                    BannerSizeId   = 1,
+                    Quantity       = 1,
+                    BannerDesignId = design.Id // owned by user 2, not user 1
+                }
+            }
+        };
+
+        // User 1 tries to order with user 2's design — must be rejected
+        var result = await service.CreateDraftAsync(1, req);
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("BannerDesign");
+    }
 }

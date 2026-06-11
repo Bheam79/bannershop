@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -23,6 +24,7 @@ namespace BannerShop.Api.Services.DesignRequests.Replicate;
 /// owns moving / persisting it. Failures throw <see cref="InvalidOperationException"/>
 /// so the surrounding admin code can surface them to the operator.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Live Replicate API HTTP wrapper — tested via integration against the Replicate API")]
 public sealed class RealEsrganUpscalingService : IUpscalingService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);

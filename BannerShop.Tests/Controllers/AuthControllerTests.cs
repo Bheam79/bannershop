@@ -234,4 +234,38 @@ public class AuthControllerTests : IClassFixture<TestWebApplicationFactory>
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    // ── PUT /api/auth/me ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task UpdateProfile_WithAuth_Returns200WithUpdatedName()
+    {
+        var client = CreateClient();
+        var email = $"upd_{Guid.NewGuid():N}@test.com";
+        var regResp = await client.PostAsJsonAsync("/api/auth/register",
+            new { email, password = "Pass123!", name = "Original Name" });
+        var reg = JsonSerializer.Deserialize<JsonElement>(
+            await regResp.Content.ReadAsStringAsync(), _json);
+        var accessToken = reg.GetProperty("accessToken").GetString();
+
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+        var response = await client.PutAsJsonAsync("/api/auth/me",
+            new { name = "Updated Name", phone = "90909090" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = JsonSerializer.Deserialize<JsonElement>(
+            await response.Content.ReadAsStringAsync(), _json);
+        body.GetProperty("name").GetString().Should().Be("Updated Name");
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WithoutAuth_Returns401()
+    {
+        var client = CreateClient();
+        var response = await client.PutAsJsonAsync("/api/auth/me",
+            new { name = "Ghost", phone = "" });
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
 }
