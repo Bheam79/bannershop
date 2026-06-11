@@ -12,6 +12,7 @@ public class BannerGenerationConfiguration : IEntityTypeConfiguration<BannerGene
         e.HasKey(x => x.Id);
         e.Property(x => x.StoragePath).HasMaxLength(500);
         e.Property(x => x.CroppedStoragePath).HasMaxLength(500);
+        e.Property(x => x.PreviewPath).HasMaxLength(500);
         e.Property(x => x.Status).HasConversion<string>().HasMaxLength(30).IsRequired();
         e.Property(x => x.ErrorMessage).HasMaxLength(2000);
         e.HasOne(x => x.DesignRequest)

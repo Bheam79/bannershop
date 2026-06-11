@@ -939,9 +939,12 @@ public sealed class DesignRequestService : IDesignRequestService
                     IsActive = g.IsActive,
                     CreatedAt = g.CreatedAt,
                     CompletedAt = g.CompletedAt,
-                    PreviewUrl = string.IsNullOrEmpty(g.CroppedStoragePath ?? g.StoragePath)
+                    // Prefer the per-generation low-res JPEG preview (populated since BANNERSH-217)
+                    // so history thumbnails are fast to load. Fall back to the full-res
+                    // CroppedStoragePath / StoragePath for generations created before that field was added.
+                    PreviewUrl = string.IsNullOrEmpty(g.PreviewPath ?? g.CroppedStoragePath ?? g.StoragePath)
                         ? null
-                        : _storage.PublicUrlFor(g.CroppedStoragePath ?? g.StoragePath!),
+                        : _storage.PublicUrlFor(g.PreviewPath ?? g.CroppedStoragePath ?? g.StoragePath!),
                     RawUrl = string.IsNullOrEmpty(g.StoragePath)
                         ? null
                         : _storage.PublicUrlFor(g.StoragePath!)

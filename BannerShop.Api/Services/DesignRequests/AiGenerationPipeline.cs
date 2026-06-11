@@ -221,6 +221,7 @@ public sealed class AiGenerationPipeline
             // 7. Persist results: update BannerGeneration and DesignRequest.
             generation.StoragePath = resultRelative;
             generation.CroppedStoragePath = finalRelative;
+            generation.PreviewPath = previewRelative;   // per-generation low-res preview for history strip
             generation.Status = BannerGenerationStatus.Completed;
             generation.CompletedAt = DateTime.UtcNow;
 

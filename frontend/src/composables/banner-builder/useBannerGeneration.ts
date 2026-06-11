@@ -15,8 +15,10 @@ import {
   getDesignRequest,
   approveDesignRequest,
   regenerateDesignRequest,
+  activateGeneration,
   type DesignRequestDetail,
   type DesignRequestListItem,
+  type BannerGenerationHistoryItem,
   type AiPaywallData,
 } from '@/api/designRequests'
 import { generateRequestIntegrity } from '@/composables/useRequestIntegrity'
@@ -72,6 +74,28 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
   const regenerating = ref(false)
   const regenerateError = ref<string | null>(null)
   const editExpanded = ref(false)
+
+  // ── Generation history ──────────────────────────────────────────────────────
+  const activatingGenerationId = ref<number | null>(null)
+  const activateGenerationError = ref<string | null>(null)
+
+  /** Switch the active generation to a previously-completed one. Free — no credit consumed. */
+  async function selectGeneration(gen: BannerGenerationHistoryItem) {
+    if (!designRequestId.value || gen.isActive) return
+    if (activatingGenerationId.value !== null) return
+    activatingGenerationId.value = gen.id
+    activateGenerationError.value = null
+    try {
+      const updated = await activateGeneration(designRequestId.value, gen.id)
+      currentDesignRequest.value = updated
+    } catch (e: unknown) {
+      const ex = e as { response?: { data?: { error?: string } }; message?: string }
+      activateGenerationError.value =
+        ex.response?.data?.error || ex.message || 'Kunne ikke bytte aktiv versjon.'
+    } finally {
+      activatingGenerationId.value = null
+    }
+  }
 
   // ── Reorder ────────────────────────────────────────────────────────────────
   const reordering = ref(false)
@@ -358,6 +382,8 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
     editExpanded,
     reordering,
     reorderError,
+    activatingGenerationId,
+    activateGenerationError,
     startPolling,
     stopPolling,
     generateBanner,
@@ -365,6 +391,7 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
     regenerate,
     reorderCurrentDesign,
     selectPastDesign,
+    selectGeneration,
     returnToWizardIdle,
     cleanup,
   }

@@ -13,6 +13,7 @@ import {
   getDesignRequest,
   type BannerTemplateItem,
   type DesignRequestListItem,
+  type BannerGenerationHistoryItem,
   type AiPaywallData,
   type PaywallOptions,
 } from '@/api/designRequests'
@@ -168,9 +169,12 @@ const aspectRatioForBackend = computed(() => {
 const {
   genPhase, currentDesignRequest, designRequestId, requiresAuthHint, generateApiError,
   approveError, approving, regenerating, regenerateError, editExpanded,
-  reordering, reorderError, startPolling, cleanup: cleanupGeneration,
+  reordering, reorderError,
+  activatingGenerationId, activateGenerationError,
+  startPolling, cleanup: cleanupGeneration,
   generateBanner: _generateBanner, approve, regenerate: _regenerate,
   reorderCurrentDesign, selectPastDesign: _selectPastDesign,
+  selectGeneration,
   returnToWizardIdle: _returnToWizardIdle,
 } = useBannerGeneration({
   getTemplateId: () => selectedTemplateId.value,
@@ -247,6 +251,19 @@ const {
 const selectedTemplate = computed(() =>
   templates.value.find((t) => t.id === selectedTemplateId.value) ?? null,
 )
+
+/** All completed generation attempts for the current design request, oldest first. */
+const completedGenerations = computed<BannerGenerationHistoryItem[]>(() =>
+  (currentDesignRequest.value?.generationHistory ?? []).filter(
+    (g) => g.status === 'Completed' && g.previewUrl !== null,
+  ),
+)
+const hasGenerationHistory = computed(() => completedGenerations.value.length > 1)
+
+function formatGenTime(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })
+}
 const templateName = computed(() => {
   const t = selectedTemplate.value
   if (!t) return ''
@@ -1074,6 +1091,39 @@ onBeforeUnmount(() => {
 
         <!-- Phase: ready — show the generated image (or "Ditt banner" placeholder in manual mode) -->
         <template v-else-if="genPhase === 'ready' && currentDesignRequest">
+          <!-- Generation history thumbnails — shown when there are ≥2 completed AI generations -->
+          <div
+            v-if="!isManual && hasGenerationHistory"
+            style="display:flex;gap:8px;overflow-x:auto;padding:10px 12px;background:rgba(0,0,0,.04);border-radius:10px;margin-bottom:8px"
+          >
+            <button
+              v-for="gen in completedGenerations"
+              :key="gen.id"
+              type="button"
+              class="gen-thumb"
+              :class="{ 'gen-thumb--active': gen.isActive }"
+              :disabled="activatingGenerationId === gen.id || gen.isActive"
+              :title="`Versjon ${formatGenTime(gen.completedAt)}`"
+              @click="selectGeneration(gen)"
+            >
+              <span class="gen-thumb__img-wrap">
+                <img v-if="gen.previewUrl" :src="gen.previewUrl" />
+                <span v-else class="gen-thumb__placeholder">?</span>
+                <span v-if="activatingGenerationId === gen.id" class="gen-thumb__spinner">
+                  <i class="fa-solid fa-circle-notch fa-spin"></i>
+                </span>
+                <span v-else-if="gen.isActive" class="gen-thumb__check">
+                  <i class="fa-solid fa-check"></i>
+                </span>
+              </span>
+              <span class="gen-thumb__time">{{ formatGenTime(gen.completedAt) }}</span>
+            </button>
+          </div>
+          <p
+            v-if="activateGenerationError && !isManual"
+            style="color:#ef4444;font-size:13px;margin:0 0 6px"
+          >{{ activateGenerationError }}</p>
+
           <div class="bb-panel" style="padding:0;overflow:hidden;border-radius:0">
             <img
               v-if="currentDesignRequest.previewUrl"
@@ -1544,6 +1594,39 @@ onBeforeUnmount(() => {
           </h2>
           <p style="color:var(--muted)">Se over designet og godkjenn, eller juster og generer en ny versjon.</p>
         </div>
+
+        <!-- Generation history thumbnails — shown when there are ≥2 completed AI generations -->
+        <div
+          v-if="!isManual && hasGenerationHistory"
+          style="display:flex;gap:8px;overflow-x:auto;padding:10px 12px;background:rgba(0,0,0,.04);border-radius:10px"
+        >
+          <button
+            v-for="gen in completedGenerations"
+            :key="gen.id"
+            type="button"
+            class="gen-thumb"
+            :class="{ 'gen-thumb--active': gen.isActive }"
+            :disabled="activatingGenerationId === gen.id || gen.isActive"
+            :title="`Versjon ${formatGenTime(gen.completedAt)}`"
+            @click="selectGeneration(gen)"
+          >
+            <span class="gen-thumb__img-wrap">
+              <img v-if="gen.previewUrl" :src="gen.previewUrl" />
+              <span v-else class="gen-thumb__placeholder">?</span>
+              <span v-if="activatingGenerationId === gen.id" class="gen-thumb__spinner">
+                <i class="fa-solid fa-circle-notch fa-spin"></i>
+              </span>
+              <span v-else-if="gen.isActive" class="gen-thumb__check">
+                <i class="fa-solid fa-check"></i>
+              </span>
+            </span>
+            <span class="gen-thumb__time">{{ formatGenTime(gen.completedAt) }}</span>
+          </button>
+        </div>
+        <p
+          v-if="activateGenerationError && !isManual"
+          style="color:#ef4444;font-size:13px;margin:0"
+        >{{ activateGenerationError }}</p>
 
         <!-- Preview -->
         <div class="bb-panel" style="padding:0;overflow:hidden;border-radius:0">
@@ -2511,4 +2594,76 @@ onBeforeUnmount(() => {
 }
 .ratio-btn-active .ratio-label { color: var(--accent-2); }
 .ratio-btn-active .ratio-sub   { color: var(--accent);   }
+
+/* ── Generation history thumbnail strip ──────────────────────── */
+.gen-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  padding: 4px;
+  cursor: pointer;
+  transition: border-color .15s, opacity .15s;
+  opacity: .65;
+}
+.gen-thumb:hover:not(:disabled) { opacity: 1; }
+.gen-thumb--active {
+  border-color: var(--accent, #3a9d7e);
+  opacity: 1;
+  cursor: default;
+}
+.gen-thumb__img-wrap {
+  position: relative;
+  width: 72px;
+  height: 48px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--surface-2, #eee);
+}
+.gen-thumb__img-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.gen-thumb__placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 18px;
+  color: var(--muted);
+}
+.gen-thumb__spinner,
+.gen-thumb__check {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+}
+.gen-thumb__spinner {
+  background: rgba(0,0,0,.55);
+  color: #fff;
+}
+.gen-thumb__check {
+  background: var(--accent, #3a9d7e);
+  color: #fff;
+}
+.gen-thumb__time {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  line-height: 1;
+}
 </style>

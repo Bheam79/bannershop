@@ -20,6 +20,15 @@ public class BannerGeneration
     /// <summary>Relative storage path of the cropped print-ready PNG (same as StoragePath for non-18:9).</summary>
     public string? CroppedStoragePath { get; set; }
 
+    /// <summary>
+    /// Relative storage path of the low-resolution JPEG preview for this generation attempt
+    /// (max 640 px on the longer side — BANNERSH-91 low-res preview pattern).
+    /// Populated by the pipeline alongside CroppedStoragePath. Used for thumbnail display
+    /// in the wizard's generation history strip so customers can switch between versions.
+    /// Null for generations created before this field was added.
+    /// </summary>
+    public string? PreviewPath { get; set; }
+
     public BannerGenerationStatus Status { get; set; } = BannerGenerationStatus.Pending;
 
     /// <summary>Last error message if <see cref="Status"/> is <see cref="BannerGenerationStatus.Failed"/>.</summary>
