@@ -8,8 +8,6 @@
  */
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { getBannerDesign } from '@/api/bannerBuilder'
-import { fetchSizes } from '@/api/shop'
 import {
   createAiRequest,
   getDesignRequest,
@@ -23,8 +21,6 @@ import {
 } from '@/api/designRequests'
 import { generateRequestIntegrity } from '@/composables/useRequestIntegrity'
 import { useAuthStore } from '@/stores/auth'
-import { useCartStore } from '@/stores/cart'
-import type { BannerSize } from '@/types'
 
 export type GenPhase =
   | 'idle'
@@ -61,7 +57,6 @@ export interface BannerGenerationOptions {
 export function useBannerGeneration(options: BannerGenerationOptions) {
   const router = useRouter()
   const auth = useAuthStore()
-  const cart = useCartStore()
 
   // ── Generation state ───────────────────────────────────────────────────────
   const genPhase = ref<GenPhase>('idle')
@@ -296,31 +291,13 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
     reordering.value = true
     reorderError.value = null
     try {
-      const design = await getBannerDesign(d.finalBannerDesignId)
-      const sizes = await fetchSizes(design.computedWidthCm)
-      const pricingSize = sizes.find(
-        (s: BannerSize) => s.isCustomWidth && s.heightCm === design.selectedHeightCm,
-      )
-      if (pricingSize && pricingSize.calculatedPrice != null) {
-        cart.addItem({
-          bannerSizeId: pricingSize.id,
-          bannerSizeName: `AI banner ${design.computedWidthCm} × ${design.selectedHeightCm} cm`,
-          customWidthCm: design.computedWidthCm,
-          heightCm: design.selectedHeightCm,
-          quantity: 1,
-          unitPriceNok: pricingSize.calculatedPrice,
-          eyeletOption: 'None',
-          eyeletFeeNok: 0,
-          designId: d.finalBannerDesignId,
-          previewUrl: d.previewUrl ?? design.previewUrl ?? undefined,
-          notes: `AI banner design #${d.finalBannerDesignId}`,
-        })
-        void router.push('/checkout')
-      } else {
-        reorderError.value = 'Kunne ikke finne pris for dette banneret. Prøv igjen.'
-      }
+      // Go through the tilpass (eyelet-selection) step rather than adding
+      // directly to the cart so the customer can choose eyelets first.
+      await options.loadTilpassPricing(d.finalBannerDesignId)
+      genPhase.value = 'tilpass'
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch {
-      reorderError.value = 'Noe gikk galt ved bestilling. Prøv igjen.'
+      reorderError.value = 'Noe gikk galt ved lasting av bestilling. Prøv igjen.'
     } finally {
       reordering.value = false
     }
