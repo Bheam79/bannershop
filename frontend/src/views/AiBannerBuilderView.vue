@@ -1863,20 +1863,6 @@ onBeforeUnmount(() => {
           <p style="color:var(--muted)">Velg om du vil ha maljer (øyebolter), og legg banneret i handlekurven.</p>
         </div>
 
-        <!-- Preview -->
-        <div class="bb-panel" style="padding:0;overflow:hidden;border-radius:0">
-          <img
-            v-if="currentDesignRequest.previewUrl"
-            :src="currentDesignRequest.previewUrl"
-            :alt="isManual ? 'Ditt banner — forhåndsvisning' : `AI-generert banner for ${currentDesignRequest.personName}`"
-            style="width:100%;height:auto;object-fit:contain;display:block"
-            @load="onPreviewImageLoaded"
-          />
-          <div v-else style="display:flex;align-items:center;justify-content:center;height:240px;color:var(--faint)">
-            Forhåndsvisning ikke tilgjengelig
-          </div>
-        </div>
-
         <!-- Loading -->
         <div v-if="tilpassLoading" style="text-align:center;padding:1.5rem;color:var(--muted)">
           <i class="fa-solid fa-circle-notch fa-spin" style="margin-right:8px"></i>
