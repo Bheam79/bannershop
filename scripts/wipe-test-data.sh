@@ -257,7 +257,7 @@ echo "      ✓ All transactional rows deleted"
 echo ""
 echo "      Post-wipe row counts:"
 mysql_exec "
-SELECT 'Orders'               AS tbl, COUNT(*) AS rows FROM Orders
+SELECT 'Orders'               AS tbl, COUNT(*) AS cnt FROM Orders
 UNION ALL SELECT 'OrderItems',           COUNT(*) FROM OrderItems
 UNION ALL SELECT 'ProductionStatuses',   COUNT(*) FROM ProductionStatuses
 UNION ALL SELECT 'ShipmentTrackings',    COUNT(*) FROM ShipmentTrackings
