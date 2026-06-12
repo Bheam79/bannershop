@@ -13,6 +13,12 @@ import InfoPageLayout from './InfoPageLayout.vue'
       enklest på e-post.</em>
     </p>
 
+    <h2>Telefon</h2>
+    <p>
+      <a href="tel:+4793234000">93 23 40 00</a><br>
+      Mandag–fredag 09–16.
+    </p>
+
     <h2>E-post</h2>
     <p>
       <a href="mailto:post@bannershop.no">post@bannershop.no</a><br>
