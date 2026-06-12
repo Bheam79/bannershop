@@ -66,9 +66,16 @@ function modeLabel(m: string): string {
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function openDesignRequest(dr: DesignRequestListItem) {
-  // All design requests — AI and Manual — open in the AI builder with inputs pre-filled.
-  // For AI, this lets the user generate a new version; for Manual, start an AI variant.
-  void router.push(`/banner-builder/ai?copyFrom=${dr.id}`)
+  if (dr.mode === 'Manual') {
+    // Manual designs open in the account detail page (no wizard re-entry).
+    void router.push(`/account/design-requests/${dr.id}`)
+  } else {
+    // AI designs: load the existing design request directly so the previous
+    // banner image is shown and the user can proceed to order without
+    // having to generate again.  ?dr= triggers handleSelectPastDesign in
+    // AiBannerBuilderView which restores the ready/tilpass phase.
+    void router.push(`/banner-builder/ai?dr=${dr.id}`)
+  }
 }
 
 function openUploadedDesign(d: UploadedDesignListItem) {
@@ -206,8 +213,22 @@ onMounted(load)
             <!-- Hover CTA -->
             <div class="card-hover-cta">
               <span>
-                <i class="fa-solid fa-wand-magic-sparkles" style="font-size:13px"></i>
-                Rediger og generer
+                <i
+                  class="fa-solid"
+                  :class="['AwaitingApproval','Approved','Final'].includes(dr.status)
+                    ? 'fa-arrow-right'
+                    : ['Pending','InProgress'].includes(dr.status)
+                      ? 'fa-circle-notch'
+                      : 'fa-wand-magic-sparkles'"
+                  style="font-size:13px"
+                ></i>
+                {{
+                  ['AwaitingApproval','Approved','Final'].includes(dr.status)
+                    ? (dr.mode === 'Manual' ? 'Åpne' : 'Se og bestill')
+                    : ['Pending','InProgress'].includes(dr.status)
+                      ? 'Se status'
+                      : 'Rediger og generer'
+                }}
               </span>
             </div>
           </button>
