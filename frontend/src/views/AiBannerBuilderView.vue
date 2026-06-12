@@ -4,7 +4,7 @@ import { useRouter, useRoute, RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
 import { getBannerDesign } from '@/api/bannerBuilder'
-import { fetchSizes, fetchEyeletPriceNok } from '@/api/shop'
+import { fetchSizes, fetchPrice, fetchEyeletPriceNok } from '@/api/shop'
 import type { BannerSize, EyeletOption, CartItem } from '@/types'
 import { countEyelets } from '@/types'
 import EyeletPreview from '@/components/shop/EyeletPreview.vue'
@@ -539,13 +539,18 @@ async function loadTilpassPricing(bannerDesignId: number) {
     const pricingSize = designSizes.find(
       (s: BannerSize) => s.isCustomWidth && s.heightCm === design.selectedHeightCm,
     )
-    if (!pricingSize || pricingSize.calculatedPrice == null) {
+    if (!pricingSize) {
       throw new Error('Pricing not available for this banner.')
     }
+    // Fetch price without the custom-width surcharge — the dimensions are
+    // AI-derived (not explicitly requested by the customer as a custom size),
+    // so the surcharge must not apply.  This mirrors the same logic used by
+    // the quality picker in useBannerPricing.ts.
+    const bannerPrice = await fetchPrice(pricingSize.id, design.computedWidthCm, true)
     tilpassDesignWidthCm.value = design.computedWidthCm
     tilpassDesignHeightCm.value = design.selectedHeightCm
     tilpassBannerSize.value = pricingSize
-    tilpassBannerPriceNok.value = pricingSize.calculatedPrice
+    tilpassBannerPriceNok.value = bannerPrice
     tilpassEyeletOption.value = 'None'
     try {
       tilpassEyeletPriceNok.value = await fetchEyeletPriceNok()
@@ -575,6 +580,9 @@ function addTilpassToCartAndCheckout() {
     designId: d.finalBannerDesignId,
     previewUrl: d.previewUrl ?? undefined,
     notes: `AI banner design #${d.finalBannerDesignId}`,
+    // AI-derived dimensions must not attract the custom-width surcharge
+    // (the customer did not manually choose a custom size).
+    skipCustomSurcharge: true,
   })
   void router.push('/checkout')
 }

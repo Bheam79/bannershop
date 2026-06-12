@@ -25,6 +25,8 @@ export interface OrderDraftRequest {
     notes?: string
     bannerDesignId?: number
     eyeletOption?: EyeletOption
+    /** When true the backend skips the custom-width surcharge (BANNERSH-228). */
+    skipCustomSurcharge?: boolean
   }>
 }
 

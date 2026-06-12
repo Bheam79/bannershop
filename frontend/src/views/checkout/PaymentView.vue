@@ -176,6 +176,7 @@ async function confirmMockPayment() {
             quantity: item.quantity,
             notes: item.notes ?? undefined,
             eyeletOption: item.eyeletOption,
+            skipCustomSurcharge: item.skipCustomSurcharge ?? undefined,
           })),
       })
       mockOrderId.value = resp.orderId
@@ -267,6 +268,7 @@ async function pay() {
             quantity: item.quantity,
             notes: item.notes ?? undefined,
             eyeletOption: item.eyeletOption,
+            skipCustomSurcharge: item.skipCustomSurcharge ?? undefined,
           })),
       })
       payOrderId.value = resp.orderId

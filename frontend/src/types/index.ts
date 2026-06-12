@@ -194,4 +194,10 @@ export interface CartItem {
    * a round-trip. Falls back to `getBannerDesign(designId)` when missing.
    */
   previewUrl?: string
+  /**
+   * When true the backend skips the `custom_width_surcharge` when computing the
+   * unit price.  Set for AI banner items whose dimensions are derived automatically
+   * (not manually chosen as a custom size by the customer) — BANNERSH-228.
+   */
+  skipCustomSurcharge?: boolean
 }

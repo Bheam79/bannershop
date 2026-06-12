@@ -143,7 +143,9 @@ public class OrderService : IOrderService
         foreach (var input in req.Items)
         {
             var size = sizes[input.BannerSizeId];
-            var unitPrice = await _pricing.CalculatePriceAsync(size, input.CustomWidthCm);
+            var unitPrice = await _pricing.CalculatePriceAsync(
+                size, input.CustomWidthCm,
+                skipCustomSurcharge: input.SkipCustomSurcharge);
             var widthCm = size.IsCustomWidth ? (input.CustomWidthCm ?? 0) : (size.WidthCm ?? 0);
             var areaSqm = decimal.Round((widthCm / 100m) * (size.HeightCm / 100m), 4);
 

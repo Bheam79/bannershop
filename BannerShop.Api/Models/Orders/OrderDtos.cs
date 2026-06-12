@@ -76,6 +76,15 @@ public class OrderItemInputDto
     /// Defaults to <see cref="EyeletOption.None"/> (no eyelets).
     /// </summary>
     public EyeletOption EyeletOption { get; set; } = EyeletOption.None;
+
+    /// <summary>
+    /// When <c>true</c> the pricing service omits the <c>custom_width_surcharge</c>
+    /// for this item.  Set by the frontend for AI banner items whose dimensions are
+    /// derived automatically (not manually chosen as a custom size by the customer)
+    /// so the displayed price matches what was shown in the AI banner builder
+    /// (BANNERSH-228).
+    /// </summary>
+    public bool SkipCustomSurcharge { get; set; } = false;
 }
 
 public class UpdateOrderStatusRequest
