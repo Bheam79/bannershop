@@ -24,8 +24,15 @@ function modeClass(m: string): string {
   return m === 'Manual' ? 'badge-manual' : 'badge-ai'
 }
 
-function goToDetail(id: number) {
-  router.push(`/account/design-requests/${id}`)
+function goToDetail(dr: DesignRequestListItem) {
+  if (dr.mode === 'Ai') {
+    // AI designs load the existing banner in the wizard so the preview is
+    // visible and the customer can proceed to order (eyelets page) without
+    // having to re-generate.
+    void router.push(`/banner-builder/ai?dr=${dr.id}`)
+  } else {
+    void router.push(`/account/design-requests/${dr.id}`)
+  }
 }
 
 async function load() {
@@ -105,7 +112,7 @@ onMounted(load)
               v-for="dr in sortedItems"
               :key="dr.id"
               class="dr-row"
-              @click="goToDetail(dr.id)"
+              @click="goToDetail(dr)"
             >
               <td class="td td--thumb">
                 <div class="thumb-cell">
@@ -143,7 +150,7 @@ onMounted(load)
             v-for="dr in sortedItems"
             :key="dr.id"
             class="mobile-row"
-            @click="goToDetail(dr.id)"
+            @click="goToDetail(dr)"
           >
             <div class="mobile-thumb">
               <img
