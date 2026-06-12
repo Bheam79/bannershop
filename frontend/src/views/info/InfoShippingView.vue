@@ -15,10 +15,10 @@ import InfoPageLayout from './InfoPageLayout.vue'
 
     <h2>Leveringstid</h2>
     <p>
-      Standardproduksjon tar normalt <strong>2–3 virkedager</strong> fra
-      betalt ordre til pakken forlater trykkeriet. Selve forsendelsen med
-      Bring tar typisk <strong>1–3 virkedager</strong> i tillegg, avhengig
-      av hvor i landet du bor.
+      Standardproduksjon tar normalt <strong>10–15 virkedager</strong> fra
+      betalt ordre til pakken forlater trykkeriet. Ekspressordre leveres på
+      <strong>3–5 virkedager</strong>. Selve forsendelsen med Bring tar typisk
+      <strong>2–3 virkedager</strong> i tillegg, avhengig av hvor i landet du bor.
     </p>
 
     <h2>Leveringsmåter</h2>
@@ -30,11 +30,6 @@ import InfoPageLayout from './InfoPageLayout.vue'
     </ul>
 
     <h2>Pakking</h2>
-    <p>
-      Mindre bannere sendes <strong>brettet</strong> i en flat eske. Større
-      bannere rulles på en kjerne og sendes i en hard pappkjerne for å
-      unngå brett og knekk.
-    </p>
     <p>
       Du velger selv pakkemåte (brettet eller rullet) i kassen. Vi viser
       forventet pakkestørrelse og vekt før du legger inn ordren.
