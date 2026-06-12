@@ -7,6 +7,7 @@ import {
   updateProductionStage,
   setShipping,
   advanceOrderState,
+  captureOrderPayment,
   uploadDesignRequestPreview,
 } from '@/api/admin'
 import type { OrderDetailResponse, OrderItemDetail } from '@/api/orders'
@@ -138,6 +139,28 @@ const designRequestId = computed<number | null>(() => {
   if (isAiBanner.value) return order.value?.aiBanner?.designRequestId ?? null
   return null
 })
+
+// ── Action: Capture payment ────────────────────────────────────────────────────
+const captureBusy = ref(false)
+const captureError = ref('')
+const captureSuccess = ref('')
+
+async function capturePayment() {
+  captureBusy.value = true
+  captureError.value = ''
+  captureSuccess.value = ''
+  try {
+    order.value = await captureOrderPayment(orderId)
+    syncForms()
+    captureSuccess.value = 'Betaling innkassert.'
+    setTimeout(() => { captureSuccess.value = '' }, 5000)
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { error?: string } } }
+    captureError.value = e.response?.data?.error ?? 'Innkassering feilet.'
+  } finally {
+    captureBusy.value = false
+  }
+}
 
 // ── Action: Send til produksjon (CustomBanner Paid → InProduction) ────────────
 const sendToProductionBusy = ref(false)
@@ -476,6 +499,30 @@ const packingLabel = computed(() => {
       <!-- ── Contextual action buttons ────────────────────────────────────── -->
       <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-5">
         <h2 class="text-base font-semibold text-gray-100 mb-4">Handlinger</h2>
+
+        <!-- Capture payment banner (shown for all Paid orders with a Stripe PI) -->
+        <div
+          v-if="currentState === 'Paid' && order.stripePaymentIntentId"
+          class="bg-yellow-900/20 border border-yellow-700/50 rounded-lg px-4 py-3 mb-4"
+        >
+          <p class="text-sm text-yellow-300 font-medium mb-2">
+            💳 Betaling er reservert — ikke trukket ennå
+          </p>
+          <p class="text-xs text-yellow-500 mb-3">
+            Kortreservasjonen utløper etter 7 dager. Kasser betalingen før du starter produksjon for å bekrefte at den går gjennom.
+          </p>
+          <div class="flex items-center gap-3 flex-wrap">
+            <button
+              :disabled="captureBusy"
+              class="bg-yellow-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              @click="capturePayment"
+            >
+              {{ captureBusy ? 'Innkasserer…' : '💰 Kasser betaling nå' }}
+            </button>
+            <span v-if="captureSuccess" class="text-green-400 text-sm">✓ {{ captureSuccess }}</span>
+            <span v-if="captureError" class="text-red-400 text-sm">{{ captureError }}</span>
+          </div>
+        </div>
 
         <!-- CustomBanner + Paid: Send til produksjon -->
         <template v-if="isCustomBanner && currentState === 'Paid'">

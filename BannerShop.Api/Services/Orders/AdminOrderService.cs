@@ -323,6 +323,43 @@ public class AdminOrderService : IAdminOrderService
         return OrderActionResult.Ok(OrderMapper.ToDetailDto(full!, drAdvance, _storage));
     }
 
+    /// <inheritdoc />
+    public async Task<OrderActionResult> CapturePaymentAsync(int orderId, CancellationToken ct = default)
+    {
+        var order = await _db.Orders.FindAsync(new object?[] { orderId }, ct);
+        if (order is null) return OrderActionResult.Fail("Order not found.");
+
+        if (string.IsNullOrWhiteSpace(order.StripePaymentIntentId))
+            return OrderActionResult.Fail("This order has no Stripe PaymentIntent to capture.");
+
+        // Capture is valid on orders that have been authorised but not yet settled.
+        // Allow InProduction / ReadyToShip too so admins can capture if they forgot.
+        if (order.Status is not (OrderStatus.Paid or OrderStatus.InProduction or OrderStatus.ReadyToShip))
+        {
+            return OrderActionResult.FailTransition(
+                $"Order is in '{order.Status}' status — only Paid / InProduction / ReadyToShip orders can be captured.");
+        }
+
+        try
+        {
+            await _stripe.CapturePaymentIntentAsync(order.StripePaymentIntentId, ct);
+            _logger.LogInformation(
+                "Admin manually captured Stripe PI {Pi} for order {OrderId}.",
+                order.StripePaymentIntentId, orderId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Admin capture of Stripe PI {Pi} for order {OrderId} failed.",
+                order.StripePaymentIntentId, orderId);
+            return OrderActionResult.Fail($"Stripe capture failed: {ex.Message}");
+        }
+
+        var full = await OrderQueries.LoadFullOrderAsync(_db, orderId, ct);
+        var dr = await OrderQueries.LoadDesignRequestForOrderAsync(_db, orderId, ct);
+        return OrderActionResult.Ok(OrderMapper.ToDetailDto(full!, dr, _storage));
+    }
+
     // ────────────────────────────────────────────────────────────────────────
     // Transactional email — fire-and-forget wrappers.
     // HTML body builders live in OrderEmailTemplates.cs.

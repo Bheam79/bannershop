@@ -135,4 +135,21 @@ public class AdminOrdersController : ControllerBase
                 : NotFound(new { error = result.Error });
         return Ok(result.Order);
     }
+
+    // ── POST /api/admin/orders/{id}/capture ─────────────────────────────────
+    /// <summary>
+    /// Captures the Stripe authorization hold for a banner order. Call this before
+    /// starting production to confirm the payment still goes through (auth holds
+    /// expire after 7 days). Returns 422 when Stripe rejects the capture.
+    /// </summary>
+    [HttpPost("{id:int}/capture")]
+    public async Task<IActionResult> CapturePayment(int id, CancellationToken ct)
+    {
+        var result = await _orders.CapturePaymentAsync(id, ct);
+        if (!result.Success)
+            return result.ErrorType == InvalidTransition
+                ? UnprocessableEntity(new { error = result.Error })
+                : NotFound(new { error = result.Error });
+        return Ok(result.Order);
+    }
 }

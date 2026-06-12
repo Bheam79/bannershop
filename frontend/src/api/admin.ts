@@ -215,6 +215,11 @@ export async function setShipping(
   return data
 }
 
+export async function captureOrderPayment(orderId: number): Promise<OrderDetailResponse> {
+  const { data } = await apiClient.post<OrderDetailResponse>(`/admin/orders/${orderId}/capture`)
+  return data
+}
+
 // ── Admin Users (BANNERSH-86) ─────────────────────────────────────────────────
 
 export interface AdminUserListItem {

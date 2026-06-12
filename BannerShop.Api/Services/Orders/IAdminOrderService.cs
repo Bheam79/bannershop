@@ -32,4 +32,13 @@ public interface IAdminOrderService
     /// Returns a transition-error result when the move is not permitted.
     /// </summary>
     Task<OrderActionResult> AdvanceStateAsync(int orderId, OrderState next, CancellationToken ct = default);
+
+    /// <summary>
+    /// Captures a previously authorized Stripe PaymentIntent for the order.
+    /// Call this before starting production to confirm the payment still goes through.
+    /// Only valid when the order has a StripePaymentIntentId and is in Paid /
+    /// InProduction / ReadyToShip status. Returns a failure result if Stripe rejects
+    /// the capture (e.g. auth expired — admin must contact the customer).
+    /// </summary>
+    Task<OrderActionResult> CapturePaymentAsync(int orderId, CancellationToken ct = default);
 }

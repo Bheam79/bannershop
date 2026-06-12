@@ -143,6 +143,7 @@ export interface OrderDetailResponse {
   shippingCostNok: number
   expressFeeNok: number
   totalNok: number
+  stripePaymentIntentId?: string | null
   estimatedDelivery: string | null
   createdAt: string
   updatedAt: string
