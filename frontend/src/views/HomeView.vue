@@ -473,7 +473,7 @@ async function handleLogout() {
         <div class="strip-item">
           <span class="strip-icon"><i class="fa-solid fa-circle-check"></i></span>
           <h4 class="display" style="font-size:17px;margin-bottom:4px">Alltid ferdigstilt</h4>
-          <p style="color:var(--muted);font-size:14px">Sydde kanter og maljer i hjørnene følger med på alle bannere.</p>
+          <p style="color:var(--muted);font-size:14px">Ferdigstilte kanter på alle bannere. Maljer er tilvalg.</p>
         </div>
       </div>
     </div>

@@ -498,7 +498,7 @@ onMounted(async () => {
         <div class="hint-card">
           <div class="hint-ico"><i class="fa-solid fa-scissors"></i></div>
           <strong style="color:var(--text);display:block;margin-bottom:4px">Klar til trykk</strong>
-          <span style="color:var(--muted);font-size:13.5px">Sydde kanter og maljer i hjørnene inkludert.</span>
+          <span style="color:var(--muted);font-size:13.5px">Ferdigstilte kanter inkludert – maljer er tilvalg.</span>
         </div>
       </div>
     </section>
