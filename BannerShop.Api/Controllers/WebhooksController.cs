@@ -22,7 +22,8 @@ namespace BannerShop.Api.Controllers;
 ///   <c>stripe listen --forward-to localhost:5000/api/webhooks/stripe</c>
 ///
 /// Events handled:
-///   <c>payment_intent.succeeded</c>  — banner orders, AI credit packs, manual design requests
+///   <c>payment_intent.amount_capturable_updated</c> — banner orders: authorization succeeded, marks order Paid so production can start
+///   <c>payment_intent.succeeded</c>  — capture confirmed (banner orders already Paid so idempotent); AI credit packs and manual design requests
 ///   <c>payment_intent.payment_failed</c> — marks the linked order as payment-failed
 /// </summary>
 [ApiController]
@@ -98,6 +99,14 @@ public class WebhooksController : ControllerBase
         {
             switch (evt.EventType)
             {
+                case "payment_intent.amount_capturable_updated":
+                    // Banner order authorization succeeded — funds are reserved on the
+                    // customer's card. Mark the order Paid so production can start;
+                    // the actual money movement happens when we capture on shipping.
+                    // Credit packs use automatic capture so this event won't fire for them.
+                    await _orders.MarkPaidAsync(evt.PaymentIntentId, evt.OrderIdFromMetadata, ct);
+                    break;
+
                 case "payment_intent.succeeded":
                     await HandlePaymentIntentSucceededAsync(evt, ct);
                     break;

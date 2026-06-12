@@ -44,6 +44,9 @@ public class StripePaymentService : IStripePaymentService
         {
             Amount = ToMinorUnits(amountNok),
             Currency = _options.Currency,
+            // Banner orders use manual capture: funds are authorized at checkout
+            // and captured when the item is shipped (see CapturePaymentIntentAsync).
+            CaptureMethod = "manual",
             Metadata = new Dictionary<string, string>
             {
                 ["type"]    = "banner_order",
@@ -124,6 +127,26 @@ public class StripePaymentService : IStripePaymentService
         {
             // Already cancelled / succeeded / not found — log and swallow so order cancellation still proceeds.
             _logger.LogInformation(ex, "Stripe PI {Pi} could not be cancelled: {Msg}", paymentIntentId, ex.Message);
+        }
+    }
+
+    public async Task CapturePaymentIntentAsync(string paymentIntentId, CancellationToken ct = default)
+    {
+        try
+        {
+            var apiKey = await GetEffectiveSecretKeyAsync(ct);
+            var reqOpts = new RequestOptions { ApiKey = apiKey };
+
+            var service = new PaymentIntentService();
+            await service.CaptureAsync(paymentIntentId, options: null, reqOpts, cancellationToken: ct);
+
+            _logger.LogInformation("Captured Stripe PI {Pi}.", paymentIntentId);
+        }
+        catch (StripeException ex)
+        {
+            // Already captured or not in a capturable state — log and let the caller decide.
+            _logger.LogWarning(ex, "Stripe PI {Pi} could not be captured: {Msg}", paymentIntentId, ex.Message);
+            throw;
         }
     }
 

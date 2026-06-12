@@ -132,7 +132,10 @@ public class OrderServiceTests
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
         var storage = new BannerFileStorage(Options.Create(new FileStorageOptions()));
-        return new AdminOrderService(db, emailMock.Object, storage,
+        var stripeMock = new Mock<IStripePaymentService>();
+        stripeMock.Setup(s => s.CapturePaymentIntentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                  .Returns(Task.CompletedTask);
+        return new AdminOrderService(db, emailMock.Object, storage, stripeMock.Object,
                                       NullLogger<AdminOrderService>.Instance);
     }
 

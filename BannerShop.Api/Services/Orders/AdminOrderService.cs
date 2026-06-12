@@ -1,6 +1,7 @@
 using BannerShop.Api.Models.Orders;
 using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Api.Services.Email;
+using BannerShop.Api.Services.Orders.Stripe;
 using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
 using BannerShop.Core.Helpers;
@@ -40,17 +41,20 @@ public class AdminOrderService : IAdminOrderService
     private readonly BannerShopDbContext _db;
     private readonly IEmailService _email;
     private readonly BannerFileStorage _storage;
+    private readonly IStripePaymentService _stripe;
     private readonly ILogger<AdminOrderService> _logger;
 
     public AdminOrderService(
         BannerShopDbContext db,
         IEmailService email,
         BannerFileStorage storage,
+        IStripePaymentService stripe,
         ILogger<AdminOrderService> logger)
     {
         _db = db;
         _email = email;
         _storage = storage;
+        _stripe = stripe;
         _logger = logger;
     }
 
@@ -249,6 +253,23 @@ public class AdminOrderService : IAdminOrderService
         order.OrderState = OrderState.Shipped;
         order.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+
+        // Capture the Stripe authorization hold now that the item is shipped.
+        // Failures are logged but must not block the shipment record being saved.
+        if (!string.IsNullOrWhiteSpace(order.StripePaymentIntentId))
+        {
+            try
+            {
+                await _stripe.CapturePaymentIntentAsync(order.StripePaymentIntentId, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Failed to capture Stripe PI {Pi} for order {OrderId}. " +
+                    "Capture manually in the Stripe Dashboard to collect payment.",
+                    order.StripePaymentIntentId, orderId);
+            }
+        }
 
         var full = await OrderQueries.LoadFullOrderAsync(_db, orderId, ct);
         if (full is not null)

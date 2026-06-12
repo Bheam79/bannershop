@@ -207,7 +207,7 @@ https://<your-domain>/api/webhooks/stripe
 
 (replace `<your-domain>` with the public hostname/IP pointed at the server, e.g. via nginx/Caddy that proxies `:443` → `:17080`).
 
-Events handled: `payment_intent.succeeded` (banner orders, AI credit packs, manual design requests) and `payment_intent.payment_failed`.
+Events handled: `payment_intent.amount_capturable_updated` (banner orders: authorization confirmed, marks order Paid so production can start), `payment_intent.succeeded` (capture confirmed for banner orders — idempotent; AI credit packs; manual design requests), and `payment_intent.payment_failed`.
 
 The **webhook signing secret** (`whsec_…`) from the Stripe dashboard must be saved to `system_settings.stripe_webhook_secret` via `/admin/settings` — no appsettings fallback.
 
@@ -246,9 +246,9 @@ Four common causes (in descending order of frequency):
 
 1. **Event types not subscribed on the endpoint.** Stripe sends *nothing* by
    default — you must add events explicitly. Open the endpoint in the dashboard
-   → "Listening to" section → make sure `payment_intent.succeeded` AND
-   `payment_intent.payment_failed` are both in the list. If the list says
-   "0 events" or only has unrelated events, that's the issue.
+   → "Listening to" section → make sure `payment_intent.amount_capturable_updated`,
+   `payment_intent.succeeded` AND `payment_intent.payment_failed` are all in the
+   list. If the list says "0 events" or only has unrelated events, that's the issue.
 
 2. **Test/Live mode mismatch.** The dashboard has a Test/Live toggle (top right).
    Test-mode PIs only generate webhook attempts on test-mode endpoints; live-mode

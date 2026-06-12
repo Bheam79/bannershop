@@ -46,6 +46,14 @@ public interface IStripePaymentService
     Task CancelPaymentIntentAsync(string paymentIntentId, CancellationToken ct = default);
 
     /// <summary>
+    /// Capture a previously authorized (manual-capture) PaymentIntent.
+    /// Called when the admin marks a banner order as shipped.
+    /// Safe to call on already-captured PIs — Stripe will return an error that
+    /// the caller should log and swallow.
+    /// </summary>
+    Task CapturePaymentIntentAsync(string paymentIntentId, CancellationToken ct = default);
+
+    /// <summary>
     /// BANNERSH-185: retrieves an existing PaymentIntent so the customer can retry a
     /// failed payment without re-creating the order. Returns the PI id + a fresh
     /// client secret usable with Stripe.confirmCardPayment on the frontend.
