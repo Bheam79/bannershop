@@ -29,9 +29,36 @@ export default defineConfig({
   },
 
   projects: [
+    // ── Default CI project ──────────────────────────────────────────────────
+    // Runs all functional + accessibility tests.
+    // Visual-regression specs are excluded here — run them separately via
+    //   npx playwright test --project=visual-regression
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      testIgnore: ['**/visual-*.spec.ts'],
+    },
+
+    // ── Opt-in visual-regression project ────────────────────────────────────
+    // Full-page screenshot tests. Not run by default.
+    //
+    // First-run / updating baselines:
+    //   npx playwright test --project=visual-regression --update-snapshots
+    //
+    // Comparing against committed baselines:
+    //   npx playwright test --project=visual-regression
+    //
+    // Snapshots are stored in e2e/snapshots/ and must be committed.
+    {
+      name: 'visual-regression',
+      use: {
+        ...devices['Desktop Chrome'],
+        // Fixed 1280×720 viewport ensures reproducible full-page screenshots
+        // regardless of host screen resolution.
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: ['**/visual-*.spec.ts'],
+      snapshotDir: './snapshots',
     },
   ],
 
