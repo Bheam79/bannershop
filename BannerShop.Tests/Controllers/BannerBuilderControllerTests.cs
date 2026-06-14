@@ -1,10 +1,13 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
 using BannerShop.Tests.Helpers;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Xunit;
 
@@ -308,4 +311,244 @@ public class BannerBuilderControllerTests : IClassFixture<BannerBuilderTestFacto
                 It.IsAny<CancellationToken>()),
             Times.AtLeastOnce);
     }
+
+    // ── POST /api/banner-builder/upload ──────────────────────────────────────
+    //
+    // Magic-byte fixtures: VerifyMagicBytesAsync in the controller compares the
+    // first N bytes of the uploaded stream against the signature for the declared
+    // type. JPEG → 0xFF 0xD8 0xFF; PNG → the 8-byte PNG header. FakeBytes() is
+    // 12 arbitrary bytes that match no signature.
+
+    private static byte[] JpegBytes() =>
+        [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01];
+
+    private static byte[] PngBytes() =>
+        [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D];
+
+    private static byte[] FakeBytes() =>
+        [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B];
+
+    /// <summary>Builds a multipart/form-data body with a single "file" part.</summary>
+    private static MultipartFormDataContent MakeUpload(string name, byte[] content, string mime)
+    {
+        var form = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(content);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue(mime);
+        form.Add(fileContent, "file", name);
+        return form;
+    }
+
+    [Fact]
+    public async Task Upload_NoFile_Returns400()
+    {
+        // Empty multipart body with no parts at all — IFormFile binds to null.
+        var response = await _factory.CreateClient().PostAsync(
+            "/api/banner-builder/upload", new MultipartFormDataContent());
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Upload_DisallowedContentType_Returns400()
+    {
+        // Valid JPEG magic bytes but the declared MIME isn't in the AcceptedTypes table.
+        var form = MakeUpload("test.jpg", JpegBytes(), "text/plain");
+
+        var response = await _factory.CreateClient().PostAsync("/api/banner-builder/upload", form);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Upload_MagicBytesMismatch_Returns400()
+    {
+        // Declared as JPEG, but the bytes do not match the JPEG signature.
+        var form = MakeUpload("fake.jpg", FakeBytes(), "image/jpeg");
+
+        var response = await _factory.CreateClient().PostAsync("/api/banner-builder/upload", form);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Upload_AnonymousValidJpeg_Returns200_DesignHasNullUserId()
+    {
+        var form = MakeUpload("anon.jpg", JpegBytes(), "image/jpeg");
+
+        var response = await _factory.CreateClient().PostAsync("/api/banner-builder/upload", form);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        var doc = JsonSerializer.Deserialize<JsonElement>(body, _json);
+        doc.GetProperty("widthPx").GetInt32().Should().Be(1920); // mock return value
+        var designId = doc.GetProperty("designId").GetInt32();
+        designId.Should().BeGreaterThan(0);
+
+        // The persisted BannerDesign should be anonymous (no UserId).
+        _factory.SeedDatabase(db =>
+        {
+            var design = db.BannerDesigns.First(d => d.Id == designId);
+            design.UserId.Should().BeNull();
+        });
+    }
+
+    [Fact]
+    public async Task Upload_AuthenticatedValidJpeg_Returns200_DesignHasUserId()
+    {
+        var form = MakeUpload("mine.jpg", JpegBytes(), "image/jpeg");
+
+        var response = await UserClient(700).PostAsync("/api/banner-builder/upload", form);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        var doc = JsonSerializer.Deserialize<JsonElement>(body, _json);
+        var designId = doc.GetProperty("designId").GetInt32();
+
+        _factory.SeedDatabase(db =>
+        {
+            var design = db.BannerDesigns.First(d => d.Id == designId);
+            design.UserId.Should().Be(700);
+        });
+    }
+
+    [Fact]
+    public async Task Upload_AuthenticatedValidPng_Returns200()
+    {
+        var form = MakeUpload("mine.png", PngBytes(), "image/png");
+
+        var response = await UserClient(700).PostAsync("/api/banner-builder/upload", form);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        var doc = JsonSerializer.Deserialize<JsonElement>(body, _json);
+        doc.GetProperty("designId").GetInt32().Should().BeGreaterThan(0);
+    }
+
+    // ── PUT /api/banner-builder/{id}/rotate — edge cases ─────────────────────
+
+    [Fact]
+    public async Task Rotate_AnonymousDesign_AnonymousCallerCanRotate_Returns200()
+    {
+        // Anonymous designs (UserId = null) are open to any caller, including unauthenticated.
+        _factory.SeedDatabase(db =>
+        {
+            if (!db.BannerDesigns.Any(d => d.Id == 310))
+            {
+                db.BannerDesigns.Add(new BannerDesign
+                {
+                    Id = 310, UserId = null,
+                    OriginalFileName = "anon-rotate.jpg",
+                    StoragePath = "banner-builder/0/anon-rotate.jpg",
+                    ContentType = "image/jpeg",
+                    WidthPx = 1920, HeightPx = 1080,
+                    RotationDegrees = 0,
+                    SelectedHeightCm = 150,
+                    ComputedWidthCm = 267,
+                    PreviewStoragePath = null,
+                    CreatedAt = DateTime.UtcNow
+                });
+                db.SaveChanges();
+            }
+        });
+
+        var response = await _factory.CreateClient().PutAsJsonAsync(
+            "/api/banner-builder/310/rotate", new { degrees = 90 });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Rotate_AnonymousDesign_DifferentUserCanRotate_Returns200()
+    {
+        // Same anonymous design as the previous test — another authenticated user can still rotate.
+        _factory.SeedDatabase(db =>
+        {
+            if (!db.BannerDesigns.Any(d => d.Id == 310))
+            {
+                db.BannerDesigns.Add(new BannerDesign
+                {
+                    Id = 310, UserId = null,
+                    OriginalFileName = "anon-rotate.jpg",
+                    StoragePath = "banner-builder/0/anon-rotate.jpg",
+                    ContentType = "image/jpeg",
+                    WidthPx = 1920, HeightPx = 1080,
+                    RotationDegrees = 0,
+                    SelectedHeightCm = 150,
+                    ComputedWidthCm = 267,
+                    PreviewStoragePath = null,
+                    CreatedAt = DateTime.UtcNow
+                });
+                db.SaveChanges();
+            }
+        });
+
+        var response = await UserClient(701).PutAsJsonAsync(
+            "/api/banner-builder/310/rotate", new { degrees = 90 });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Rotate_AnotherUsersDesign_AdminCanRotate_Returns200()
+    {
+        // Design 303 is owned by user 999; an admin caller must be allowed.
+        var response = await AdminClient().PutAsJsonAsync(
+            "/api/banner-builder/303/rotate", new { degrees = 90 });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // ── GET /api/banner-builder/{id}/preview — ownership behaviour ───────────
+
+    [Fact]
+    public async Task GetPreview_AnotherUsersDesign_NoOwnershipCheck_AccessibleToAnyone()
+    {
+        // Documents the intentional comment in GetPreview: "Preview images (JPEG thumbnails)
+        // are not sensitive; no ownership check needed." Even an anonymous caller can pull
+        // a preview owned by another user as long as the file is on disk.
+        const int designId = 320;
+        const string relPath = "banner-builder/700/preview-320.jpg";
+
+        // Resolve the absolute path via the real BannerFileStorage so this test is decoupled
+        // from how the storage layer turns relative paths into absolute ones.
+        string absPath;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var storage = scope.ServiceProvider.GetRequiredService<BannerFileStorage>();
+            absPath = storage.AbsolutePathFor(relPath);
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(absPath)!);
+        // Tiny but valid-ish JPEG (header bytes only — the controller streams it back as-is).
+        await File.WriteAllBytesAsync(absPath, JpegBytes());
+
+        _factory.SeedDatabase(db =>
+        {
+            if (!db.BannerDesigns.Any(d => d.Id == designId))
+            {
+                db.BannerDesigns.Add(new BannerDesign
+                {
+                    Id = designId, UserId = 700,
+                    OriginalFileName = "owned.jpg",
+                    StoragePath = "banner-builder/700/owned.jpg",
+                    ContentType = "image/jpeg",
+                    WidthPx = 1920, HeightPx = 1080,
+                    RotationDegrees = 0,
+                    SelectedHeightCm = 150,
+                    ComputedWidthCm = 267,
+                    PreviewStoragePath = relPath,
+                    CreatedAt = DateTime.UtcNow
+                });
+                db.SaveChanges();
+            }
+        });
+
+        var response = await _factory.CreateClient().GetAsync($"/api/banner-builder/{designId}/preview");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/jpeg");
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Should().BeEquivalentTo(JpegBytes());
+    }
 }
+
