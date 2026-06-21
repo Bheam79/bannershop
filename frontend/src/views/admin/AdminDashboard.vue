@@ -52,7 +52,10 @@ onMounted(async () => {
     ])
     ordersToday.value = todayRes.totalCount
     ordersThisWeek.value = weekRes.totalCount
-    revenueThisMonth.value = monthRes.items.reduce((sum, o) => sum + o.totalNok, 0)
+    // BANNERSH-247: exclude cancelled orders from revenue (cancelled = no money received)
+    revenueThisMonth.value = monthRes.items
+      .filter(o => o.status !== 'Cancelled')
+      .reduce((sum, o) => sum + o.totalNok, 0)
     inProductionCount.value = inProdRes.totalCount
     recentOrders.value = recentRes.items
   } catch {
