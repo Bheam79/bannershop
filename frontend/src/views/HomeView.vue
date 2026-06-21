@@ -81,7 +81,7 @@ const CATS: Cat[] = [
     templateCategory: 'Baptism',
   },
   {
-    id: 'bryllup', icon: 'fa-ring', name: 'Bryllup', occ: 'Bryllupsbanner', price: 945,
+    id: 'bryllup', icon: 'fa-ring', name: 'Bryllup', occ: 'Bryllupsbanner', price: 810,
     img: '/banners/banner-bryllup.png',
     big: 'Maria & Johan', sub: 'For alltid · 12.07.2026',
     templateCategory: 'Wedding',
