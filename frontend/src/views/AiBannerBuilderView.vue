@@ -736,6 +736,27 @@ watch(selectedAspectRatio, () => {
   }
 })
 
+// BANNERSH-251: Manual mode skips the "Se forhåndsvisning" intermediate step —
+// the material picker + "Gå videre" CTA must appear immediately when the user
+// reaches step 2.  Auto-generate the synthetic placeholder so the picker (which
+// is gated on currentDesignRequest.previewUrl + genPhase === 'ready') renders
+// without requiring the customer to click anything.
+watch(step, (s) => {
+  if (s === 2 && isManual.value && genPhase.value !== 'ready') {
+    generateManualPlaceholder()
+  }
+}, { immediate: true })
+
+// Handle the edge case where the user switches from /banner-builder/ai to
+// /banner-builder/manual without remounting (e.g. via the "Velg manuell design"
+// error fallback) while already on step 2 — the step watcher above won't fire
+// because step didn't change, so trigger from the mode change too.
+watch(isManual, (manual) => {
+  if (manual && step.value === 2 && genPhase.value !== 'ready') {
+    generateManualPlaceholder()
+  }
+})
+
 // Start / stop the progress bar whenever the generation phase changes
 watch(genPhase, (phase) => {
   if (phase === 'generating') {
@@ -1129,11 +1150,16 @@ onBeforeUnmount(() => {
             style="color:#ef4444;font-size:13px;margin:0 0 6px"
           >{{ activateGenerationError }}</p>
 
-          <div class="bb-panel" style="padding:0;overflow:hidden;border-radius:0">
+          <!-- BANNERSH-251: in manual mode the preview image is hidden entirely —
+               the customer goes straight from the personalization form to the
+               material picker + "Gå videre" CTA. The synthetic placeholder is
+               still generated client-side so currentDesignRequest.previewUrl is
+               set (the picker depends on it), but the <img> is not rendered. -->
+          <div v-if="!isManual" class="bb-panel" style="padding:0;overflow:hidden;border-radius:0">
             <img
               v-if="currentDesignRequest.previewUrl"
               :src="currentDesignRequest.previewUrl"
-              :alt="isManual ? 'Ditt banner — forhåndsvisning' : `AI-generert banner for ${currentDesignRequest.personName}`"
+              :alt="`AI-generert banner for ${currentDesignRequest.personName}`"
               style="width:100%;height:auto;object-fit:contain;display:block"
               @load="onPreviewImageLoaded"
             />
@@ -1146,7 +1172,7 @@ onBeforeUnmount(() => {
                Widths for the two preset options are derived from the AI image's
                actual aspect ratio (set in onPreviewImageLoaded), and the custom
                option's width/height inputs auto-link via that same ratio. -->
-          <div v-if="currentDesignRequest.previewUrl" class="bb-panel" style="margin-top:20px">
+          <div v-if="currentDesignRequest.previewUrl" class="bb-panel" :style="isManual ? '' : 'margin-top:20px'">
             <div class="field-label" style="margin-bottom:12px">Velg kvalitet og størrelse</div>
             <div class="quality-grid">
 
@@ -1301,8 +1327,12 @@ onBeforeUnmount(() => {
           </p>
         </div>
 
-        <!-- Phase: idle — placeholder frame -->
-        <div v-else class="preview-placeholder">
+        <!-- Phase: idle — placeholder frame.
+             BANNERSH-251: hidden in manual mode (the step 2 watcher auto-enters
+             the 'ready' phase so this branch never renders, but we gate on
+             !isManual defensively to avoid a brief flash during the tick the
+             watcher schedules in). -->
+        <div v-else-if="!isManual" class="preview-placeholder">
           <i class="fa-solid fa-wand-magic-sparkles" style="font-size:30px;color:var(--accent);opacity:.45;margin-bottom:10px"></i>
           <div class="display" style="font-size:20px;color:var(--muted)">{{ templateName || 'AI Banner' }}</div>
           <p style="font-size:13px;color:var(--faint);margin-top:6px">Banneret ditt vil vises her</p>
@@ -1325,13 +1355,16 @@ onBeforeUnmount(() => {
           <!-- "Gå videre" — AwaitingApproval: approve → tilpass (step 3) -->
           <!-- BANNERSH-189: manual mode wires this button to manualGoVidere() which
                creates the DesignRequest via /design-requests/manual instead of the
-               AI-only approve endpoint. -->
+               AI-only approve endpoint.
+               BANNERSH-251: manual mode also gates on step2Valid (the personalize
+               form must be filled in) since there is no "Se forhåndsvisning"
+               intermediate step to enforce that anymore. -->
           <button
             v-if="genPhase === 'ready' && currentDesignRequest?.status === 'AwaitingApproval'"
             type="button"
             class="btn"
             style="width:100%;justify-content:center;padding:14px;font-size:16px;border-radius:12px;background:#3a9d7e;color:#fff"
-            :disabled="isManual ? manualSubmitting : approving"
+            :disabled="isManual ? (manualSubmitting || !step2Valid) : approving"
             @click="isManual ? manualGoVidere() : approve()"
           >
             <i v-if="isManual ? manualSubmitting : approving" class="fa-solid fa-circle-notch fa-spin"></i>
@@ -1361,29 +1394,22 @@ onBeforeUnmount(() => {
           </button>
 
           <!-- Generate (idle) / Regenerate (ready/error) button -->
-          <!-- BANNERSH-189: manual mode generates a "Ditt banner" placeholder client-side
-               (no API call, no credit), and the "ready" phase has NO regenerate option
-               — only "Gå videre" → tilpass. So the button is hidden in manual mode once
-               we're on the ready phase. -->
+          <!-- BANNERSH-189: manual mode previously rendered a client-side
+               "Ditt banner" placeholder via this button; BANNERSH-251 removes
+               that intermediate step entirely — the picker + "Gå videre" CTA
+               appear directly. So the generate button is AI-only now. -->
           <button
-            v-if="!(isManual && genPhase === 'ready')"
+            v-if="!isManual"
             type="button"
             class="btn btn-primary"
             style="width:100%;justify-content:center;padding:14px;font-size:16px;border-radius:12px"
             :disabled="!step2Valid"
-            @click="isManual
-              ? (genPhase === 'ready' ? null : generateManualPlaceholder())
-              : (genPhase === 'ready' ? regenerate() : generateBanner())"
+            @click="genPhase === 'ready' ? regenerate() : generateBanner()"
           >
             <i v-if="genPhase === 'error'" class="fa-solid fa-rotate"></i>
-            <i v-else-if="!isManual && isOutOfGenerations && genPhase !== 'ready'" class="fa-solid fa-bag-shopping"></i>
-            <i v-else-if="isManual" class="fa-solid fa-image"></i>
+            <i v-else-if="isOutOfGenerations && genPhase !== 'ready'" class="fa-solid fa-bag-shopping"></i>
             <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
-            <template v-if="isManual">
-              <template v-if="genPhase === 'error'">Prøv igjen</template>
-              <template v-else>Se forhåndsvisning</template>
-            </template>
-            <template v-else-if="genPhase === 'ready'">
+            <template v-if="genPhase === 'ready'">
               <template v-if="canGenerateForFree === true">Generer ny versjon (gratis)</template>
               <template v-else-if="hasCreditsAvailable">Generer ny versjon (1 kreditt)</template>
               <template v-else>Generer ny versjon</template>
