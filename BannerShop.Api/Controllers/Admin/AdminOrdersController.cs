@@ -152,4 +152,25 @@ public class AdminOrdersController : ControllerBase
                 : NotFound(new { error = result.Error });
         return Ok(result.Order);
     }
+
+    // ── POST /api/admin/orders/{id}/mark-paid ───────────────────────────────
+    /// <summary>
+    /// Manually marks a Draft or PendingPayment order as Paid. Used when the
+    /// Stripe <c>payment_intent.amount_capturable_updated</c> webhook was not
+    /// delivered (e.g. webhook secret missing in /admin/settings or the event
+    /// not subscribed in the Stripe Dashboard). Seeds production rows, sends
+    /// the confirmation email, and grants AI credits — same side-effects as
+    /// the webhook. The Stripe authorization is NOT captured here; use
+    /// <c>POST /capture</c> separately before shipping.
+    /// </summary>
+    [HttpPost("{id:int}/mark-paid")]
+    public async Task<IActionResult> MarkPaid(int id, CancellationToken ct)
+    {
+        var result = await _orders.MarkPaidManuallyAsync(id, ct);
+        if (!result.Success)
+            return result.ErrorType == InvalidTransition
+                ? UnprocessableEntity(new { error = result.Error })
+                : NotFound(new { error = result.Error });
+        return Ok(result.Order);
+    }
 }

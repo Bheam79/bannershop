@@ -42,6 +42,7 @@ public class AdminOrderService : IAdminOrderService
     private readonly IEmailService _email;
     private readonly BannerFileStorage _storage;
     private readonly IStripePaymentService _stripe;
+    private readonly IOrderService _orders;
     private readonly ILogger<AdminOrderService> _logger;
 
     public AdminOrderService(
@@ -49,12 +50,14 @@ public class AdminOrderService : IAdminOrderService
         IEmailService email,
         BannerFileStorage storage,
         IStripePaymentService stripe,
+        IOrderService orders,
         ILogger<AdminOrderService> logger)
     {
         _db = db;
         _email = email;
         _storage = storage;
         _stripe = stripe;
+        _orders = orders;
         _logger = logger;
     }
 
@@ -357,6 +360,43 @@ public class AdminOrderService : IAdminOrderService
 
         var full = await OrderQueries.LoadFullOrderAsync(_db, orderId, ct);
         var dr = await OrderQueries.LoadDesignRequestForOrderAsync(_db, orderId, ct);
+        return OrderActionResult.Ok(OrderMapper.ToDetailDto(full!, dr, _storage));
+    }
+
+    /// <inheritdoc />
+    public async Task<OrderActionResult> MarkPaidManuallyAsync(int orderId, CancellationToken ct = default)
+    {
+        var order = await _db.Orders.FindAsync(new object?[] { orderId }, ct);
+        if (order is null) return OrderActionResult.Fail("Order not found.");
+
+        if (order.Status is not (OrderStatus.Draft or OrderStatus.PendingPayment))
+        {
+            return OrderActionResult.FailTransition(
+                $"Order is in '{order.Status}' — only Draft or PendingPayment orders can be manually marked as paid.");
+        }
+
+        // Delegate to the shared IOrderService.MarkPaidAsync which seeds production rows,
+        // sends the confirmation email, and grants AI credits — exactly the same side-effects
+        // as the Stripe webhook path. When there is no PI (e.g. the draft was created without
+        // Stripe), mark the order Paid directly without going through Stripe.
+        if (!string.IsNullOrWhiteSpace(order.StripePaymentIntentId))
+        {
+            await _orders.MarkPaidAsync(order.StripePaymentIntentId, order.Id, ct);
+        }
+        else
+        {
+            order.Status    = OrderStatus.Paid;
+            order.OrderState = OrderState.Paid;
+            order.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(ct);
+        }
+
+        _logger.LogInformation(
+            "Admin manually marked order {OrderId} as Paid (PI={Pi}).",
+            orderId, order.StripePaymentIntentId ?? "(none)");
+
+        var full = await OrderQueries.LoadFullOrderAsync(_db, orderId, ct);
+        var dr   = await OrderQueries.LoadDesignRequestForOrderAsync(_db, orderId, ct);
         return OrderActionResult.Ok(OrderMapper.ToDetailDto(full!, dr, _storage));
     }
 

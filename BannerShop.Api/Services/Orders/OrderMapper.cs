@@ -133,9 +133,11 @@ internal static class OrderMapper
                 var firstItem = o.Items.OrderBy(i => i.Id).FirstOrDefault();
                 var previewPath = firstItem?.BannerDesign?.PreviewStoragePath
                                ?? firstItem?.BannerDesign?.StoragePath;
+                var downloadPath = firstItem?.BannerDesign?.StoragePath;
                 return (new CustomBannerDetailDto
                 {
-                    PreviewUrl = previewPath is null ? null : storage.PublicUrlFor(previewPath),
+                    PreviewUrl  = previewPath  is null ? null : storage.PublicUrlFor(previewPath),
+                    DownloadUrl = downloadPath is null ? null : storage.PublicUrlFor(downloadPath),
                     BannerSizeName = firstItem?.BannerSize?.Name,
                     MaterialName = firstItem?.BannerSize?.Material?.Name
                 }, null, null);

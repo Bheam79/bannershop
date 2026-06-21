@@ -41,4 +41,15 @@ public interface IAdminOrderService
     /// the capture (e.g. auth expired — admin must contact the customer).
     /// </summary>
     Task<OrderActionResult> CapturePaymentAsync(int orderId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Manually marks a Draft or PendingPayment order as Paid — used by admins when
+    /// the Stripe <c>payment_intent.amount_capturable_updated</c> webhook was not
+    /// delivered (e.g. webhook secret not yet configured, or Stripe dashboard event
+    /// subscription missing). Applies all the same side-effects as the webhook path:
+    /// production rows seeded, confirmation email sent, AI credits granted (when
+    /// applicable). The Stripe authorization hold is NOT captured here — use
+    /// <see cref="CapturePaymentAsync"/> separately before shipping.
+    /// </summary>
+    Task<OrderActionResult> MarkPaidManuallyAsync(int orderId, CancellationToken ct = default);
 }

@@ -48,6 +48,8 @@ export interface OrderDraftResponse {
 
 export interface CustomBannerDetail {
   previewUrl: string | null
+  /** Original high-res file URL for printing (differs from previewUrl when a smaller preview was generated). */
+  downloadUrl: string | null
   bannerSizeName: string | null
   materialName: string | null
 }

@@ -175,6 +175,13 @@ public class CustomBannerDetailDto
 {
     /// <summary>Public URL of the uploaded design preview (if any).</summary>
     public string? PreviewUrl { get; set; }
+    /// <summary>
+    /// Public URL of the original high-resolution file for printing. Differs
+    /// from <see cref="PreviewUrl"/> when a JPEG preview was generated for the
+    /// builder (PreviewUrl points to the smaller preview; DownloadUrl points
+    /// to the full-res original or rasterized-PDF image).
+    /// </summary>
+    public string? DownloadUrl { get; set; }
     /// <summary>Display name of the selected banner size.</summary>
     public string? BannerSizeName { get; set; }
     /// <summary>Display name of the banner material.</summary>

@@ -8,6 +8,7 @@ import {
   setShipping,
   advanceOrderState,
   captureOrderPayment,
+  markOrderPaid,
   uploadDesignRequestPreview,
 } from '@/api/admin'
 import type { OrderDetailResponse, OrderItemDetail } from '@/api/orders'
@@ -139,6 +140,28 @@ const designRequestId = computed<number | null>(() => {
   if (isAiBanner.value) return order.value?.aiBanner?.designRequestId ?? null
   return null
 })
+
+// ── Action: Mark as Paid (admin manual override when webhook fails) ─────────────
+const markPaidBusy = ref(false)
+const markPaidError = ref('')
+const markPaidSuccess = ref('')
+
+async function markAsPaid() {
+  markPaidBusy.value = true
+  markPaidError.value = ''
+  markPaidSuccess.value = ''
+  try {
+    order.value = await markOrderPaid(orderId)
+    syncForms()
+    markPaidSuccess.value = 'Ordre markert som betalt. Betalingsreservasjon er ikke kassert ennå — kasser manuelt før produksjon.'
+    setTimeout(() => { markPaidSuccess.value = '' }, 8000)
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { error?: string } } }
+    markPaidError.value = e.response?.data?.error ?? 'Feil ved markering som betalt.'
+  } finally {
+    markPaidBusy.value = false
+  }
+}
 
 // ── Action: Capture payment ────────────────────────────────────────────────────
 const captureBusy = ref(false)
@@ -658,7 +681,38 @@ const packingLabel = computed(() => {
 
         <!-- Draft / PendingPayment / DesignReady / Delivered / Cancelled: informational -->
         <template v-else>
-          <p v-if="currentState === 'Draft'" class="text-sm text-gray-400">
+          <!-- Draft or PendingPayment with a Stripe PI: admin can manually mark as paid
+               when the payment_intent.amount_capturable_updated webhook was not delivered
+               (e.g. wrong whsec_ in /admin/settings). -->
+          <template v-if="(currentState === 'Draft' || currentState === 'PendingPayment') && order.stripePaymentIntentId">
+            <div class="bg-orange-900/20 border border-orange-700/50 rounded-lg px-4 py-3 mb-4">
+              <p class="text-sm text-orange-300 font-medium mb-1">
+                ⚠️ Betaling kan være mottatt men webhook feilet
+              </p>
+              <p class="text-xs text-orange-500 mb-1">
+                Sjekk i Stripe Dashboard at betalingen faktisk er autorisert (status: <em>requires_capture</em>),
+                og verifiser at Stripe Webhook Secret i /admin/settings stemmer med signeringsnøkkelen i Stripe Dashboard.
+              </p>
+              <p class="text-xs text-orange-500">
+                PI: <code class="font-mono">{{ order.stripePaymentIntentId }}</code>
+              </p>
+            </div>
+            <div class="flex items-center gap-3 flex-wrap">
+              <button
+                :disabled="markPaidBusy"
+                class="bg-orange-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                @click="markAsPaid"
+              >
+                {{ markPaidBusy ? 'Behandler…' : '✅ Marker som betalt (webhook-override)' }}
+              </button>
+              <span v-if="markPaidSuccess" class="text-green-400 text-sm">✓ {{ markPaidSuccess }}</span>
+              <span v-if="markPaidError" class="text-red-400 text-sm">{{ markPaidError }}</span>
+            </div>
+            <p class="text-xs text-gray-500 mt-2">
+              Starter produksjonsskjøet og sender bekreftelses-e-post til kunden. Betalingsreservasjonen kasseres ikke ennå.
+            </p>
+          </template>
+          <p v-else-if="currentState === 'Draft'" class="text-sm text-gray-400">
             Ordren er i utkast-tilstand. Venter på betaling.
           </p>
           <p v-else-if="currentState === 'DesignReady'" class="text-sm text-gray-400">
@@ -755,23 +809,44 @@ const packingLabel = computed(() => {
         </RouterLink>
       </div>
 
-      <!-- Custom banner: uploaded design preview (if any) -->
-      <div v-if="isCustomBanner && order.customBanner?.previewUrl" class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-5">
-        <h2 class="text-base font-semibold text-gray-100 mb-3">Opplastet design</h2>
+      <!-- Custom banner: uploaded design file + preview -->
+      <div v-if="isCustomBanner && order.customBanner" class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-5">
+        <h2 class="text-base font-semibold text-gray-100 mb-3">Opplastet design (fil til trykk)</h2>
+
+        <!-- Preview image when available -->
         <img
+          v-if="order.customBanner.previewUrl"
           :src="order.customBanner.previewUrl"
           alt="Kundens opplastede design"
-          class="w-full max-w-xl rounded-xl border border-gray-600 shadow-sm"
+          class="w-full max-w-xl rounded-xl border border-gray-600 shadow-sm mb-3"
         />
-        <a
-          :href="order.customBanner.previewUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="mt-2 block text-sm text-blue-400 hover:underline"
-        >
-          Se full størrelse ↗
-        </a>
-        <div v-if="order.customBanner.bannerSizeName" class="mt-2 text-sm text-gray-400">
+        <div v-else class="text-sm text-gray-500 mb-3 italic">
+          Ingen forhåndsvisning generert.
+        </div>
+
+        <!-- File download links -->
+        <div class="flex flex-wrap gap-4 text-sm mt-1">
+          <a
+            v-if="order.customBanner.downloadUrl"
+            :href="order.customBanner.downloadUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="inline-flex items-center gap-1.5 bg-blue-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-600"
+          >
+            ⬇ Last ned original (til trykk)
+          </a>
+          <a
+            v-if="order.customBanner.previewUrl && order.customBanner.previewUrl !== order.customBanner.downloadUrl"
+            :href="order.customBanner.previewUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="inline-flex items-center gap-1.5 text-blue-400 hover:underline"
+          >
+            Se forhåndsvisning ↗
+          </a>
+        </div>
+
+        <div v-if="order.customBanner.bannerSizeName" class="mt-3 text-sm text-gray-400">
           Størrelse: <span class="text-gray-300">{{ order.customBanner.bannerSizeName }}</span>
           <span v-if="order.customBanner.materialName"> · {{ order.customBanner.materialName }}</span>
         </div>

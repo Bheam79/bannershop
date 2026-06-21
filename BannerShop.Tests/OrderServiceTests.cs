@@ -135,8 +135,11 @@ public class OrderServiceTests
         var stripeMock = new Mock<IStripePaymentService>();
         stripeMock.Setup(s => s.CapturePaymentIntentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                   .Returns(Task.CompletedTask);
+        var ordersMock = new Mock<IOrderService>();
+        ordersMock.Setup(o => o.MarkPaidAsync(It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
+                  .Returns(Task.CompletedTask);
         return new AdminOrderService(db, emailMock.Object, storage, stripeMock.Object,
-                                      NullLogger<AdminOrderService>.Instance);
+                                      ordersMock.Object, NullLogger<AdminOrderService>.Instance);
     }
 
     private static CreateOrderDraftRequest MakeRequest(

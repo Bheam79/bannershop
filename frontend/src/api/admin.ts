@@ -220,6 +220,19 @@ export async function captureOrderPayment(orderId: number): Promise<OrderDetailR
   return data
 }
 
+/**
+ * Manually marks a Draft / PendingPayment order as Paid — used when the Stripe
+ * payment_intent.amount_capturable_updated webhook was not delivered (e.g.
+ * webhook secret missing / wrong in /admin/settings). Seeds production rows,
+ * sends the confirmation email, and grants AI credits — same side-effects as the
+ * webhook. The Stripe authorization is NOT captured here; use captureOrderPayment()
+ * separately before shipping.
+ */
+export async function markOrderPaid(orderId: number): Promise<OrderDetailResponse> {
+  const { data } = await apiClient.post<OrderDetailResponse>(`/admin/orders/${orderId}/mark-paid`)
+  return data
+}
+
 // ── Admin Users (BANNERSH-86) ─────────────────────────────────────────────────
 
 export interface AdminUserListItem {
