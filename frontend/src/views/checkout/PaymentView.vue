@@ -176,6 +176,9 @@ async function confirmMockPayment() {
             quantity: item.quantity,
             notes: item.notes ?? undefined,
             eyeletOption: item.eyeletOption,
+            // Pass the uploaded / AI-generated design file so the backend can
+            // link OrderItem.BannerDesignId → admin can download the print file.
+            bannerDesignId: item.designId ?? undefined,
             skipCustomSurcharge: item.skipCustomSurcharge ?? undefined,
           })),
       })
@@ -268,6 +271,9 @@ async function pay() {
             quantity: item.quantity,
             notes: item.notes ?? undefined,
             eyeletOption: item.eyeletOption,
+            // Pass the uploaded / AI-generated design file so the backend can
+            // link OrderItem.BannerDesignId → admin can download the print file.
+            bannerDesignId: item.designId ?? undefined,
             skipCustomSurcharge: item.skipCustomSurcharge ?? undefined,
           })),
       })
