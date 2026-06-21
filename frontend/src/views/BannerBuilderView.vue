@@ -776,7 +776,7 @@ onMounted(async () => {
                 v-for="opt in ([
                   { value: 'None',        label: 'Ingen maljer',        sub: 'Uten hull' },
                   { value: 'FourCorners', label: '4 maljer (hjørner)',   sub: 'En i hvert hjørne' },
-                  { value: 'PerMeter',    label: 'Maljer per meter',     sub: `Ca. 1 per 100 cm – ${eyeletCount} stk totalt` },
+                  { value: 'PerMeter',    label: 'Maljer per meter',     sub: `Ca. 1 per 100 cm – ${countEyelets(computedWidthCm, heightCm, 'PerMeter')} stk totalt` },
                 ] as const)"
                 :key="opt.value"
                 class="eyelet-option"
