@@ -36,6 +36,12 @@ export default defineConfig({
         target: 'http://localhost:5000',
         changeOrigin: true,
       },
+      // Forward uploaded file requests to the backend StaticFiles middleware.
+      // In dev the Vite server doesn't serve these; the backend does.
+      '/files': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+      },
     },
   },
 })

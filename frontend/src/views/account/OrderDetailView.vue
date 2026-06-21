@@ -79,6 +79,18 @@ function itemLabel(item: OrderItemDetail): string {
   return `Banner ${item.heightCm} cm høy`
 }
 
+// ── Banner preview ────────────────────────────────────────────────────────────
+// Resolves the correct preview URL across all order types.
+const bannerPreviewUrl = computed(() => {
+  if (!order.value) return null
+  return (
+    order.value.customBanner?.previewUrl ??
+    order.value.aiBanner?.previewUrl ??
+    order.value.manualDesign?.previewUrl ??
+    null
+  )
+})
+
 // ── Shipping helpers ──────────────────────────────────────────────────────────
 const isShipped = computed(() =>
   order.value?.status === 'Shipped' || order.value?.status === 'Delivered'
@@ -177,6 +189,21 @@ const packingLabel = computed(() => {
           </div>
         </div>
       </div>
+
+      <!-- ── Banner preview ──────────────────────────────────────────────── -->
+      <section v-if="bannerPreviewUrl" class="banner-preview-section">
+        <h2 class="section-title">
+          <i class="fa-solid fa-image"></i>
+          Ditt banner
+        </h2>
+        <div class="panel banner-preview-panel">
+          <img
+            :src="bannerPreviewUrl"
+            alt="Forhåndsvisning av banner"
+            class="banner-preview-img"
+          />
+        </div>
+      </section>
 
       <!-- ── Production tracking (per item) ─────────────────────────────── -->
       <section
@@ -648,6 +675,18 @@ const packingLabel = computed(() => {
   font-size: 0.9rem;
   color: var(--muted);
   line-height: 1.7;
+}
+
+/* ── Banner preview ─────────────────────────────────────────── */
+.banner-preview-section { }
+.banner-preview-panel { display: flex; align-items: center; justify-content: center; padding: 1.25rem; }
+.banner-preview-img {
+  max-width: 100%;
+  max-height: 420px;
+  border-radius: 10px;
+  object-fit: contain;
+  display: block;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.28);
 }
 
 /* ── Back link ──────────────────────────────────────────────── */
