@@ -140,13 +140,22 @@ internal class BringPackage
 
     /// <summary>
     /// Whether the package cannot be stacked (e.g. a cylindrical tube).
-    /// When <c>true</c> Bring's Shipping Guide 2.0 applies any applicable
-    /// special-handling surcharge to the quoted price.
     /// Omitted when <c>false</c> (default) to keep requests minimal.
     /// </summary>
     [JsonPropertyName("nonStackable")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool NonStackable { get; set; }
+
+    /// <summary>
+    /// Whether the package price should be adjusted for special volume (Bring docs:
+    /// "typically used for roll or other weirdly shaped packages"). When <c>true</c>
+    /// Bring's Shipping Guide 2.0 applies the tube/rørpakke volume-based pricing
+    /// surcharge to the quoted price.
+    /// Omitted when <c>false</c> (default) to keep requests minimal.
+    /// </summary>
+    [JsonPropertyName("volumeSpecial")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool VolumeSpecial { get; set; }
 }
 
 // ── Response DTOs ────────────────────────────────────────────────────────────

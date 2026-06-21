@@ -104,14 +104,17 @@ public class BringShippingService : IShippingService
                         {
                             // Bring API v2 uses grams for grossWeight and plain cm for dimensions
                             // (no "InKg"/"InCm" suffixes — BANNERSH-143 fix).
-                            GrossWeight  = decimal.Round(parcel.WeightKg * 1000m, 0),
-                            Length       = decimal.Round(parcel.LengthCm, 1),
-                            Width        = decimal.Round(parcel.WidthCm,  1),
-                            Height       = decimal.Round(parcel.HeightCm, 1),
-                            // Rolled banners are shipped in a cylindrical tube that cannot
-                            // be stacked. Setting nonStackable: true tells Bring's Shipping
-                            // Guide to include any applicable handling surcharge (BANNERSH-242).
-                            NonStackable = parcel.NonStackable
+                            GrossWeight   = decimal.Round(parcel.WeightKg * 1000m, 0),
+                            Length        = decimal.Round(parcel.LengthCm, 1),
+                            Width         = decimal.Round(parcel.WidthCm,  1),
+                            Height        = decimal.Round(parcel.HeightCm, 1),
+                            // Rolled banners ship in a cylindrical tube (BANNERSH-242):
+                            // NonStackable = true  → tube cannot be stacked on other packages.
+                            // VolumeSpecial = true → Bring docs say this is "typically used for
+                            //   roll or other weirdly shaped packages"; it triggers the tube/
+                            //   rørpakke volume surcharge in the Bring Shipping Guide 2.0 price.
+                            NonStackable  = parcel.NonStackable,
+                            VolumeSpecial = parcel.VolumeSpecial,
                         }
                     }
                 }
@@ -284,7 +287,7 @@ public class BringShippingService : IShippingService
 
     private static string BuildCacheKey(string postal, ParcelDimensions p)
         => string.Create(CultureInfo.InvariantCulture,
-            $"bring:{postal}:{p.LengthCm:0.#}x{p.WidthCm:0.#}x{p.HeightCm:0.#}:{p.WeightKg:0.##}:{(p.NonStackable ? "ns" : "s")}");
+            $"bring:{postal}:{p.LengthCm:0.#}x{p.WidthCm:0.#}x{p.HeightCm:0.#}:{p.WeightKg:0.##}:{(p.NonStackable ? "ns" : "s")}:{(p.VolumeSpecial ? "vs" : "")}");
 
     private static string Truncate(string s, int max)
         => s.Length <= max ? s : s[..max] + "…";

@@ -121,16 +121,21 @@ public class ParcelCalculator
         var totalGrams = contentsGrams + packagingGrams;
         var weightKg = decimal.Round(totalGrams / 1000m, 2);
 
-        // Rolled banners ship in a cylindrical tube which cannot be stacked.
-        // Setting NonStackable tells the Bring API to include any applicable
-        // special-handling (rørpakke) surcharge in the quoted price.
-        var nonStackable = packing == PackingMode.Rolled;
+        // Rolled banners ship in a cylindrical tube.
+        // NonStackable = true: a tube cannot be stacked on other packages (Bring API flag).
+        // VolumeSpecial = true: per Bring Shipping Guide 2.0 docs this flag is specifically
+        //   "typically used for roll or other weirdly shaped packages" — i.e. the quoted
+        //   price will be adjusted for special volume.  This is the primary flag that
+        //   triggers Bring's tube/rørpakke pricing surcharge (BANNERSH-242).
+        var nonStackable  = packing == PackingMode.Rolled;
+        var volumeSpecial = packing == PackingMode.Rolled;
 
         return new ParcelDimensions(
             LengthCm: lengthCm,
             WidthCm: widthCm,
             HeightCm: heightOutCm,
             WeightKg: weightKg,
-            NonStackable: nonStackable);
+            NonStackable: nonStackable,
+            VolumeSpecial: volumeSpecial);
     }
 }
