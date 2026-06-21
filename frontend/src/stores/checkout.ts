@@ -24,6 +24,38 @@ export interface CheckoutState {
 // `checkout.clear()` after a successful order AND page reloads).
 const LAST_ADDRESS_KEY = 'bannershop_last_address'
 
+// BANNERSH-249: persist the in-flight draft order so we don't mint a fresh
+// Order row every time the customer re-enters the PaymentView. The cached id
+// is dropped when the cart contents change (see `markCartChanged`) or on
+// successful payment (via `clearDraftOrder`).
+const DRAFT_ORDER_KEY = 'bannershop_draft_order'
+
+interface DraftOrderSnapshot {
+  orderId: number
+  cartHash: string
+}
+
+function readDraftOrder(): DraftOrderSnapshot | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_ORDER_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<DraftOrderSnapshot> | null
+    if (!parsed || typeof parsed.orderId !== 'number' || typeof parsed.cartHash !== 'string') return null
+    return { orderId: parsed.orderId, cartHash: parsed.cartHash }
+  } catch {
+    return null
+  }
+}
+
+function writeDraftOrder(snapshot: DraftOrderSnapshot | null): void {
+  try {
+    if (snapshot === null) localStorage.removeItem(DRAFT_ORDER_KEY)
+    else localStorage.setItem(DRAFT_ORDER_KEY, JSON.stringify(snapshot))
+  } catch {
+    // non-fatal — duplicate prevention degrades to per-mount cache only
+  }
+}
+
 interface LastAddressSnapshot {
   recipientName: string
   address: CheckoutAddress
@@ -79,6 +111,13 @@ export const useCheckoutStore = defineStore('checkout', () => {
   /** Default Folded per BANNERSH-174 spec. */
   const packingMode = ref<PackingMode>(last?.packingMode ?? 'Folded')
 
+  // BANNERSH-249: re-hydrate the persisted draft-order pointer so a customer who
+  // bounces between the cart and the payment page reuses the same Order row
+  // (via /retry-payment) instead of spawning a fresh draft on every mount.
+  const draftSnapshot = readDraftOrder()
+  const draftOrderId = ref<number | null>(draftSnapshot?.orderId ?? null)
+  const draftCartHash = ref<string | null>(draftSnapshot?.cartHash ?? null)
+
   const isReady = () => {
     if (!recipientName.value.trim()) return false
     if (deliveryType.value === 'Pickup') return true
@@ -115,6 +154,33 @@ export const useCheckoutStore = defineStore('checkout', () => {
     shippingCostNok.value = 0
     expressFeeNok.value = 0
     packingMode.value = 'Folded'
+    // BANNERSH-249: a completed checkout invalidates the draft pointer.
+    draftOrderId.value = null
+    draftCartHash.value = null
+    writeDraftOrder(null)
+  }
+
+  /**
+   * BANNERSH-249: remember the draft Order id we just minted (or successfully
+   * reused) along with the cart-content hash it was created against. Subsequent
+   * visits to the payment page with the SAME cart hash will reuse this id via
+   * <c>retryOrderPayment</c> instead of creating a duplicate Order row.
+   */
+  function setDraftOrder(orderId: number, cartHash: string) {
+    draftOrderId.value = orderId
+    draftCartHash.value = cartHash
+    writeDraftOrder({ orderId, cartHash })
+  }
+
+  /**
+   * BANNERSH-249: drop the cached draft pointer — call this on successful
+   * payment, on customer-initiated cancel, or when the cart is mutated in a
+   * way that invalidates the snapshotted contents.
+   */
+  function clearDraftOrder() {
+    draftOrderId.value = null
+    draftCartHash.value = null
+    writeDraftOrder(null)
   }
 
   /**
@@ -144,9 +210,13 @@ export const useCheckoutStore = defineStore('checkout', () => {
     shippingCostNok,
     expressFeeNok,
     packingMode,
+    draftOrderId,
+    draftCartHash,
     isReady,
     setCheckout,
     clear,
     loadLastAddress,
+    setDraftOrder,
+    clearDraftOrder,
   }
 })

@@ -153,6 +153,51 @@ page rather than reopening in the wizard), (d) requires the portrait photo, and
 banner + 495 kr designer-fee lines to the cart. The legacy
 `ManualBannerBuilderView.vue` was deleted.
 
+## Order creation contract (BANNERSH-249)
+**No `Order` row is created before the customer clicks "Betal" in the cart.**
+`DesignRequestService.CreateManualRequestAsync` and `PersistAndEnqueueAsync` (AI)
+only persist the `DesignRequest`; the `Order` is minted by
+`OrderService.CreateDraftAsync` when the user reaches PaymentView. Pre-249 those
+two methods each spawned an upfront Order (Manual=Draft+495+banner,
+AI=Paid+TotalNok=0 tracking shell) which polluted "Mine ordrer" with rows per
+generation attempt.
+
+Manual flow specifics:
+- Cart has **one** line item per banner — the 495 kr designer fee is bundled
+  into that banner's `LineTotalNok` server-side (computed from
+  `DesignRequest.PriceNok`, charged once per DR, NOT per quantity).
+  `OrderItemDto.ManualDesignFeeNok` exposes the bundled fee for display.
+- `CartItem.manualDesignFeeNok` is the client-side mirror so the cart subtotal
+  matches what `CreateDraftAsync` computes. Frontend cart never sends a separate
+  "fee-only" line (that approach was tried and reverted within 249).
+- AI activation fee (95 kr / +20 credits) is suppressed when the linked DR is
+  Manual — only AI DRs trigger it.
+- Each item's `DesignRequestId` is linked back to the new Order
+  (`dr.OrderId = order.Id`) by `CreateDraftAsync` itself.
+
+Duplicate-order prevention:
+- `checkout.draftOrderId` + `draftCartHash` (localStorage, key
+  `bannershop_draft_order`) caches the last-minted draft. When PaymentView is
+  re-mounted with the same cart hash, the next pay click calls
+  `retryOrderPayment(orderId)` instead of `createOrderDraft(...)`. Pre-249,
+  every PaymentView re-mount minted a fresh Draft row.
+- `useCartStore.cartHash` is keyed on the fields that affect server pricing
+  (size, custom width, qty, eyelet, designId, designRequestId, manualDesignFee,
+  skipCustomSurcharge). Mutating any of those invalidates the cached draft.
+
+Per-item display (BANNERSH-249):
+- `OrderItemDto.DesignPreviewUrl` / `DesignDownloadUrl` / `DesignSource`
+  ("Ai"/"Manual"/"CustomUpload"/"None") are populated by `OrderMapper.MapItem`
+  from the linked `BannerDesign` (custom upload) or `DesignRequest` (AI/Manual).
+- Both `account/OrderDetailView.vue` and `admin/OrderDetailView.vue` render one
+  section per `OrderItem` so multi-banner orders show each banner's preview +
+  design file. Manual just adds a "Designhonorar" row in the per-item breakdown.
+  The three legacy order-level type-specific blocks (CustomBanner / AiBanner /
+  ManualDesign sub-objects) are still populated for back-compat but the UI no
+  longer uses them.
+- `OrderQueries.LoadFullOrderAsync` includes `Items → DesignRequest` so the
+  mapper can access mode/price without an extra round-trip.
+
 ## Manual design requests (BANNERSH-19 / BANNERSH-104)
 - `POST /api/design-requests/manual` charges the customer **design fee (495 kr) + physical-banner production cost** in a single Stripe PaymentIntent. Pre-BANNERSH-104 only the 495 kr design fee was collected, which silently left the printed banner unpaid.
 - `DesignRequest.PriceNok` stays the design fee (495). New columns `BannerPriceNok`, `BannerSizeId`, `CustomBannerWidthCm` hold the production cost breakdown (migration `AddBannerPriceToManualDesignRequest`).

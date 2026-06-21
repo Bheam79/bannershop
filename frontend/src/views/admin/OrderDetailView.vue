@@ -796,127 +796,127 @@ const packingLabel = computed(() => {
         </template>
       </div>
 
-      <!-- ── Type-specific sub-content ────────────────────────────────────── -->
-
-      <!-- AI banner: generated image -->
-      <div v-if="isAiBanner" class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-5">
-        <h2 class="text-base font-semibold text-gray-100 mb-3">AI-generert bilde</h2>
-        <div v-if="order.aiBanner?.previewUrl">
-          <img
-            :src="order.aiBanner.previewUrl"
-            alt="AI-generert forhåndsvisning"
-            class="w-full max-w-xl border border-gray-600 shadow-sm"
-          />
-          <div class="mt-3 flex items-center gap-4 text-sm">
-            <a
-              :href="order.aiBanner.previewUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="text-blue-400 hover:underline"
-            >
-              Se full størrelse ↗
-            </a>
-            <RouterLink
-              v-if="designRequestId"
-              :to="`/admin/design-requests/${designRequestId}`"
-              class="text-blue-400 hover:underline"
-            >
-              Åpne design-bestilling ↗
-            </RouterLink>
-          </div>
-          <div v-if="order.aiBanner.personName" class="mt-2 text-sm text-gray-400">
-            Person: <span class="text-gray-300">{{ order.aiBanner.personName }}</span>
-          </div>
-          <div v-if="order.aiBanner.themeDescription" class="mt-1 text-sm text-gray-400">
-            Tema: <span class="text-gray-300">{{ order.aiBanner.themeDescription }}</span>
-          </div>
-        </div>
-        <div v-else class="text-sm text-gray-500">
-          Ingen AI-generert bilde ennå.
-          <RouterLink
-            v-if="designRequestId"
-            :to="`/admin/design-requests/${designRequestId}`"
-            class="text-blue-400 hover:underline ml-1"
-          >
-            Se design-bestilling ↗
-          </RouterLink>
-        </div>
-      </div>
-
-      <!-- Manual design: uploaded design + link to design request -->
-      <div v-if="isManualDesign" class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-5">
-        <h2 class="text-base font-semibold text-gray-100 mb-3">Manuelt design</h2>
-        <div v-if="order.manualDesign?.previewUrl" class="mb-4">
-          <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Nåværende design</div>
-          <img
-            :src="order.manualDesign.previewUrl"
-            alt="Designforslag"
-            class="w-full max-w-xl rounded-xl border border-gray-600 shadow-sm"
-          />
-          <a
-            :href="order.manualDesign.previewUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="mt-2 block text-sm text-blue-400 hover:underline"
-          >
-            Se full størrelse ↗
-          </a>
-        </div>
-        <div v-else class="text-sm text-gray-500 mb-3">
-          Ingen design lastet opp ennå.
-        </div>
-        <div v-if="order.manualDesign?.designerNotes" class="text-sm text-gray-400 mb-3">
-          Designernotat: <span class="text-gray-300 italic">{{ order.manualDesign.designerNotes }}</span>
-        </div>
-        <RouterLink
-          v-if="designRequestId"
-          :to="`/admin/design-requests/${designRequestId}`"
-          class="text-sm text-blue-400 hover:underline"
+      <!-- ── Per-item banner sections (BANNERSH-249) ────────────────────── -->
+      <!-- One section per OrderItem so multi-banner orders clearly show which
+           design file belongs to which banner. AI / Manual / CustomUpload all
+           render the same shape — manual just adds a "Designhonorar" line in
+           the breakdown. -->
+      <div v-if="order.items.length > 0" class="space-y-4 mb-5">
+        <h2 class="text-base font-semibold text-gray-100">
+          {{ order.items.length === 1 ? 'Banner' : 'Bannere' }}
+        </h2>
+        <div
+          v-for="(item, idx) in order.items"
+          :key="`adm-banner-${item.id}`"
+          class="bg-gray-800 border border-gray-700 rounded-xl p-5"
         >
-          Åpne full design-bestilling (revisjonshistorikk, opplasting) ↗
-        </RouterLink>
-      </div>
+          <div class="flex items-start justify-between gap-3 mb-3 flex-wrap">
+            <div class="flex items-center flex-wrap gap-2">
+              <span
+                v-if="order.items.length > 1"
+                class="text-xs font-bold uppercase tracking-wider text-gray-500 bg-gray-900 px-2 py-0.5 rounded-full"
+              >
+                Banner {{ idx + 1 }}
+              </span>
+              <span class="text-base font-semibold text-gray-100">{{ itemLabel(item) }}</span>
+              <span
+                v-if="item.designSource === 'Ai'"
+                class="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-900/40 text-purple-300 border border-purple-700/40"
+              >
+                AI-generert design
+              </span>
+              <span
+                v-else-if="item.designSource === 'Manual'"
+                class="text-xs font-semibold px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-200 border border-yellow-700/40"
+              >
+                Designet av designer
+              </span>
+              <span
+                v-else-if="item.designSource === 'CustomUpload'"
+                class="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-900/40 text-green-300 border border-green-700/40"
+              >
+                Egen opplastet design
+              </span>
+            </div>
+            <div class="text-sm font-semibold text-gray-300 shrink-0">
+              {{ item.quantity }} stk · {{ formatNok(item.lineTotalNok) }}
+            </div>
+          </div>
 
-      <!-- Custom banner: uploaded design file + preview -->
-      <div v-if="isCustomBanner && order.customBanner" class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-5">
-        <h2 class="text-base font-semibold text-gray-100 mb-3">Opplastet design (fil til trykk)</h2>
+          <div class="grid sm:grid-cols-[minmax(0,260px)_1fr] gap-5">
+            <div class="flex items-center justify-center bg-gray-900 border border-gray-700 rounded-lg overflow-hidden p-2 min-h-[140px]">
+              <img
+                v-if="item.designPreviewUrl"
+                :src="item.designPreviewUrl"
+                :alt="`Forhåndsvisning av ${itemLabel(item)}`"
+                class="max-w-full max-h-[260px] object-contain"
+              />
+              <div v-else class="text-xs text-gray-500 italic flex flex-col items-center gap-2 py-6">
+                <svg class="w-8 h-8 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+                Ingen forhåndsvisning ennå
+              </div>
+            </div>
 
-        <!-- Preview image when available -->
-        <img
-          v-if="order.customBanner.previewUrl"
-          :src="order.customBanner.previewUrl"
-          alt="Kundens opplastede design"
-          class="w-full max-w-xl rounded-xl border border-gray-600 shadow-sm mb-3"
-        />
-        <div v-else class="text-sm text-gray-500 mb-3 italic">
-          Ingen forhåndsvisning generert.
-        </div>
+            <div class="space-y-2 text-sm">
+              <div class="flex justify-between gap-2">
+                <span class="text-gray-400">Størrelse</span>
+                <span class="text-gray-200 font-medium">
+                  {{ item.customWidthCm ?? '—' }} × {{ item.heightCm }} cm
+                </span>
+              </div>
+              <div v-if="item.eyeletOption && item.eyeletOption !== 'None'" class="flex justify-between gap-2">
+                <span class="text-gray-400">Maljer</span>
+                <span class="text-gray-200 font-medium">
+                  {{ item.eyeletOption === 'FourCorners' ? '4 hjørner' : 'Per meter' }}
+                  <template v-if="(item.eyeletCount ?? 0) > 0"> · {{ item.eyeletCount }} stk</template>
+                </span>
+              </div>
+              <div class="flex justify-between gap-2 pt-2 border-t border-dashed border-gray-700">
+                <span class="text-gray-400">Banner</span>
+                <span class="text-gray-200 font-medium">
+                  {{ formatNok((item.unitPriceNok + (item.eyeletFeeNok ?? 0)) * item.quantity) }}
+                </span>
+              </div>
+              <div v-if="(item.manualDesignFeeNok ?? 0) > 0" class="flex justify-between gap-2">
+                <span class="text-gray-400">Designhonorar</span>
+                <span class="text-gray-200 font-medium">{{ formatNok(item.manualDesignFeeNok ?? 0) }}</span>
+              </div>
+              <div class="flex justify-between gap-2 pt-2 border-t border-gray-700 font-semibold text-base">
+                <span class="text-gray-100">Sum</span>
+                <span class="text-blue-400">{{ formatNok(item.lineTotalNok) }}</span>
+              </div>
 
-        <!-- File download links -->
-        <div class="flex flex-wrap gap-4 text-sm mt-1">
-          <a
-            v-if="order.customBanner.downloadUrl"
-            :href="order.customBanner.downloadUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="inline-flex items-center gap-1.5 bg-blue-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-600"
-          >
-            ⬇ Last ned original (til trykk)
-          </a>
-          <a
-            v-if="order.customBanner.previewUrl && order.customBanner.previewUrl !== order.customBanner.downloadUrl"
-            :href="order.customBanner.previewUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="inline-flex items-center gap-1.5 text-blue-400 hover:underline"
-          >
-            Se forhåndsvisning ↗
-          </a>
-        </div>
-
-        <div v-if="order.customBanner.bannerSizeName" class="mt-3 text-sm text-gray-400">
-          Størrelse: <span class="text-gray-300">{{ order.customBanner.bannerSizeName }}</span>
-          <span v-if="order.customBanner.materialName"> · {{ order.customBanner.materialName }}</span>
+              <div class="flex flex-wrap gap-3 pt-2">
+                <a
+                  v-if="item.designDownloadUrl"
+                  :href="item.designDownloadUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center gap-1.5 bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-600"
+                >
+                  ⬇ Last ned originalfil
+                </a>
+                <a
+                  v-if="item.designPreviewUrl && item.designPreviewUrl !== item.designDownloadUrl"
+                  :href="item.designPreviewUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center gap-1.5 text-blue-400 hover:underline text-xs"
+                >
+                  Se forhåndsvisning ↗
+                </a>
+                <RouterLink
+                  v-if="item.designRequestId"
+                  :to="`/admin/design-requests/${item.designRequestId}`"
+                  class="inline-flex items-center gap-1.5 text-blue-400 hover:underline text-xs"
+                >
+                  Åpne design-bestilling ↗
+                </RouterLink>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

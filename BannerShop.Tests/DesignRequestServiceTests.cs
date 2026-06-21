@@ -98,6 +98,10 @@ public class DesignRequestServiceTests
         saved.StripePaymentIntentId.Should().BeNull();
         saved.UserId.Should().Be(1);
         saved.PriceNok.Should().Be(0m);
+        // BANNERSH-249: AI generation no longer spawns a tracking-shell Order. The Order
+        // is only created when the customer commits to printing via the cart pay button.
+        saved.OrderId.Should().BeNull();
+        db.Orders.Should().BeEmpty();
 
         db.Users.Single().HasUsedFreeAiGeneration.Should().BeTrue();
         stripe.Verify(s => s.CreatePaymentIntentAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<decimal>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -258,6 +262,10 @@ public class DesignRequestServiceTests
         saved.BannerPriceNok.Should().Be(result.BannerPriceNok);
         saved.BannerSizeId.Should().NotBeNull();
         saved.StripePaymentIntentId.Should().BeNull(); // never set in the new flow
+        // BANNERSH-249: no Order is created upfront — Order is created later by
+        // OrderService.CreateDraftAsync when the customer reaches the cart's pay button.
+        saved.OrderId.Should().BeNull();
+        db.Orders.Should().BeEmpty();
 
         // BANNERSH-136: no Stripe charge is made upfront.
         stripe.Verify(s => s.CreatePaymentIntentAsync(

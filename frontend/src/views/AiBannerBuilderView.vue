@@ -597,6 +597,10 @@ function addManualToCartAndCheckout() {
   const reqId = manualDesignRequestId.value
   const size = tilpassBannerSize.value
   if (!reqId || !size) return
+  // BANNERSH-249: a manual order is ONE cart item — the 495 kr designer fee is
+  // bundled on the banner line (server snaps it from the linked DesignRequest)
+  // so there is no separate "Designer-tjeneste" line that would otherwise spawn
+  // two OrderItem rows + obscure which banner the designer is working on.
   const bannerItem: CartItem = {
     bannerSizeId: size.id,
     bannerSizeName: `Manuelt banner ${tilpassDesignWidthCm.value} × ${tilpassDesignHeightCm.value} cm`,
@@ -608,21 +612,9 @@ function addManualToCartAndCheckout() {
     eyeletFeeNok: tilpassEyeletFeeNok.value,
     notes: `Manuelt designet banner — bestilling #${reqId}`,
     designRequestId: reqId,
+    manualDesignFeeNok: manualDesignPriceNok.value,
   }
   cart.addItem(bannerItem)
-  const designFeeItem: CartItem = {
-    bannerSizeId: null,
-    bannerSizeName: 'Designer-tjeneste (manuelt banner)',
-    customWidthCm: null,
-    heightCm: 0,
-    quantity: 1,
-    unitPriceNok: manualDesignPriceNok.value,
-    eyeletOption: 'None',
-    eyeletFeeNok: 0,
-    notes: `Designhonorar for bestilling #${reqId}`,
-    designRequestId: reqId,
-  }
-  cart.addItem(designFeeItem)
   void router.push('/checkout')
 }
 

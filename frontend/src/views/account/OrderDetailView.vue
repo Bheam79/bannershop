@@ -79,17 +79,28 @@ function itemLabel(item: OrderItemDetail): string {
   return `Banner ${item.heightCm} cm høy`
 }
 
-// ── Banner preview ────────────────────────────────────────────────────────────
-// Resolves the correct preview URL across all order types.
-const bannerPreviewUrl = computed(() => {
-  if (!order.value) return null
-  return (
-    order.value.customBanner?.previewUrl ??
-    order.value.aiBanner?.previewUrl ??
-    order.value.manualDesign?.previewUrl ??
-    null
-  )
-})
+// ── Per-item design source badge (BANNERSH-249) ──────────────────────────────
+function designSourceLabel(source: string | undefined): string {
+  switch (source) {
+    case 'Ai':           return 'AI-generert design'
+    case 'Manual':       return 'Designet av designer'
+    case 'CustomUpload': return 'Egen opplastet design'
+    default:             return ''
+  }
+}
+
+function designSourceClass(source: string | undefined): string {
+  switch (source) {
+    case 'Ai':           return 'badge-design-ai'
+    case 'Manual':       return 'badge-design-manual'
+    case 'CustomUpload': return 'badge-design-upload'
+    default:             return ''
+  }
+}
+
+function bannerLineSubtotal(item: OrderItemDetail): number {
+  return (item.unitPriceNok + (item.eyeletFeeNok ?? 0)) * item.quantity
+}
 
 // ── Shipping helpers ──────────────────────────────────────────────────────────
 const isShipped = computed(() =>
@@ -190,18 +201,90 @@ const packingLabel = computed(() => {
         </div>
       </div>
 
-      <!-- ── Banner preview ──────────────────────────────────────────────── -->
-      <section v-if="bannerPreviewUrl" class="banner-preview-section">
+      <!-- ── Per-banner sections (BANNERSH-249) ──────────────────────────── -->
+      <!-- One section per OrderItem so multi-banner orders clearly show which
+           design file belongs to which banner. AI / Manual / CustomUpload all
+           render the same shape — manual just shows an extra "Designhonorar"
+           line in the price breakdown. -->
+      <section v-if="order.items.length > 0">
         <h2 class="section-title">
           <i class="fa-solid fa-image"></i>
-          Ditt banner
+          {{ order.items.length === 1 ? 'Ditt banner' : 'Dine bannere' }}
         </h2>
-        <div class="panel banner-preview-panel">
-          <img
-            :src="bannerPreviewUrl"
-            alt="Forhåndsvisning av banner"
-            class="banner-preview-img"
-          />
+        <div
+          v-for="(item, idx) in order.items"
+          :key="`banner-${item.id}`"
+          class="panel banner-item-panel"
+        >
+          <div class="banner-item-header">
+            <div class="banner-item-title-wrap">
+              <div class="banner-item-num" v-if="order.items.length > 1">
+                Banner {{ idx + 1 }}
+              </div>
+              <div class="banner-item-title">{{ itemLabel(item) }}</div>
+              <span
+                v-if="item.designSource && item.designSource !== 'None'"
+                class="badge"
+                :class="designSourceClass(item.designSource)"
+              >
+                {{ designSourceLabel(item.designSource) }}
+              </span>
+            </div>
+            <div class="banner-item-qty">{{ item.quantity }} stk</div>
+          </div>
+
+          <div class="banner-item-body">
+            <div class="banner-item-preview-wrap">
+              <img
+                v-if="item.designPreviewUrl"
+                :src="item.designPreviewUrl"
+                :alt="`Forhåndsvisning av ${itemLabel(item)}`"
+                class="banner-item-preview"
+              />
+              <div v-else class="banner-item-preview banner-item-preview--missing">
+                <i class="fa-solid fa-image"></i>
+                Ingen forhåndsvisning
+              </div>
+            </div>
+
+            <div class="banner-item-meta">
+              <div class="banner-item-meta-row">
+                <span class="banner-item-meta-label">Størrelse</span>
+                <span class="banner-item-meta-value">
+                  {{ item.customWidthCm ?? '—' }} × {{ item.heightCm }} cm
+                </span>
+              </div>
+              <div v-if="item.eyeletOption && item.eyeletOption !== 'None'" class="banner-item-meta-row">
+                <span class="banner-item-meta-label">Maljer</span>
+                <span class="banner-item-meta-value">
+                  {{ item.eyeletOption === 'FourCorners' ? '4 hjørner' : 'Per meter' }}
+                  <template v-if="(item.eyeletCount ?? 0) > 0"> · {{ item.eyeletCount }} stk</template>
+                </span>
+              </div>
+              <div class="banner-item-meta-row banner-item-meta-row--break">
+                <span class="banner-item-meta-label">Banner</span>
+                <span class="banner-item-meta-value">{{ formatNok(bannerLineSubtotal(item)) }}</span>
+              </div>
+              <div v-if="(item.manualDesignFeeNok ?? 0) > 0" class="banner-item-meta-row">
+                <span class="banner-item-meta-label">Designhonorar</span>
+                <span class="banner-item-meta-value">{{ formatNok(item.manualDesignFeeNok ?? 0) }}</span>
+              </div>
+              <div class="banner-item-meta-row banner-item-meta-row--total">
+                <span class="banner-item-meta-label">Sum</span>
+                <span class="banner-item-meta-value">{{ formatNok(item.lineTotalNok) }}</span>
+              </div>
+              <a
+                v-if="item.designDownloadUrl"
+                :href="item.designDownloadUrl"
+                target="_blank"
+                rel="noopener"
+                class="banner-item-download"
+              >
+                <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                Åpne designfil
+              </a>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -688,6 +771,136 @@ const packingLabel = computed(() => {
   display: block;
   box-shadow: 0 2px 16px rgba(0,0,0,0.28);
 }
+
+/* ── Per-banner section (BANNERSH-249) ──────────────────────── */
+.banner-item-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.banner-item-panel:last-child { margin-bottom: 0; }
+
+.banner-item-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.banner-item-title-wrap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.banner-item-num {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--faint);
+  padding: 2px 9px;
+  border-radius: 99px;
+  background: var(--surface-2);
+}
+.banner-item-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.banner-item-qty {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.banner-item-body {
+  display: grid;
+  grid-template-columns: minmax(0, 240px) 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+@media (max-width: 640px) {
+  .banner-item-body { grid-template-columns: 1fr; }
+}
+.banner-item-preview-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #2a251e;
+  border-radius: 10px;
+  overflow: hidden;
+  min-height: 140px;
+  padding: 0.5rem;
+}
+.banner-item-preview {
+  max-width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+  display: block;
+  border-radius: 6px;
+}
+.banner-item-preview--missing {
+  color: var(--faint);
+  font-size: 0.8125rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 1rem;
+}
+.banner-item-preview--missing i { font-size: 1.5rem; opacity: 0.5; }
+
+.banner-item-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+.banner-item-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+.banner-item-meta-row--break {
+  border-top: 1px dashed var(--line-soft);
+  padding-top: 0.5rem;
+  margin-top: 0.25rem;
+}
+.banner-item-meta-row--total {
+  font-weight: 700;
+  font-size: 0.9375rem;
+  color: var(--text);
+  border-top: 1px solid var(--line-soft);
+  padding-top: 0.5rem;
+  margin-top: 0.125rem;
+}
+.banner-item-meta-label { color: var(--muted); }
+.banner-item-meta-value { color: var(--text); font-weight: 600; text-align: right; }
+.banner-item-meta-row--total .banner-item-meta-value { color: var(--accent); }
+
+.banner-item-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+  margin-top: 0.5rem;
+  align-self: flex-start;
+  transition: color 0.15s;
+}
+.banner-item-download:hover { color: var(--accent-2); }
+
+/* Design source badges (per-item) */
+.badge-design-ai      { background: rgba(160,110,220,.15); color: #c9a8f5; border: 1px solid rgba(160,110,220,.3); }
+.badge-design-manual  { background: rgba(231,185,78,.15);  color: #e7d08a; border: 1px solid rgba(231,185,78,.3); }
+.badge-design-upload  { background: rgba(78,201,132,.18);  color: #4ec984; border: 1px solid rgba(78,201,132,.35); }
 
 /* ── Back link ──────────────────────────────────────────────── */
 .back-link {

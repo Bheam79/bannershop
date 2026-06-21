@@ -6,7 +6,7 @@ import type { Stripe, StripeCardElement } from '@stripe/stripe-js'
 import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore } from '@/stores/checkout'
 import { useAuthStore } from '@/stores/auth'
-import { createOrderDraft, mockPayOrder } from '@/api/orders'
+import { createOrderDraft, mockPayOrder, retryOrderPayment } from '@/api/orders'
 import { formatNok } from '@/utils/format'
 
 const router = useRouter()
@@ -154,35 +154,47 @@ async function confirmMockPayment() {
   mockProcessing.value = true
   apiError.value = null
 
-  // 1. Create the draft order — only the first time the user hits Bekreft.
-  //    Subsequent retries (wrong password, network blip) reuse the same id
-  //    so we never double-create.
+  // 1. Resolve the draft order id: reuse the persisted draft when the cart
+  //    hash matches so revisits don't pile up Draft rows (BANNERSH-249);
+  //    otherwise mint a new one.
   if (mockOrderId.value == null) {
+    const currentCartHash = cart.cartHash
     try {
-      const resp = await createOrderDraft({
-        deliveryType: checkout.deliveryType,
-        shippingAddress: checkout.deliveryType !== 'Pickup' ? {
-          line1: checkout.address.line1,
-          postalCode: checkout.address.postalCode,
-          city: checkout.address.city,
-          country: 'NO',
-        } : undefined,
-        packingMode: checkout.packingMode,
-        items: cart.items
-          .filter((item) => item.bannerSizeId != null)
-          .map((item) => ({
-            bannerSizeId: item.bannerSizeId!,
-            customWidthCm: item.customWidthCm ?? undefined,
-            quantity: item.quantity,
-            notes: item.notes ?? undefined,
-            eyeletOption: item.eyeletOption,
-            // Pass the uploaded / AI-generated design file so the backend can
-            // link OrderItem.BannerDesignId → admin can download the print file.
-            bannerDesignId: item.designId ?? undefined,
-            skipCustomSurcharge: item.skipCustomSurcharge ?? undefined,
-          })),
-      })
-      mockOrderId.value = resp.orderId
+      if (
+        checkout.draftOrderId != null &&
+        checkout.draftCartHash === currentCartHash
+      ) {
+        mockOrderId.value = checkout.draftOrderId
+      } else {
+        const resp = await createOrderDraft({
+          deliveryType: checkout.deliveryType,
+          shippingAddress: checkout.deliveryType !== 'Pickup' ? {
+            line1: checkout.address.line1,
+            postalCode: checkout.address.postalCode,
+            city: checkout.address.city,
+            country: 'NO',
+          } : undefined,
+          packingMode: checkout.packingMode,
+          // BANNERSH-249: manual designer fee is bundled server-side into the
+          // linked banner item's LineTotalNok (no separate fee-only line).
+          items: cart.items
+            .filter((item) => item.bannerSizeId != null)
+            .map((item) => ({
+              bannerSizeId: item.bannerSizeId!,
+              customWidthCm: item.customWidthCm ?? undefined,
+              quantity: item.quantity,
+              notes: item.notes ?? undefined,
+              eyeletOption: item.eyeletOption,
+              // Pass the uploaded / AI-generated design file so the backend can
+              // link OrderItem.BannerDesignId → admin can download the print file.
+              bannerDesignId: item.designId ?? undefined,
+              designRequestId: item.designRequestId ?? undefined,
+              skipCustomSurcharge: item.skipCustomSurcharge ?? undefined,
+            })),
+        })
+        mockOrderId.value = resp.orderId
+        checkout.setDraftOrder(resp.orderId, currentCartHash)
+      }
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string }
       apiError.value =
@@ -231,14 +243,16 @@ const total = computed(() => subtotal.value + shippingCost.value + expressFee.va
 const vatAmount = computed(() => total.value * 0.2)
 
 
-// BANNERSH-182: cache the draft we created on the first click so that a
-// failed Stripe confirmation (bad card, 3DS abort, network blip) followed by
-// a retry reuses the SAME order id + client secret instead of creating a
-// fresh draft on every click. Without this every aborted attempt left an
-// orphan PendingPayment row in the orders list. The cache is scoped to this
-// PaymentView mount — navigating back to /checkout and forward again gives
-// the user a fresh draft, which is the correct behaviour because the cart
-// or address may have changed.
+// BANNERSH-182 + BANNERSH-249: cache the draft we created on the first click
+// so that:
+//   1. a failed Stripe confirmation (bad card, 3DS abort, network blip) followed
+//      by a retry reuses the SAME order id + client secret instead of creating
+//      a fresh draft on every click, AND
+//   2. navigating back to /checkout (or revisiting /checkout/payment after a
+//      mount cycle) ALSO reuses the same draft via the persisted
+//      `checkout.draftOrderId` pointer — provided the cart hash still matches.
+//      Without this, every round-trip through the checkout pages spawned a new
+//      PendingPayment row, polluting "Mine ordrer" with duplicates.
 const payOrderId = ref<number | null>(null)
 const payClientSecret = ref<string | null>(null)
 
@@ -250,35 +264,67 @@ async function pay() {
 
   processing.value = true
 
-  // 1. Create order draft — only on the first attempt; subsequent retries
-  //    reuse the cached id/client-secret so we don't create duplicates.
+  // 1. Resolve the order id + client secret:
+  //    a) Same mount, second click → use the in-memory cache (payOrderId/payClientSecret).
+  //    b) Fresh mount but cart unchanged + persisted draftOrderId → call retryOrderPayment.
+  //    c) Otherwise → mint a fresh draft via createOrderDraft.
+  //    BANNERSH-249: this is the duplicate-order fix — previously (b) was missing
+  //    and every PaymentView mount silently created another draft row.
   if (payOrderId.value == null || payClientSecret.value == null) {
+    const currentCartHash = cart.cartHash
     try {
-      const resp = await createOrderDraft({
-        deliveryType: checkout.deliveryType,
-        shippingAddress: checkout.deliveryType !== 'Pickup' ? {
-          line1: checkout.address.line1,
-          postalCode: checkout.address.postalCode,
-          city: checkout.address.city,
-          country: 'NO',
-        } : undefined,
-        packingMode: checkout.packingMode,
-        items: cart.items
-          .filter((item) => item.bannerSizeId != null)
-          .map((item) => ({
-            bannerSizeId: item.bannerSizeId!,
-            customWidthCm: item.customWidthCm ?? undefined,
-            quantity: item.quantity,
-            notes: item.notes ?? undefined,
-            eyeletOption: item.eyeletOption,
-            // Pass the uploaded / AI-generated design file so the backend can
-            // link OrderItem.BannerDesignId → admin can download the print file.
-            bannerDesignId: item.designId ?? undefined,
-            skipCustomSurcharge: item.skipCustomSurcharge ?? undefined,
-          })),
-      })
-      payOrderId.value = resp.orderId
-      payClientSecret.value = resp.clientSecret
+      if (
+        checkout.draftOrderId != null &&
+        checkout.draftCartHash === currentCartHash
+      ) {
+        // (b) Reuse the persisted draft. retryOrderPayment returns alreadyPaid=true
+        //     if the user has already completed payment in a previous tab — in that
+        //     case clear the cart and route to the confirmation page.
+        const resp = await retryOrderPayment(checkout.draftOrderId)
+        if (resp.alreadyPaid || resp.clientSecret == null) {
+          cart.clear()
+          checkout.clear()
+          router.push(`/checkout/confirmation/${resp.orderId}`)
+          return
+        }
+        payOrderId.value = resp.orderId
+        payClientSecret.value = resp.clientSecret
+      } else {
+        // (c) Fresh draft. Persist the id + cart hash so a subsequent mount
+        //     (browser back, cart edit, etc.) reuses this Order instead of
+        //     spawning a duplicate.
+        const resp = await createOrderDraft({
+          deliveryType: checkout.deliveryType,
+          shippingAddress: checkout.deliveryType !== 'Pickup' ? {
+            line1: checkout.address.line1,
+            postalCode: checkout.address.postalCode,
+            city: checkout.address.city,
+            country: 'NO',
+          } : undefined,
+          packingMode: checkout.packingMode,
+          // BANNERSH-249: the manual designer fee is bundled server-side into the
+          // linked banner item's LineTotalNok (no separate fee-only line), so we
+          // only send items that have a banner size. The designRequestId is passed
+          // through so the server can resolve the per-DR fee + design preview.
+          items: cart.items
+            .filter((item) => item.bannerSizeId != null)
+            .map((item) => ({
+              bannerSizeId: item.bannerSizeId!,
+              customWidthCm: item.customWidthCm ?? undefined,
+              quantity: item.quantity,
+              notes: item.notes ?? undefined,
+              eyeletOption: item.eyeletOption,
+              // Pass the uploaded / AI-generated design file so the backend can
+              // link OrderItem.BannerDesignId → admin can download the print file.
+              bannerDesignId: item.designId ?? undefined,
+              designRequestId: item.designRequestId ?? undefined,
+              skipCustomSurcharge: item.skipCustomSurcharge ?? undefined,
+            })),
+        })
+        payOrderId.value = resp.orderId
+        payClientSecret.value = resp.clientSecret
+        checkout.setDraftOrder(resp.orderId, currentCartHash)
+      }
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string }
       apiError.value =
@@ -328,7 +374,7 @@ async function pay() {
     return
   }
 
-  // 4. Success — clear cart and go to confirmation
+  // 4. Success — clear cart, persisted draft, and go to confirmation
   cart.clear()
   checkout.clear()
   payOrderId.value = null

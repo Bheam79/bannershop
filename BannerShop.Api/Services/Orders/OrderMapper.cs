@@ -74,35 +74,7 @@ internal static class OrderMapper
                 City = o.ShippingAddress.City,
                 Country = o.ShippingAddress.Country
             },
-            Items = o.Items.OrderBy(i => i.Id).Select(i => new OrderItemDto
-            {
-                Id = i.Id,
-                BannerSizeId = i.BannerSizeId,
-                BannerSizeName = i.BannerSize?.Name,
-                CustomWidthCm = i.CustomWidthCm,
-                HeightCm = i.HeightCm,
-                Quantity = i.Quantity,
-                AreaSqm = i.AreaSqm,
-                UnitPriceNok = i.UnitPriceNok,
-                EyeletOption = i.EyeletOption.ToString(),
-                EyeletCount = i.EyeletCount,
-                EyeletFeeNok = i.EyeletFeeNok,
-                LineTotalNok = i.LineTotalNok,
-                Notes = i.Notes,
-                BannerDesignId = i.BannerDesignId,
-                DesignRequestId = i.DesignRequestId,
-                CurrentProductionStage = (i.ProductionStatuses.OrderByDescending(p => p.UpdatedAt).FirstOrDefault()?.Stage
-                                          ?? ProductionStage.Queued).ToString(),
-                ProductionStatusHistory = i.ProductionStatuses
-                    .OrderBy(p => p.UpdatedAt)
-                    .Select(p => new ProductionStatusDto
-                    {
-                        Id = p.Id,
-                        Stage = p.Stage.ToString(),
-                        UpdatedAt = p.UpdatedAt,
-                        Notes = p.Notes
-                    }).ToList()
-            }).ToList(),
+            Items = o.Items.OrderBy(i => i.Id).Select(i => MapItem(i, storage)).ToList(),
             ShipmentTracking = o.ShipmentTracking is null ? null : new ShipmentTrackingDto
             {
                 Carrier = o.ShipmentTracking.Carrier,
@@ -115,6 +87,78 @@ internal static class OrderMapper
             CustomBanner = customBanner,
             AiBanner = aiBanner,
             ManualDesign = manualDesign
+        };
+    }
+
+    /// <summary>
+    /// Maps a single <see cref="OrderItem"/> to its DTO, resolving the per-item design
+    /// preview / download URLs + design source badge + manual designer fee (BANNERSH-249).
+    /// Multi-banner orders rely on this so the customer / admin can see which file goes
+    /// with which banner row instead of an order-wide single preview.
+    /// </summary>
+    private static OrderItemDto MapItem(OrderItem i, BannerFileStorage storage)
+    {
+        string? previewPath = null;
+        string? downloadPath = null;
+        string source = "None";
+        decimal manualFee = 0m;
+
+        // Prefer a directly-linked BannerDesign (custom upload) for the per-item preview.
+        if (i.BannerDesign is not null)
+        {
+            previewPath = i.BannerDesign.PreviewStoragePath ?? i.BannerDesign.StoragePath;
+            downloadPath = i.BannerDesign.StoragePath;
+            source = "CustomUpload";
+        }
+
+        // Fall back to the linked DesignRequest (AI or Manual). For AI/Manual this is
+        // the canonical preview; for CustomUpload it would only be used if BannerDesign
+        // were somehow null (defensive).
+        if (i.DesignRequest is not null)
+        {
+            var dr = i.DesignRequest;
+            previewPath ??= dr.AiPreviewPath
+                         ?? dr.DesignerPreviewPath
+                         ?? dr.FinalCroppedStoragePath
+                         ?? dr.AiResultStoragePath;
+            downloadPath ??= dr.FinalCroppedStoragePath ?? dr.AiResultStoragePath;
+            source = dr.Mode == DesignRequestMode.Manual ? "Manual" : "Ai";
+            if (dr.Mode == DesignRequestMode.Manual)
+                manualFee = dr.PriceNok;
+        }
+
+        return new OrderItemDto
+        {
+            Id = i.Id,
+            BannerSizeId = i.BannerSizeId,
+            BannerSizeName = i.BannerSize?.Name,
+            CustomWidthCm = i.CustomWidthCm,
+            HeightCm = i.HeightCm,
+            Quantity = i.Quantity,
+            AreaSqm = i.AreaSqm,
+            UnitPriceNok = i.UnitPriceNok,
+            EyeletOption = i.EyeletOption.ToString(),
+            EyeletCount = i.EyeletCount,
+            EyeletFeeNok = i.EyeletFeeNok,
+            ManualDesignFeeNok = manualFee,
+            LineTotalNok = i.LineTotalNok,
+            Notes = i.Notes,
+            BannerDesignId = i.BannerDesignId,
+            DesignRequestId = i.DesignRequestId,
+            DesignPreviewUrl = previewPath is null ? null : storage.PublicUrlFor(previewPath),
+            DesignDownloadUrl = downloadPath is null ? null : storage.PublicUrlFor(downloadPath),
+            DesignSource = source,
+            CurrentProductionStage = (i.ProductionStatuses.OrderByDescending(p => p.UpdatedAt).FirstOrDefault()?.Stage
+                                      ?? ProductionStage.Queued).ToString(),
+            ProductionStatusHistory = i.ProductionStatuses
+                .OrderBy(p => p.UpdatedAt)
+                .Select(p => new ProductionStatusDto
+                {
+                    Id = p.Id,
+                    Stage = p.Stage.ToString(),
+                    UpdatedAt = p.UpdatedAt,
+                    Notes = p.Notes
+                }).ToList()
         };
     }
 

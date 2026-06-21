@@ -105,16 +105,19 @@ public class OrderService : IOrderService
             .Select(i => i.DesignRequestId!.Value)
             .Distinct()
             .ToList();
+        // BANNERSH-249: load the DR rows (not just ids) so we can classify by Mode
+        // (Ai vs Manual) and link them back to the new order after creation.
+        var ownedDesignRequests = new Dictionary<int, DesignRequest>();
         if (requestedDesignRequestIds.Count > 0)
         {
-            var ownedRequests = await _db.DesignRequests
-                .AsNoTracking()
+            // Tracked (not AsNoTracking) so the OrderId FK update below is persisted.
+            var loaded = await _db.DesignRequests
                 .Where(r => requestedDesignRequestIds.Contains(r.Id) && r.UserId == userId)
-                .Select(r => r.Id)
                 .ToListAsync(ct);
+            ownedDesignRequests = loaded.ToDictionary(r => r.Id);
             foreach (var drId in requestedDesignRequestIds)
             {
-                if (!ownedRequests.Contains(drId))
+                if (!ownedDesignRequests.ContainsKey(drId))
                     return Fail($"DesignRequest {drId} not found or does not belong to this user.");
             }
         }
@@ -138,6 +141,10 @@ public class OrderService : IOrderService
         }
 
         // ── Snapshot pricing per item ──
+        // BANNERSH-249: when an item is linked to a Manual DesignRequest, the per-DR
+        // 495 kr designer fee is bundled into THAT item's LineTotalNok (UnitPriceNok
+        // stays the pure banner price, the fee is added separately like EyeletFeeNok).
+        // The order detail view derives the fee back from the linked DR for display.
         var items = new List<OrderItem>(req.Items.Count);
         decimal itemsSubtotal = 0m;
         foreach (var input in req.Items)
@@ -154,7 +161,20 @@ public class OrderService : IOrderService
             var (eyeletFee, eyeletCount) = await _pricing.CalculateEyeletCostAsync(
                 widthCm, size.HeightCm, input.EyeletOption);
 
-            var lineTotal = decimal.Round((unitPrice + eyeletFee) * input.Quantity, 2);
+            // BANNERSH-249: bundle the manual designer fee (DR.PriceNok, default 495 kr)
+            // into the linked banner item. Charged once per design, NOT per quantity —
+            // ordering 5 copies of the same manual design still only costs 495 in design.
+            var manualDesignFee = 0m;
+            if (input.DesignRequestId is int drId
+                && ownedDesignRequests.TryGetValue(drId, out var linkedDr)
+                && linkedDr.Mode == DesignRequestMode.Manual)
+            {
+                manualDesignFee = linkedDr.PriceNok;
+            }
+
+            var lineTotal = decimal.Round(
+                (unitPrice + eyeletFee) * input.Quantity + manualDesignFee,
+                2);
             itemsSubtotal += lineTotal;
 
             items.Add(new OrderItem
@@ -212,8 +232,17 @@ public class OrderService : IOrderService
             ? (int)pricingParams.GetValueOrDefault(KeyExpressLeadTimeDays, 3m)
             : (int)pricingParams.GetValueOrDefault(KeyStandardLeadTimeDays, 14m);
 
-        // AI activation fee: charged once per order when any item includes a DesignRequest.
-        var hasAiDesign = items.Any(i => i.DesignRequestId.HasValue);
+        // BANNERSH-249: distinguish AI vs Manual DesignRequest references so:
+        //   (a) the AI activation fee only fires for AI-design orders, NOT manual ones
+        //       (manual orders already bundle the 495 kr designer fee into the banner
+        //       item's LineTotalNok), and
+        //   (b) the order type is set correctly (ManualDesign takes priority).
+        var hasManualDesign = items
+            .Where(i => i.DesignRequestId.HasValue)
+            .Any(i => ownedDesignRequests[i.DesignRequestId!.Value].Mode == DesignRequestMode.Manual);
+        var hasAiDesign = items
+            .Where(i => i.DesignRequestId.HasValue)
+            .Any(i => ownedDesignRequests[i.DesignRequestId!.Value].Mode == DesignRequestMode.Ai);
         var aiActivationFee = hasAiDesign
             ? pricingParams.GetValueOrDefault(KeyAiActivationFeeNok, 95m)
             : 0m;
@@ -238,10 +267,11 @@ public class OrderService : IOrderService
             _db.Addresses.Add(address);
         }
 
-        // Determine order type: CustomBanner unless any item references a DesignRequest.
-        // AI-design orders route through a separate path (BANNERSH-108); items with a
-        // DesignRequestId here are from the banner-builder custom upload flow.
-        var orderType = hasAiDesign ? OrderType.AiBanner : OrderType.CustomBanner;
+        // Determine order type: ManualDesign > AiBanner > CustomBanner.
+        var orderType =
+            hasManualDesign ? OrderType.ManualDesign :
+            hasAiDesign     ? OrderType.AiBanner :
+                              OrderType.CustomBanner;
 
         var order = new Order
         {
@@ -263,6 +293,18 @@ public class OrderService : IOrderService
         };
         _db.Orders.Add(order);
         await _db.SaveChangesAsync(ct);
+
+        // BANNERSH-249: link the now-persisted Order back to each referenced DesignRequest
+        // so OrderQueries.LoadDesignRequestForOrderAsync can resolve the linkage. Previously
+        // this FK was set during upfront Order creation in DesignRequestService; with that
+        // path removed it must be wired here.
+        foreach (var dr in ownedDesignRequests.Values)
+        {
+            dr.OrderId = order.Id;
+            dr.UpdatedAt = DateTime.UtcNow;
+        }
+        if (ownedDesignRequests.Count > 0)
+            await _db.SaveChangesAsync(ct);
 
         // ── Create PaymentIntent ──
         var intent = await _stripe.CreatePaymentIntentAsync(order.Id, userId, total, ct);

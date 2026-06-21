@@ -24,6 +24,12 @@ export interface OrderDraftRequest {
     quantity: number
     notes?: string
     bannerDesignId?: number
+    /**
+     * Optional FK to a DesignRequest. For AI banners this triggers the AI activation
+     * fee on the order; for Manual banners this triggers the per-DR 495 kr designer
+     * fee to be bundled into THIS item's LineTotalNok server-side (BANNERSH-249).
+     */
+    designRequestId?: number
     eyeletOption?: EyeletOption
     /** When true the backend skips the custom-width surcharge (BANNERSH-228). */
     skipCustomSurcharge?: boolean
@@ -112,10 +118,29 @@ export interface OrderItemDetail {
   heightCm: number
   quantity: number
   unitPriceNok: number
+  eyeletOption?: string
+  eyeletCount?: number
+  eyeletFeeNok?: number
+  /**
+   * Manual designer fee (NOK) bundled into this banner's lineTotalNok when the
+   * item is linked to a Manual-mode DesignRequest. 0 for AI / custom-upload.
+   * Charged once per design, NOT per quantity (BANNERSH-249).
+   */
+  manualDesignFeeNok?: number
   lineTotalNok: number
   notes: string | null
   bannerDesignId: number | null
   designRequestId: number | null
+  /**
+   * Public URL of THIS banner's design preview (per-item). Set from the linked
+   * BannerDesign (custom upload) or DesignRequest (AI / Manual). Null for items
+   * without an associated design (BANNERSH-249).
+   */
+  designPreviewUrl?: string | null
+  /** Full-resolution download URL for the print file (BANNERSH-249). */
+  designDownloadUrl?: string | null
+  /** "CustomUpload" | "Ai" | "Manual" | "None" — drives the per-item badge. */
+  designSource?: string
   currentProductionStage: string
   productionStatusHistory: ProductionStatusEntry[]
 }

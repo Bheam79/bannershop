@@ -24,6 +24,9 @@ internal static class OrderQueries
             .Include(o => o.ShipmentTracking)
             .Include(o => o.Items).ThenInclude(i => i.BannerSize).ThenInclude(s => s!.Material)
             .Include(o => o.Items).ThenInclude(i => i.BannerDesign)
+            // BANNERSH-249: include the per-item DesignRequest so the mapper can render
+            // per-banner sections (preview URL + design source badge + manual designer fee).
+            .Include(o => o.Items).ThenInclude(i => i.DesignRequest)
             .Include(o => o.Items).ThenInclude(i => i.ProductionStatuses)
             .AsSplitQuery()
             .FirstOrDefaultAsync(o => o.Id == orderId, ct);

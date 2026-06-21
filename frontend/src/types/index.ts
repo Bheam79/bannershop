@@ -182,12 +182,20 @@ export interface CartItem {
   /** Optional reference to a BannerDesign uploaded via the banner builder. */
   designId?: number
   /**
-   * For manual-design cart lines (both the banner line and the designer-fee line),
-   * carries the DesignRequest id so the production team can link them — and so future
-   * cart UI tasks can render the designer-fee line differently from a plain banner.
-   * Set to the same value on both lines of a manual-design order (BANNERSH-136).
+   * For banners linked to a server-side DesignRequest. AI banners use this to
+   * pass the AI activation fee + design preview to the backend; Manual banners
+   * use this to bundle the 495 kr designer fee into the linked banner item's
+   * LineTotalNok server-side (BANNERSH-249). A single banner is one cart line —
+   * there is no separate "designer fee" line item.
    */
   designRequestId?: number
+  /**
+   * Manual designer fee (in NOK) bundled into THIS banner item — set by the
+   * manual-builder flow so the cart subtotal matches what the backend will
+   * compute (BANNERSH-249). 0 / undefined for non-manual banners. The server
+   * is the source of truth; this field is for cart display only.
+   */
+  manualDesignFeeNok?: number
   /**
    * Optional preview URL for the banner thumbnail (BANNERSH-140). Cached when the
    * item is added to the cart so the checkout view can render a thumbnail without

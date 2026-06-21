@@ -151,11 +151,17 @@ public sealed class DesignRequestService : IDesignRequestService
     }
 
     /// <summary>
-    /// Persists the <see cref="DesignRequest"/> row (and, for authenticated callers, a
-    /// linked <see cref="Order"/> row), sets the status to <c>InProgress</c>, and enqueues
-    /// the AI pipeline job. Used by both the anonymous and authenticated branches of
-    /// <see cref="CreateAiRequestAsync"/>.
+    /// Persists the <see cref="DesignRequest"/> row, sets the status to <c>InProgress</c>,
+    /// and enqueues the AI pipeline job. Used by both the anonymous and authenticated
+    /// branches of <see cref="CreateAiRequestAsync"/>.
     /// </summary>
+    /// <remarks>
+    /// BANNERSH-249: no <see cref="Order"/> row is created here anymore. Orders are
+    /// created only when the customer commits to printing the design via the cart's
+    /// "pay" button (see <see cref="Orders.OrderService.CreateDraftAsync"/>). Previously
+    /// every authenticated AI generation spawned a <c>OrderState=Paid, TotalNok=0</c>
+    /// tracking shell that polluted "Mine ordrer" with one row per generation attempt.
+    /// </remarks>
     private async Task<DesignRequest> PersistAndEnqueueAsync(
         int? userId,
         string? ipAddress,
@@ -166,26 +172,6 @@ public sealed class DesignRequestService : IDesignRequestService
         CancellationToken ct)
     {
         var now = DateTime.UtcNow;
-
-        // Authenticated AI requests get an Order row so the request has a canonical
-        // identity for order tracking. Anonymous free-tier requests are left unlinked
-        // (no UserId → no Order).
-        Order? order = null;
-        if (userId.HasValue)
-        {
-            order = new Order
-            {
-                UserId = userId.Value,
-                OrderType = OrderType.AiBanner,
-                // Credits were consumed before this call, so the request is already "paid".
-                OrderState = OrderState.Paid,
-                Status = OrderStatus.Paid,
-                TotalNok = 0m,   // free-first: the print cost comes via the activation fee
-                CreatedAt = now,
-                UpdatedAt = now
-            };
-            _db.Orders.Add(order);
-        }
 
         var request = new DesignRequest
         {
@@ -207,15 +193,14 @@ public sealed class DesignRequestService : IDesignRequestService
             CreatedAt = now,
             UpdatedAt = now
         };
-        if (order is not null) request.Order = order;
 
         _db.DesignRequests.Add(request);
-        await _db.SaveChangesAsync(ct);  // Order + DesignRequest saved atomically
+        await _db.SaveChangesAsync(ct);
 
         await _queue.EnqueueAsync(request.Id, ct);
         _log.LogInformation(
-            "CreateAiRequestAsync: enqueued DesignRequest {Id} (user={UserId}, ip={Ip}, template={TemplateId}, orderId={OrderId}).",
-            request.Id, userId, ipAddress, template.Id, order?.Id);
+            "CreateAiRequestAsync: enqueued DesignRequest {Id} (user={UserId}, ip={Ip}, template={TemplateId}).",
+            request.Id, userId, ipAddress, template.Id);
 
         return request;
     }
@@ -280,20 +265,14 @@ public sealed class DesignRequestService : IDesignRequestService
         var totalNok = ManualPriceNok + bannerPriceNok;
         var now = DateTime.UtcNow;
 
-        // Create the Order row atomically with the DesignRequest — Order starts as Draft
-        // (no payment yet). MarkPaidAndEnqueueAsync flips it to Paid on webhook.
-        var order = new Order
-        {
-            UserId = userId,
-            OrderType = OrderType.ManualDesign,
-            OrderState = OrderState.Draft,
-            Status = OrderStatus.Draft,
-            TotalNok = totalNok,
-            CreatedAt = now,
-            UpdatedAt = now
-        };
-        _db.Orders.Add(order);
-
+        // BANNERSH-249: no Order row is created here. Previously this method spawned
+        // a Draft Order for every manual-design request, which (a) created two separate
+        // orders (this one + the cart-checkout one) for a single manual purchase and
+        // (b) littered the orders table with Draft rows for requests the customer never
+        // paid for. The Order is now created once, when the customer reaches the cart's
+        // "Betal" button — see OrderService.CreateDraftAsync, which detects the linked
+        // Manual DesignRequest, charges the 495 kr designer fee as a separate line, and
+        // sets OrderType.ManualDesign on the resulting Order.
         var request = new DesignRequest
         {
             UserId = userId,
@@ -312,12 +291,11 @@ public sealed class DesignRequestService : IDesignRequestService
             BannerSizeId = bannerSizeId,
             CustomBannerWidthCm = customBannerWidthCm,
             RegenerationsRemaining = 0,
-            Order = order,   // sets OrderId FK atomically
             CreatedAt = now,
             UpdatedAt = now
         };
         _db.DesignRequests.Add(request);
-        await _db.SaveChangesAsync(ct);  // Order + DesignRequest saved in one transaction
+        await _db.SaveChangesAsync(ct);
 
         // BANNERSH-136: no Stripe PaymentIntent is created upfront. Payment is collected
         // via the normal cart/checkout pipeline — the frontend adds a banner line + a 495 kr

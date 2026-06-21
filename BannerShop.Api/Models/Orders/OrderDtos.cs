@@ -308,10 +308,36 @@ public class OrderItemDto
     public int EyeletCount { get; set; }
     /// <summary>Eyelet fee per unit (EyeletCount × price_per_eyelet at order time).</summary>
     public decimal EyeletFeeNok { get; set; }
+    /// <summary>
+    /// Manual designer fee (NOK) bundled into <see cref="LineTotalNok"/> for this item
+    /// when <see cref="DesignRequestId"/> references a Manual-mode DesignRequest. 0 for
+    /// AI / custom-upload banners. Charged once per design, NOT per quantity. BANNERSH-249.
+    /// </summary>
+    public decimal ManualDesignFeeNok { get; set; }
     public decimal LineTotalNok { get; set; }
     public string? Notes { get; set; }
     public int? BannerDesignId { get; set; }
     public int? DesignRequestId { get; set; }
+    /// <summary>
+    /// Public URL of the design preview for THIS specific banner item (per-item, not
+    /// per-order). Set from the linked <see cref="BannerDesign"/> (custom upload) or
+    /// from the linked <see cref="DesignRequest"/> (AI / Manual) so multi-banner orders
+    /// can show the file that belongs to each banner row. BANNERSH-249. Null when no
+    /// design is associated with the item.
+    /// </summary>
+    public string? DesignPreviewUrl { get; set; }
+    /// <summary>
+    /// Full-resolution download URL for THIS banner item's print file. Differs from
+    /// <see cref="DesignPreviewUrl"/> when a smaller preview was generated for the
+    /// builder. BANNERSH-249.
+    /// </summary>
+    public string? DesignDownloadUrl { get; set; }
+    /// <summary>
+    /// Design source for this item: "CustomUpload" (customer-uploaded file), "Ai"
+    /// (AI-generated), "Manual" (designer-created), or "None". Drives the per-item
+    /// section badge in the order detail UI. BANNERSH-249.
+    /// </summary>
+    public string DesignSource { get; set; } = "None";
     public string CurrentProductionStage { get; set; } = "Queued";
     public List<ProductionStatusDto> ProductionStatusHistory { get; set; } = new();
 }
