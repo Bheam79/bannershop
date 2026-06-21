@@ -613,6 +613,11 @@ function addManualToCartAndCheckout() {
     notes: `Manuelt designet banner — bestilling #${reqId}`,
     designRequestId: reqId,
     manualDesignFeeNok: manualDesignPriceNok.value,
+    // BANNERSH-250: the width here is derived from the customer's chosen aspect
+    // ratio (e.g. 16:9 → 267×150), not a width they explicitly typed in as a
+    // custom size. Match the AI flow's behaviour so the order total matches the
+    // 877 kr the customer saw on the preview page rather than 1027 kr.
+    skipCustomSurcharge: true,
   }
   cart.addItem(bannerItem)
   void router.push('/checkout')

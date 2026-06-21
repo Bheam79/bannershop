@@ -687,6 +687,41 @@ public class DesignRequestServiceTests
         saved.RevisionCount.Should().Be(1);
     }
 
+    // ── BANNERSH-250: manual flow must NOT charge custom-width surcharge ────
+    // The width is derived from the customer's chosen aspect ratio (e.g. 16:9 →
+    // 266×150), not a width they explicitly typed in. This mirrors the AI flow
+    // (loadTilpassPricing passes noSurcharge=true) so manual and AI orders cost
+    // the same for the same dimensions.
+
+    [Fact]
+    public async Task CreateManualRequestAsync_SixteenNine_DoesNotChargeCustomWidthSurcharge()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        DbHelper.SeedPricingParameters(db);
+        DbHelper.SeedCatalog(db);
+        var (svc, _, _, _) = MakeService(db);
+
+        var result = await svc.CreateManualRequestAsync(1, new CreateManualDesignRequestDto
+        {
+            TemplateId       = 1,
+            Language         = "nb",
+            PersonName       = "Ola",
+            TextContent      = "Hi",
+            ThemeDescription = "x",
+            AspectRatio      = "16:9" // → ParseDimensions returns (266, 150)
+        });
+
+        result.Success.Should().BeTrue();
+        // 266×150 = 3.99 m² × 180 kr/m² = 718.20.  WITH the (incorrect) custom-width
+        // surcharge the price would be 868.20.  This guards against regression.
+        result.BannerPriceNok.Should().Be(718.20m);
+
+        var saved = db.DesignRequests.Single();
+        saved.BannerSizeId.Should().Be(6); // custom-width × 150 cm size
+        saved.CustomBannerWidthCm.Should().Be(266);
+    }
+
     // ── ParseDimensions: WxH format and fallback ─────────────────────────────
 
     [Fact]

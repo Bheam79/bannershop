@@ -344,7 +344,12 @@ public sealed class DesignRequestService : IDesignRequestService
             .FirstOrDefaultAsync(ct);
         if (custom is not null)
         {
-            var price = await _pricing.CalculatePriceAsync(custom, targetWidthCm);
+            // BANNERSH-250: skip the `custom_width_surcharge` — the width here is
+            // derived from the customer's chosen aspect ratio (e.g. 16:9 → 267×150),
+            // not a width they explicitly typed in as a custom size. This mirrors
+            // the AI flow (loadTilpassPricing passes noSurcharge=true) so manual
+            // and AI orders cost the same for the same dimensions.
+            var price = await _pricing.CalculatePriceAsync(custom, targetWidthCm, skipCustomSurcharge: true);
             return (decimal.Round(price, 2), custom.Id, targetWidthCm);
         }
 
