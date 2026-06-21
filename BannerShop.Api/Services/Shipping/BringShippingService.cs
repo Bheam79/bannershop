@@ -104,10 +104,14 @@ public class BringShippingService : IShippingService
                         {
                             // Bring API v2 uses grams for grossWeight and plain cm for dimensions
                             // (no "InKg"/"InCm" suffixes — BANNERSH-143 fix).
-                            GrossWeight = decimal.Round(parcel.WeightKg * 1000m, 0),
-                            Length      = decimal.Round(parcel.LengthCm, 1),
-                            Width       = decimal.Round(parcel.WidthCm,  1),
-                            Height      = decimal.Round(parcel.HeightCm, 1)
+                            GrossWeight  = decimal.Round(parcel.WeightKg * 1000m, 0),
+                            Length       = decimal.Round(parcel.LengthCm, 1),
+                            Width        = decimal.Round(parcel.WidthCm,  1),
+                            Height       = decimal.Round(parcel.HeightCm, 1),
+                            // Rolled banners are shipped in a cylindrical tube that cannot
+                            // be stacked. Setting nonStackable: true tells Bring's Shipping
+                            // Guide to include any applicable handling surcharge (BANNERSH-242).
+                            NonStackable = parcel.NonStackable
                         }
                     }
                 }
@@ -280,7 +284,7 @@ public class BringShippingService : IShippingService
 
     private static string BuildCacheKey(string postal, ParcelDimensions p)
         => string.Create(CultureInfo.InvariantCulture,
-            $"bring:{postal}:{p.LengthCm:0.#}x{p.WidthCm:0.#}x{p.HeightCm:0.#}:{p.WeightKg:0.##}");
+            $"bring:{postal}:{p.LengthCm:0.#}x{p.WidthCm:0.#}x{p.HeightCm:0.#}:{p.WeightKg:0.##}:{(p.NonStackable ? "ns" : "s")}");
 
     private static string Truncate(string s, int max)
         => s.Length <= max ? s : s[..max] + "…";

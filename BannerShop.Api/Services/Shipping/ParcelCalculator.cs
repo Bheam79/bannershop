@@ -121,10 +121,16 @@ public class ParcelCalculator
         var totalGrams = contentsGrams + packagingGrams;
         var weightKg = decimal.Round(totalGrams / 1000m, 2);
 
+        // Rolled banners ship in a cylindrical tube which cannot be stacked.
+        // Setting NonStackable tells the Bring API to include any applicable
+        // special-handling (rørpakke) surcharge in the quoted price.
+        var nonStackable = packing == PackingMode.Rolled;
+
         return new ParcelDimensions(
             LengthCm: lengthCm,
             WidthCm: widthCm,
             HeightCm: heightOutCm,
-            WeightKg: weightKg);
+            WeightKg: weightKg,
+            NonStackable: nonStackable);
     }
 }

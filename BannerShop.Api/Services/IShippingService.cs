@@ -4,7 +4,12 @@ namespace BannerShop.Api.Services;
 /// Dimensions of a single shipping parcel after rolling the banner(s).
 /// All measurements in metric units.
 /// </summary>
-public record ParcelDimensions(decimal LengthCm, decimal WidthCm, decimal HeightCm, decimal WeightKg);
+/// <summary>
+/// When <c>true</c> the package cannot be stacked (e.g. a rolled banner shipped
+/// in a tube). Passed to the Bring Shipping Guide 2.0 API as <c>nonStackable: true</c>
+/// so that any applicable special-handling surcharge is included in the quoted price.
+/// </summary>
+public record ParcelDimensions(decimal LengthCm, decimal WidthCm, decimal HeightCm, decimal WeightKg, bool NonStackable = false);
 
 /// <summary>
 /// A shipping option returned for a particular carrier service.

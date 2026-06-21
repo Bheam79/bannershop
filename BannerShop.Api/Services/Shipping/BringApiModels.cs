@@ -137,6 +137,16 @@ internal class BringPackage
     /// <summary>Height in cm (Bring field name is "height", no "InCm" suffix).</summary>
     [JsonPropertyName("height")]
     public decimal Height { get; set; }
+
+    /// <summary>
+    /// Whether the package cannot be stacked (e.g. a cylindrical tube).
+    /// When <c>true</c> Bring's Shipping Guide 2.0 applies any applicable
+    /// special-handling surcharge to the quoted price.
+    /// Omitted when <c>false</c> (default) to keep requests minimal.
+    /// </summary>
+    [JsonPropertyName("nonStackable")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool NonStackable { get; set; }
 }
 
 // ── Response DTOs ────────────────────────────────────────────────────────────
