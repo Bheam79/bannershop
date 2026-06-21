@@ -52,4 +52,14 @@ public interface IAdminOrderService
     /// <see cref="CapturePaymentAsync"/> separately before shipping.
     /// </summary>
     Task<OrderActionResult> MarkPaidManuallyAsync(int orderId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Voids the Stripe authorization hold for an order that cannot be fulfilled and
+    /// transitions the order to <see cref="OrderStatus.Cancelled"/>. Only valid when
+    /// the order is in <c>Paid</c>, <c>InProduction</c>, or <c>ReadyToShip</c> status
+    /// (i.e. the payment has been authorised but not yet captured). Sends the customer
+    /// a cancellation notice by email. Stripe cancellation failures are logged but do
+    /// not block the order from being marked Cancelled in the DB.
+    /// </summary>
+    Task<OrderActionResult> CancelPaymentAsync(int orderId, CancellationToken ct = default);
 }

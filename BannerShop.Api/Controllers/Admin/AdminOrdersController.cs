@@ -153,6 +153,24 @@ public class AdminOrdersController : ControllerBase
         return Ok(result.Order);
     }
 
+    // ── POST /api/admin/orders/{id}/cancel-payment ──────────────────────────
+    /// <summary>
+    /// Voids the Stripe authorization hold for a Paid / InProduction / ReadyToShip
+    /// order that cannot be fulfilled and transitions it to Cancelled. Sends the
+    /// customer a cancellation notice by email. Use this when the payment has been
+    /// authorised (captured = false) but the shop cannot deliver the order.
+    /// </summary>
+    [HttpPost("{id:int}/cancel-payment")]
+    public async Task<IActionResult> CancelPayment(int id, CancellationToken ct)
+    {
+        var result = await _orders.CancelPaymentAsync(id, ct);
+        if (!result.Success)
+            return result.ErrorType == InvalidTransition
+                ? UnprocessableEntity(new { error = result.Error })
+                : NotFound(new { error = result.Error });
+        return Ok(result.Order);
+    }
+
     // ── POST /api/admin/orders/{id}/mark-paid ───────────────────────────────
     /// <summary>
     /// Manually marks a Draft or PendingPayment order as Paid. Used when the

@@ -8,6 +8,7 @@ import {
   setShipping,
   advanceOrderState,
   captureOrderPayment,
+  cancelOrderPayment,
   markOrderPaid,
   uploadDesignRequestPreview,
 } from '@/api/admin'
@@ -182,6 +183,30 @@ async function capturePayment() {
     captureError.value = e.response?.data?.error ?? 'Innkassering feilet.'
   } finally {
     captureBusy.value = false
+  }
+}
+
+// ── Action: Cancel payment (void auth hold, cancel order) ────────────────────
+const cancelPaymentBusy = ref(false)
+const cancelPaymentError = ref('')
+const cancelPaymentSuccess = ref('')
+
+async function cancelPaymentAndOrder() {
+  // eslint-disable-next-line no-alert
+  if (!confirm('Dette vil annullere betalingsreservasjonen i Stripe og kansellere ordren. Kunden varsles på e-post. Fortsette?')) return
+  cancelPaymentBusy.value = true
+  cancelPaymentError.value = ''
+  cancelPaymentSuccess.value = ''
+  try {
+    order.value = await cancelOrderPayment(orderId)
+    syncForms()
+    cancelPaymentSuccess.value = 'Betaling annullert og ordre kansellert. Kunden er varslet.'
+    setTimeout(() => { cancelPaymentSuccess.value = '' }, 8000)
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { error?: string } } }
+    cancelPaymentError.value = e.response?.data?.error ?? 'Kansellering feilet.'
+  } finally {
+    cancelPaymentBusy.value = false
   }
 }
 
@@ -542,9 +567,21 @@ const packingLabel = computed(() => {
             >
               {{ captureBusy ? 'Innkasserer…' : '💰 Kasser betaling nå' }}
             </button>
+            <button
+              :disabled="cancelPaymentBusy"
+              class="bg-red-900/60 border border-red-700/60 text-red-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
+              @click="cancelPaymentAndOrder"
+            >
+              {{ cancelPaymentBusy ? 'Kansellerer…' : '✕ Kanseller betaling og ordre' }}
+            </button>
             <span v-if="captureSuccess" class="text-green-400 text-sm">✓ {{ captureSuccess }}</span>
             <span v-if="captureError" class="text-red-400 text-sm">{{ captureError }}</span>
+            <span v-if="cancelPaymentSuccess" class="text-green-400 text-sm">✓ {{ cancelPaymentSuccess }}</span>
+            <span v-if="cancelPaymentError" class="text-red-400 text-sm">{{ cancelPaymentError }}</span>
           </div>
+          <p class="text-xs text-red-400/70 mt-2">
+            Kan ikke levere? Bruk «Kanseller» for å annullere reservasjonen og varsle kunden automatisk.
+          </p>
         </div>
 
         <!-- CustomBanner + Paid: Send til produksjon -->
@@ -661,6 +698,37 @@ const packingLabel = computed(() => {
             </button>
             <span v-if="shipSuccess" class="text-green-400 text-sm">✓ {{ shipSuccess }}</span>
             <span v-if="shipError" class="text-red-400 text-sm">{{ shipError }}</span>
+          </div>
+          <!-- Cancel payment option for InProduction orders with an uncaptured Stripe PI -->
+          <div v-if="order.stripePaymentIntentId" class="mt-5 pt-4 border-t border-gray-700">
+            <p class="text-xs text-gray-500 mb-2">Kan ikke levere? Annuller reservasjonen og kanseller ordren:</p>
+            <div class="flex items-center gap-3 flex-wrap">
+              <button
+                :disabled="cancelPaymentBusy"
+                class="bg-red-900/60 border border-red-700/60 text-red-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                @click="cancelPaymentAndOrder"
+              >
+                {{ cancelPaymentBusy ? 'Kansellerer…' : '✕ Kanseller betaling og ordre' }}
+              </button>
+              <span v-if="cancelPaymentSuccess" class="text-green-400 text-sm">✓ {{ cancelPaymentSuccess }}</span>
+              <span v-if="cancelPaymentError" class="text-red-400 text-sm">{{ cancelPaymentError }}</span>
+            </div>
+          </div>
+        </template>
+
+        <!-- ReadyToShip: final confirmation + cancel option -->
+        <template v-else-if="currentState === 'ReadyToShip' && order.stripePaymentIntentId">
+          <p class="text-sm text-gray-400 mb-3">Ordren er klar til forsendelse. Betalingen er ennå ikke kassert.</p>
+          <div class="flex items-center gap-3 flex-wrap">
+            <button
+              :disabled="cancelPaymentBusy"
+              class="bg-red-900/60 border border-red-700/60 text-red-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
+              @click="cancelPaymentAndOrder"
+            >
+              {{ cancelPaymentBusy ? 'Kansellerer…' : '✕ Kanseller betaling og ordre' }}
+            </button>
+            <span v-if="cancelPaymentSuccess" class="text-green-400 text-sm">✓ {{ cancelPaymentSuccess }}</span>
+            <span v-if="cancelPaymentError" class="text-red-400 text-sm">{{ cancelPaymentError }}</span>
           </div>
         </template>
 

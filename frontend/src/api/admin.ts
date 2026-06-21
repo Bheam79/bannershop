@@ -233,6 +233,17 @@ export async function markOrderPaid(orderId: number): Promise<OrderDetailRespons
   return data
 }
 
+/**
+ * Voids the Stripe authorization hold for a Paid / InProduction / ReadyToShip
+ * order that cannot be fulfilled and transitions it to Cancelled. Sends the
+ * customer a cancellation email. Only valid for authorised-but-not-yet-captured
+ * orders (i.e. the payment has NOT been captured yet).
+ */
+export async function cancelOrderPayment(orderId: number): Promise<OrderDetailResponse> {
+  const { data } = await apiClient.post<OrderDetailResponse>(`/admin/orders/${orderId}/cancel-payment`)
+  return data
+}
+
 // ── Admin Users (BANNERSH-86) ─────────────────────────────────────────────────
 
 export interface AdminUserListItem {

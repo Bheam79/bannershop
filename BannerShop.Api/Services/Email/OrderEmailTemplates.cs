@@ -121,6 +121,26 @@ public static class OrderEmailTemplates
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Cancellation notice sent when an admin voids an authorised-but-not-yet-captured
+    /// banner order because it cannot be fulfilled.
+    /// </summary>
+    public static string BuildOrderCancelledHtml(Order o)
+    {
+        var customerName = string.IsNullOrWhiteSpace(o.User?.Name) ? "kunde" : o.User!.Name;
+
+        var sb = new StringBuilder();
+        sb.Append("<html><body style=\"font-family:Arial,Helvetica,sans-serif;color:#222;\">");
+        sb.Append($"<p>Hei {Esc(customerName)},</p>");
+        sb.Append($"<p>Vi beklager, men vi har dessverre ikke mulighet til å levere ordre <strong>#{o.Id}</strong>.</p>");
+        sb.Append("<p>Betalingsreservasjonen på kortet ditt er annullert og beløpet vil ikke bli trukket. " +
+                  "Dersom du allerede ser en reservasjon hos kortutstederen din, vil den forsvinne innen 1–5 virkedager.</p>");
+        sb.Append("<p>Ta gjerne kontakt med oss hvis du lurer på noe eller ønsker å bestille på nytt.</p>");
+        sb.Append("<p>Vennlig hilsen,<br/>BannerShop</p>");
+        sb.Append("</body></html>");
+        return sb.ToString();
+    }
+
     private static string FormatNok(decimal amount)
         => string.Format(NoCulture, "{0:N2} kr", amount);
 

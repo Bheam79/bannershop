@@ -400,6 +400,61 @@ public class AdminOrderService : IAdminOrderService
         return OrderActionResult.Ok(OrderMapper.ToDetailDto(full!, dr, _storage));
     }
 
+    /// <inheritdoc />
+    public async Task<OrderActionResult> CancelPaymentAsync(int orderId, CancellationToken ct = default)
+    {
+        var order = await _db.Orders
+            .Include(o => o.User)
+            .FirstOrDefaultAsync(o => o.Id == orderId, ct);
+        if (order is null) return OrderActionResult.Fail("Order not found.");
+
+        // Only orders in authorised-but-not-yet-captured states can be cancelled this way.
+        if (order.Status is not (OrderStatus.Paid or OrderStatus.InProduction or OrderStatus.ReadyToShip))
+        {
+            return OrderActionResult.FailTransition(
+                $"Order is in '{order.Status}' status. Only Paid, InProduction, or ReadyToShip " +
+                "orders (authorised but not captured) can be cancelled via this action.");
+        }
+
+        // Void the Stripe authorization hold. CancelPaymentIntentAsync swallows Stripe
+        // errors (already-cancelled / not-found) so the DB update below always runs.
+        if (!string.IsNullOrWhiteSpace(order.StripePaymentIntentId))
+        {
+            try
+            {
+                await _stripe.CancelPaymentIntentAsync(order.StripePaymentIntentId, ct);
+                _logger.LogInformation(
+                    "Admin voided Stripe PI {Pi} for order {OrderId} (cancel-payment).",
+                    order.StripePaymentIntentId, orderId);
+            }
+            catch (Exception ex)
+            {
+                // CancelPaymentIntentAsync already swallows StripeException; this
+                // catches any other unexpected error and logs it before proceeding.
+                _logger.LogError(ex,
+                    "Unexpected error voiding Stripe PI {Pi} for order {OrderId}. " +
+                    "Continuing with order cancellation in DB.",
+                    order.StripePaymentIntentId, orderId);
+            }
+        }
+
+        order.Status     = OrderStatus.Cancelled;
+        order.OrderState = OrderState.Cancelled;
+        order.UpdatedAt  = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Admin cancelled order {OrderId} (PI={Pi}). Auth hold voided.",
+            orderId, order.StripePaymentIntentId ?? "(none)");
+
+        // Send the customer a cancellation notice — fire-and-forget.
+        await TrySendOrderCancelledAsync(order, ct);
+
+        var full = await OrderQueries.LoadFullOrderAsync(_db, orderId, ct);
+        var dr   = await OrderQueries.LoadDesignRequestForOrderAsync(_db, orderId, ct);
+        return OrderActionResult.Ok(OrderMapper.ToDetailDto(full!, dr, _storage));
+    }
+
     // ────────────────────────────────────────────────────────────────────────
     // Transactional email — fire-and-forget wrappers.
     // HTML body builders live in OrderEmailTemplates.cs.
@@ -425,6 +480,27 @@ public class AdminOrderService : IAdminOrderService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send production-started email for order {OrderId} to {To}", order.Id, to);
+        }
+    }
+
+    private async Task TrySendOrderCancelledAsync(Order order, CancellationToken ct)
+    {
+        var to = order.User?.Email;
+        if (string.IsNullOrWhiteSpace(to))
+        {
+            _logger.LogWarning("Skipping order-cancelled email for order {OrderId}: no recipient email on user.", order.Id);
+            return;
+        }
+
+        try
+        {
+            var subject = $"Bestillingen din er kansellert – BannerShop #{order.Id}";
+            var body = OrderEmailTemplates.BuildOrderCancelledHtml(order);
+            await _email.SendAsync(to, subject, body, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send order-cancelled email for order {OrderId} to {To}", order.Id, to);
         }
     }
 
