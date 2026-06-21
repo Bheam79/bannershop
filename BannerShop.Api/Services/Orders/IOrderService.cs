@@ -142,4 +142,11 @@ public class AdminOrderFilter
     /// include them.
     /// </summary>
     public bool ExcludeZeroValueAiOrders { get; init; } = true;
+
+    /// <summary>
+    /// BANNERSH-246: filter by a set of statuses at once (used by the "Aktive" admin view which
+    /// combines Paid + InProduction + ReadyToShip + DesignReady + CustomerApproval).
+    /// When non-empty, takes precedence over the single <see cref="Status"/> field.
+    /// </summary>
+    public IReadOnlyList<OrderStatus>? Statuses { get; init; }
 }

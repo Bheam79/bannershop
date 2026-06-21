@@ -13,9 +13,14 @@ import {
 
 const router = useRouter()
 
+// BANNERSH-246: the "Aktive" pseudo-value combines the statuses that need fulfilment attention.
+const ACTIVE_FILTER_VALUE = '__active__'
+const ACTIVE_STATUSES = ['Paid', 'InProduction', 'ReadyToShip', 'DesignReady', 'CustomerApproval']
+
 // ── Filter state ──────────────────────────────────────────────────────────────
 const filters = reactive({
-  status: '',
+  // BANNERSH-246: default to "Aktive" so the admin sees actionable orders on load.
+  status: ACTIVE_FILTER_VALUE,
   orderType: '',
   fromDate: '',
   toDate: '',
@@ -41,8 +46,11 @@ async function load(p = 1) {
   loading.value = true
   error.value = null
   try {
+    // BANNERSH-246: "Aktive" is a pseudo-value that expands to multiple statuses.
+    const isActive = filters.status === ACTIVE_FILTER_VALUE
     const result = await listAdminOrders({
-      status: filters.status || undefined,
+      status: !isActive ? (filters.status || undefined) : undefined,
+      statuses: isActive ? ACTIVE_STATUSES : undefined,
       orderType: filters.orderType || undefined,
       fromUtc: filters.fromDate ? `${filters.fromDate}T00:00:00Z` : undefined,
       toUtc: filters.toDate ? `${filters.toDate}T23:59:59Z` : undefined,
@@ -68,7 +76,8 @@ function applyFilters() {
 }
 
 function clearFilters() {
-  filters.status = ''
+  // BANNERSH-246: reset to "Aktive" (the default) rather than "Alle statuser"
+  filters.status = ACTIVE_FILTER_VALUE
   filters.orderType = ''
   filters.fromDate = ''
   filters.toDate = ''
@@ -161,6 +170,8 @@ const ALL_ORDER_TYPES = Object.keys(ORDER_TYPE_LABELS)
             v-model="filters.status"
             class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
+            <!-- BANNERSH-246: "Aktive" combines Paid + InProduction + ReadyToShip + DesignReady + CustomerApproval -->
+            <option :value="ACTIVE_FILTER_VALUE">Aktive</option>
             <option value="">Alle statuser</option>
             <option v-for="s in ALL_STATUSES" :key="s" :value="s">{{ statusLabel(s) }}</option>
           </select>

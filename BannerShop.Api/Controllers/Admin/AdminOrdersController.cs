@@ -34,11 +34,26 @@ public class AdminOrdersController : ControllerBase
         [FromQuery] int pageSize = 20,
         [FromQuery] bool includeCreditPacks = false,
         [FromQuery] bool excludeZeroValueAiOrders = true,
+        // BANNERSH-246: comma-separated list of statuses for the "Aktive" combined filter
+        [FromQuery] string? statuses = null,
         CancellationToken ct = default)
     {
+        // Parse the comma-separated statuses string into a list of OrderStatus enums.
+        IReadOnlyList<OrderStatus>? parsedStatuses = null;
+        if (!string.IsNullOrWhiteSpace(statuses))
+        {
+            parsedStatuses = statuses
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => Enum.TryParse<OrderStatus>(s, ignoreCase: true, out var v) ? v : (OrderStatus?)null)
+                .Where(v => v.HasValue)
+                .Select(v => v!.Value)
+                .ToList();
+        }
+
         var paged = await _orders.ListAllAsync(new AdminOrderFilter
         {
             Status = status,
+            Statuses = parsedStatuses,
             OrderType = orderType,
             FromUtc = fromUtc,
             ToUtc = toUtc,

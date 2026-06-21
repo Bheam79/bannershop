@@ -145,12 +145,22 @@ export interface AdminOrderFilter {
    * produce. Set to false to show them (e.g. for design-review workflows).
    */
   excludeZeroValueAiOrders?: boolean
+  /**
+   * BANNERSH-246: filter by multiple statuses at once (used by the "Aktive" admin view).
+   * When set, sent as a comma-separated string; takes precedence over single `status`.
+   */
+  statuses?: string[]
 }
 
 export async function listAdminOrders(filter: AdminOrderFilter = {}): Promise<OrdersPage> {
   // Strip undefined/empty values
   const params: Record<string, string | number | boolean> = {}
-  if (filter.status) params.status = filter.status
+  // BANNERSH-246: multi-status filter takes precedence over single status
+  if (filter.statuses?.length) {
+    params.statuses = filter.statuses.join(',')
+  } else if (filter.status) {
+    params.status = filter.status
+  }
   if (filter.orderType) params.orderType = filter.orderType
   if (filter.fromUtc) params.fromUtc = filter.fromUtc
   if (filter.toUtc) params.toUtc = filter.toUtc

@@ -70,7 +70,10 @@ public class AdminOrderService : IAdminOrderService
         // "show deleted" toggle yet — they're truly gone from the UI; rows remain in
         // the DB for audit / undo.)
         var query = _db.Orders.AsNoTracking().Where(o => !o.Deleted).AsQueryable();
-        if (filter.Status is { } s)
+        // BANNERSH-246: multi-status filter (e.g. "Aktive" view) takes precedence over single status.
+        if (filter.Statuses is { Count: > 0 } ss)
+            query = query.Where(o => ss.Contains(o.Status));
+        else if (filter.Status is { } s)
             query = query.Where(o => o.Status == s);
         if (filter.OrderType is { } t)
             query = query.Where(o => o.OrderType == t);
