@@ -37,9 +37,9 @@ internal static class DbHelper
             new PricingParameter { Id = 12, Name = "AI credit pack small count",   Key = "ai_credit_pack_count",                 Value = 5m    },
             new PricingParameter { Id = 13, Name = "AI activation fee",            Key = "ai_banner_activation_fee_nok",         Value = 95m   },
             new PricingParameter { Id = 14, Name = "AI activation credits",        Key = "ai_banner_activation_credits",         Value = 20m   },
-            new PricingParameter { Id = 15, Name = "Banner panel overlap",         Key = "banner_panel_overlap_cm",              Value = 5m    },
             new PricingParameter { Id = 16, Name = "AI credit pack large price",   Key = "ai_credit_pack_large_price_nok",       Value = 95m   },
             new PricingParameter { Id = 17, Name = "AI credit pack large count",   Key = "ai_credit_pack_large_count",           Value = 20m   }
+            // PricingParameter id 15 (banner_panel_overlap_cm) was retired by BANNERSH-272.
         );
         db.SaveChanges();
     }
@@ -49,8 +49,8 @@ internal static class DbHelper
     {
         // BANNERSH-259: keep in sync with BannerShopStartupSeeder.
         // mat2 (680g) is available now; mat1 (400g) is future (Aug 2026).
-        var mat1 = new Material { Id = 1, Name = "400g innendørs banner",                     WidthCm = 160, MaxBannerWidthCm = 160, WeightGsm = 400, PricePerSqm = 180m, AvailableFrom = new DateTime(2026, 8, 31, 0, 0, 0, DateTimeKind.Utc) };
-        var mat2 = new Material { Id = 2, Name = "680g kraftig banner - 3 år utendørs garanti", WidthCm = 180, MaxBannerWidthCm = 180, WeightGsm = 680, PricePerSqm = 140m, AvailableFrom = null };
+        var mat1 = new Material { Id = 1, Name = "400g innendørs banner",                     WidthCm = 160, WeightGsm = 400, PricePerSqm = 180m, AvailableFrom = new DateTime(2026, 8, 31, 0, 0, 0, DateTimeKind.Utc) };
+        var mat2 = new Material { Id = 2, Name = "680g kraftig banner - 3 år utendørs garanti", WidthCm = 180, WeightGsm = 680, PricePerSqm = 140m, AvailableFrom = null };
         db.Materials.AddRange(mat1, mat2);
 
         // BANNERSH-255 / BANNERSH-259: range-based pricing rules (matches BannerShopStartupSeeder).
@@ -71,13 +71,12 @@ internal static class DbHelper
     }
 
     /// <summary>Creates a test material with sensible defaults.</summary>
-    public static Material MakeMaterial(int id = 1, int widthCm = 160, int weightGsm = 400, DateTime? availableFrom = null, int? maxBannerWidthCm = null, decimal pricePerSqm = 180m)
+    public static Material MakeMaterial(int id = 1, int widthCm = 160, int weightGsm = 400, DateTime? availableFrom = null, decimal pricePerSqm = 180m)
         => new Material
         {
             Id = id,
             Name = $"Test Material {id}",
             WidthCm = widthCm,
-            MaxBannerWidthCm = maxBannerWidthCm ?? 10_000,
             WeightGsm = weightGsm,
             PricePerSqm = pricePerSqm,
             AvailableFrom = availableFrom

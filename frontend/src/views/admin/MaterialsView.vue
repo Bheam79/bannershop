@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import apiClient from '@/api/client'
 import type { Material } from '@/types'
 
@@ -16,19 +16,9 @@ const form = reactive({
   id: 0,
   name: '',
   widthCm: 160,
-  maxBannerWidthCm: 160,
   weightGsm: 400,
   pricePerSqm: 180,
   availableFrom: '' as string,
-})
-
-// When creating a new material, keep maxBannerWidthCm in sync with widthCm so
-// the panel multiplier (BANNERSH-88) is configured correctly by default.
-// Editing an existing material keeps the saved maxBannerWidthCm value.
-watch(() => form.widthCm, (newVal) => {
-  if (!isEditing.value) {
-    form.maxBannerWidthCm = newVal
-  }
 })
 
 async function load() {
@@ -46,7 +36,7 @@ async function load() {
 
 function openCreate() {
   isEditing.value = false
-  Object.assign(form, { id: 0, name: '', widthCm: 160, maxBannerWidthCm: 160, weightGsm: 400, pricePerSqm: 180, availableFrom: '' })
+  Object.assign(form, { id: 0, name: '', widthCm: 160, weightGsm: 400, pricePerSqm: 180, availableFrom: '' })
   modalError.value = ''
   showModal.value = true
 }
@@ -57,7 +47,6 @@ function openEdit(m: Material) {
     id: m.id,
     name: m.name,
     widthCm: m.widthCm,
-    maxBannerWidthCm: m.maxBannerWidthCm || m.widthCm,
     weightGsm: m.weightGsm,
     pricePerSqm: m.pricePerSqm,
     availableFrom: m.availableFrom ? m.availableFrom.slice(0, 10) : '',
@@ -72,8 +61,6 @@ async function save() {
   const payload = {
     name: form.name,
     widthCm: form.widthCm,
-    // 0 ⇒ server defaults to widthCm (BANNERSH-88).
-    maxBannerWidthCm: form.maxBannerWidthCm || 0,
     weightGsm: form.weightGsm,
     pricePerSqm: form.pricePerSqm,
     availableFrom: form.availableFrom ? new Date(form.availableFrom).toISOString() : null,
@@ -129,7 +116,6 @@ onMounted(load)
           <tr>
             <th class="text-left px-4 py-3 font-medium text-gray-400">Navn</th>
             <th class="text-left px-4 py-3 font-medium text-gray-400">Bredde</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-400">Maks banner-bredde</th>
             <th class="text-left px-4 py-3 font-medium text-gray-400">Vekt</th>
             <th class="text-left px-4 py-3 font-medium text-gray-400">Pris/m²</th>
             <th class="text-left px-4 py-3 font-medium text-gray-400">Tilgjengelig fra</th>
@@ -140,7 +126,6 @@ onMounted(load)
           <tr v-for="m in materials" :key="m.id" class="hover:bg-gray-700">
             <td class="px-4 py-3 font-medium text-gray-200">{{ m.name }}</td>
             <td class="px-4 py-3 text-gray-400">{{ m.widthCm }} cm</td>
-            <td class="px-4 py-3 text-gray-400">{{ (m.maxBannerWidthCm || m.widthCm) }} cm</td>
             <td class="px-4 py-3 text-gray-400">{{ m.weightGsm }} g/m²</td>
             <td class="px-4 py-3 text-gray-400">{{ m.pricePerSqm.toFixed(2) }} NOK</td>
             <td class="px-4 py-3 text-gray-400">{{ formatDate(m.availableFrom) }}</td>
@@ -174,11 +159,6 @@ onMounted(load)
                 <label class="block text-sm font-medium text-gray-300 mb-1">Vekt (g/m²)</label>
                 <input v-model.number="form.weightGsm" type="number" min="1" required class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-300 mb-1">Maks banner-bredde uten skjøting (cm)</label>
-              <input v-model.number="form.maxBannerWidthCm" type="number" min="1" required class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              <p class="text-xs text-gray-500 mt-1">Bredere banner får ×2 pris (opp til 2× bredde minus overlapp) eller ×3 pris (bredere enn det). Standardverdi er rull-bredden.</p>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-1">Pris per m² (NOK)</label>

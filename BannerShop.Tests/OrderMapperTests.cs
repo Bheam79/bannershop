@@ -27,7 +27,7 @@ public class OrderMapperTests
 
     private static Material MakeMaterial() => new()
     {
-        Id = 1, Name = "400g Frontlit", WidthCm = 160, MaxBannerWidthCm = 160, WeightGsm = 400, PricePerSqm = 180m
+        Id = 1, Name = "400g Frontlit", WidthCm = 160, WeightGsm = 400, PricePerSqm = 180m
     };
 
     private static BannerSize MakeSize(Material mat) => new()

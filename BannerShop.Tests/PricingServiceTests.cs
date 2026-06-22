@@ -180,7 +180,7 @@ public class PricingServiceTests
     public async Task FindCheapest_ReturnsCheapestMatchingRule()
     {
         var (service, db) = CreateSeeded();
-        var mat = DbHelper.MakeMaterial(maxBannerWidthCm: 160);
+        var mat = DbHelper.MakeMaterial();
         db.Materials.Add(mat);
 
         // Two competing rules. Rule A: formula price 810; Rule B: fixedPrice 499.

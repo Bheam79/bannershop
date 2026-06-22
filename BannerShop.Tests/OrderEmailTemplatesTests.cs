@@ -17,7 +17,7 @@ public class OrderEmailTemplatesTests
     private static Order MakeOrder(int id = 42, DeliveryType deliveryType = DeliveryType.Standard)
     {
         var user = new User { Id = 1, Name = "Ola Nordmann", Email = "ola@example.com", PasswordHash = "x", Role = UserRole.Customer };
-        var mat  = new Material { Id = 1, Name = "400g Frontlit", WidthCm = 160, MaxBannerWidthCm = 160, WeightGsm = 400, PricePerSqm = 180m };
+        var mat  = new Material { Id = 1, Name = "400g Frontlit", WidthCm = 160, WeightGsm = 400, PricePerSqm = 180m };
         // BANNERSH-255: BannerSize is now a range-based pricing rule.
         var size = new BannerSize { Id = 1, Name = "400g h 1–154", IsActive = true, MaterialId = 1, Material = mat, MinWidthCm = 1, MaxWidthCm = 500, MinHeightCm = 1, MaxHeightCm = 154, PricingHeightCm = 154, PricingMultiplier = 1 };
         var item = new OrderItem

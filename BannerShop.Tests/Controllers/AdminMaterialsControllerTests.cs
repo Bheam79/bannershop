@@ -77,7 +77,6 @@ public class AdminMaterialsControllerTests : IClassFixture<TestWebApplicationFac
         {
             name = "TestMat-" + Guid.NewGuid().ToString("N")[..8],
             widthCm = (int?)160,
-            maxBannerWidthCm = (int?)0,   // 0 → defaults to widthCm
             weightGsm = 400,
             pricePerSqm = 250m,
             availableFrom = (DateTime?)null
@@ -86,24 +85,6 @@ public class AdminMaterialsControllerTests : IClassFixture<TestWebApplicationFac
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("250");
-    }
-
-    [Fact]
-    public async Task Create_WithMaxBannerWidth_StoresMaxBannerWidth()
-    {
-        var response = await AdminClient().PostAsJsonAsync("/api/admin/materials", new
-        {
-            name = "TestMat-" + Guid.NewGuid().ToString("N")[..8],
-            widthCm = (int?)180,
-            maxBannerWidthCm = (int?)120,   // custom max width
-            weightGsm = 680,
-            pricePerSqm = 320m,
-            availableFrom = (DateTime?)null
-        });
-
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("maxBannerWidthCm");
     }
 
     // ── PUT /api/admin/materials/{id} ─────────────────────────────────────────
@@ -116,7 +97,6 @@ public class AdminMaterialsControllerTests : IClassFixture<TestWebApplicationFac
         {
             name = "UpdateMe-" + Guid.NewGuid().ToString("N")[..8],
             widthCm = (int?)160,
-            maxBannerWidthCm = (int?)0,
             weightGsm = 400,
             pricePerSqm = 200m,
             availableFrom = (DateTime?)null
@@ -130,7 +110,6 @@ public class AdminMaterialsControllerTests : IClassFixture<TestWebApplicationFac
         {
             name = "UpdatedMaterial",
             widthCm = (int?)200,
-            maxBannerWidthCm = (int?)0,
             weightGsm = 500,
             pricePerSqm = 299m,
             availableFrom = (DateTime?)null
@@ -149,7 +128,6 @@ public class AdminMaterialsControllerTests : IClassFixture<TestWebApplicationFac
         {
             name = "Ghost",
             widthCm = (int?)160,
-            maxBannerWidthCm = (int?)0,
             weightGsm = 400,
             pricePerSqm = 200m,
             availableFrom = (DateTime?)null
@@ -168,7 +146,6 @@ public class AdminMaterialsControllerTests : IClassFixture<TestWebApplicationFac
         {
             name = "DeleteMe-" + Guid.NewGuid().ToString("N")[..8],
             widthCm = (int?)100,
-            maxBannerWidthCm = (int?)0,
             weightGsm = 300,
             pricePerSqm = 100m,
             availableFrom = (DateTime?)null

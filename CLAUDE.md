@@ -156,15 +156,11 @@ The BANNERSH-88 panel multiplier in `PricingService.PanelsNeeded` is **gone** �
 panel multipliers are now encoded in the rules table directly (admin sets
 `PricingMultiplier = 2/3/…` for the appropriate height tier).
 
-## Multi-panel pricing (BANNERSH-88) — superseded by BANNERSH-255
-`Material.MaxBannerWidthCm` is the max banner width producible as a single panel. When a
-banner exceeds it, `PricingService` multiplies the per-panel formula price by the panel
-count (×1 / ×2 / ×3 / …). The panel formula is `⌈(width − overlap) / (max − overlap)⌉`
-where `overlap` is the `banner_panel_overlap_cm` pricing parameter (default 5 cm).
-Fixed-price sizes skip both the formula AND the multiplier — admin sets the final price
-manually. The multiplier requires `Material` to be `.Include`d; if the navigation is
-null, `PricingService` falls back to single-panel pricing (so it never crashes on stale
-callers).
+BANNERSH-272 finished the cleanup: `Material.MaxBannerWidthCm` and the
+`banner_panel_overlap_cm` pricing parameter (id 15) were deleted from the
+schema/DTOs/admin form and a `RemoveMaxBannerWidthAndPanelOverlap` migration
+drops the column + the seed row. All panel-count behaviour now lives in
+`BannerSize.PricingMultiplier`.
 
 ## Banner builder (BANNERSH-15)
 - File uploads land under `FileStorage:BasePath` (default `/workspace/uploads`) and are served via StaticFiles at `FileStorage:PublicUrlPrefix` (default `/uploads`).

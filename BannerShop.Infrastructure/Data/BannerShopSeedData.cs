@@ -43,10 +43,11 @@ public static class BannerShopSeedData
             new PricingParameter { Id = 13, Name = "AI aktiveringsgebyr (NOK)", Key = "ai_banner_activation_fee_nok", Value = 95m, Description = "Obligatorisk AI aktiveringsgebyr ved bestilling av banner med AI design (NOK)" },
             new PricingParameter { Id = 14, Name = "AI kreditter ved bestilling", Key = "ai_banner_activation_credits", Value = 20m, Description = "Antall AI kreditter som gis når AI aktiveringsgebyret er betalt" },
             new PricingParameter { Id = 16, Name = "AI kreditpakke stor pris (NOK)", Key = "ai_credit_pack_large_price_nok", Value = 95m, Description = "Pris for stor kreditpakke med AI forslag (NOK)" },
-            new PricingParameter { Id = 17, Name = "AI kreditpakke stor antall", Key = "ai_credit_pack_large_count", Value = 20m, Description = "Antall AI genererings-kreditter per stor kreditpakke" },
-            // BANNERSH-88: multi-panel pricing — overlap between panels when a banner is wider
-            // than Material.MaxBannerWidthCm and must be assembled from multiple panels.
-            new PricingParameter { Id = 15, Name = "Panel-overlapp (cm)", Key = "banner_panel_overlap_cm", Value = 5m, Description = "Overlapp i cm mellom panel ved sammenliming av brede banner. Bestemmer pris-multiplikator (×2, ×3, …) når bestilt bredde overstiger materialets maks bredde." }
+            new PricingParameter { Id = 17, Name = "AI kreditpakke stor antall", Key = "ai_credit_pack_large_count", Value = 20m, Description = "Antall AI genererings-kreditter per stor kreditpakke" }
+            // Pricing parameter id 15 (banner_panel_overlap_cm, BANNERSH-88) was retired by
+            // BANNERSH-272 — multi-panel pricing is now expressed via the PricingMultiplier
+            // column on BannerSize rules (BANNERSH-255). The row is deleted by migration
+            // RemoveMaxBannerWidthAndPanelOverlap.
         );
     }
 

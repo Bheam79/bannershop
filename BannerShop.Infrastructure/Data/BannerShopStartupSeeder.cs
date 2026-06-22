@@ -41,7 +41,6 @@ public static class BannerShopStartupSeeder
                 Id = 1,
                 Name = "400g innendørs banner",
                 WidthCm = 160,
-                MaxBannerWidthCm = 160,
                 WeightGsm = 400,
                 PricePerSqm = 180m,
                 AvailableFrom = new DateTime(2026, 8, 31, 0, 0, 0, DateTimeKind.Utc)
@@ -51,7 +50,6 @@ public static class BannerShopStartupSeeder
                 Id = 2,
                 Name = "680g kraftig banner - 3 år utendørs garanti",
                 WidthCm = 180,
-                MaxBannerWidthCm = 180,
                 WeightGsm = 680,
                 PricePerSqm = 140m,
                 AvailableFrom = null

@@ -122,9 +122,9 @@ onMounted(load)
     </div>
 
     <p class="text-xs text-gray-500 mt-4">
-      Prisformel: max(minimumspris, areal × materialpris/m²) × panel-antall + (valgfri bredde ? tillegg : 0)<br>
-      Panel-antall = ⌈(bredde − overlapp) / (maks material-bredde − overlapp)⌉ — prisen øker med ×2, ×3, … for
-      banner bredere enn materialets maks-bredde uten skjøting. Materialpris/m² settes per materiale under Materialer.
+      Prisformel per regel: max(minimumspris, bredde × pris-høyde × materialpris/m²) × pris-multiplikator.
+      Pris-høyde og -multiplikator settes per regel i Størrelser; materialpris/m² settes per materiale i Materialer.
+      Faste priser på regelnivå overstyrer formelen.
     </p>
   </div>
 </template>
