@@ -783,11 +783,25 @@ watch(currentDesignRequest, (d) => {
   currentAspectRatioString.value = d?.aspectRatio ?? null
 })
 
-// Manual mode: regenerate the canvas placeholder when the aspect ratio changes
-// while the user is on the ready phase (they chose a different ratio in the picker).
-watch(selectedAspectRatio, () => {
-  if (isManual.value && genPhase.value === 'ready') {
+// Regenerate the canvas placeholder when the aspect ratio changes while the
+// user is on the ready phase (they chose a different ratio in the picker).
+// BANNERSH-271: in AI mode the AI image keeps its original ratio (no live
+// regeneration on ratio click — that needs an explicit "Generer ny versjon"),
+// but the pricing picker below should still reflect the newly-selected ratio
+// so the customer can see what their next attempt would cost. We override
+// `aiImageNaturalRatio` with the chosen ratio; the price computeds + watcher
+// in useBannerPricing then re-fetch prices for the new dimensions.
+watch(selectedAspectRatio, (newRatio) => {
+  if (genPhase.value !== 'ready') return
+  if (isManual.value) {
     generateManualPlaceholder()
+    return
+  }
+  const parts = newRatio.split(':')
+  const rW = parseInt(parts[0] ?? '0', 10)
+  const rH = parseInt(parts[1] ?? '0', 10)
+  if (rW > 0 && rH > 0) {
+    aiImageNaturalRatio.value = rW / rH
   }
 })
 
