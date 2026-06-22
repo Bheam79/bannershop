@@ -143,6 +143,18 @@ export async function apiCreateOrder(
   return draftRes.json() as Promise<{ orderId: number; clientSecret: string; totalNok: number }>
 }
 
+/**
+ * Create an unpaid draft order for retry-payment tests (BANNERSH-278).
+ * Thin alias over apiCreateOrder — the underlying draft endpoint is identical;
+ * the named alias makes test intent clearer ("I want an unpaid order to retry").
+ */
+export async function apiCreateUnpaidDraftOrder(
+  accessToken: string,
+  opts: { bannerSizeId: number; quantity?: number },
+): Promise<{ orderId: number; clientSecret: string; totalNok: number }> {
+  return apiCreateOrder(accessToken, opts)
+}
+
 export interface BannerSizeInfo {
   id: number
   name: string
