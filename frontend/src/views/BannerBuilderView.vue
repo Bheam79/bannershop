@@ -3,8 +3,8 @@ import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
-import { fetchSizes, fetchEyeletPriceNok } from '@/api/shop'
-import type { BannerSize, CartItem, EyeletOption } from '@/types'
+import { fetchMaterials, fetchPrice, fetchEyeletPriceNok } from '@/api/shop'
+import type { Material, CartItem, EyeletOption } from '@/types'
 import { countEyelets } from '@/types'
 import UploadZone from '@/components/banner-builder/UploadZone.vue'
 import EyeletPreview from '@/components/shop/EyeletPreview.vue'
@@ -29,9 +29,7 @@ const computedWidthCm = ref<number>(0)
 const rotationDegrees = ref<number>(0)
 
 // ── Preview URL (served by the unified BannerPreviewService, GUID-keyed) ────────
-// No blob management needed — the URL is a stable server path that can be used
-// directly in <img src> without URL.createObjectURL / revokeObjectURL.
-const previewBlobUrl = ref<string | null>(null) // kept as 'previewBlobUrl' for template compat
+const previewBlobUrl = ref<string | null>(null)
 const previewLoading = ref(false)
 const previewError = ref<string | null>(null)
 
@@ -40,8 +38,6 @@ async function loadPreview() {
   previewLoading.value = true
   previewError.value = null
   try {
-    // Fetch a plain (no-eyelet) server preview; the EyeletPreview SVG overlay adds
-    // eyelet circles interactively so the builder feels instant without extra round-trips.
     previewBlobUrl.value = await generateBannerPreview(design.value.designId)
   } catch (e: unknown) {
     const ex = e as { response?: { status?: number }; message?: string }
@@ -68,14 +64,10 @@ async function rotate(delta: number) {
     computedWidthCm.value = resp.computedWidthCm
     await loadPreview()
     if (sizeMode.value === 'custom') {
-      // In custom mode: keep the user's chosen height; the rotate API already
-      // recalculated the width — sync the display fields.
       customLinkLock = true
       customWidth.value = resp.computedWidthCm
       releaseCustomLink()
     } else {
-      // In material mode: re-apply the material height so the backend stores
-      // the correct selectedHeightCm after rotation.
       await applyMaterialSize(sizeMode.value)
     }
   } catch (e: unknown) {
@@ -86,25 +78,24 @@ async function rotate(delta: number) {
   }
 }
 
-// ── Size / material selection ─────────────────────────────────────────────────
-// sizeMode: ID of the chosen isCustomWidth BannerSize, or 'custom' for manual entry
-type SizeMode = number | 'custom'
+// ── Material / size selection ────────────────────────────────────────────────
+// BANNERSH-255: each option is one Material with a default height that maps to a
+// pricing rule; the price is computed by the server.
+type SizeMode = number | 'custom'  // number = materialId; 'custom' = enter own dims
 const sizeMode = ref<SizeMode>(0)
 
 const isCustomMode = computed(() => sizeMode.value === 'custom')
 
-// All sizes (custom-width ones indexed by material for the option buttons)
-const allSizes = ref<BannerSize[]>([])
-const sizesLoading = ref(false)
+const materials = ref<Material[]>([])
 
-// The isCustomWidth=true sizes — one per material
-const customWidthSizes = computed<BannerSize[]>(() =>
-  allSizes.value.filter((s) => s.isCustomWidth),
-)
+function isComingSoon(m: Material): boolean {
+  if (!m.availableFrom) return false
+  return new Date(m.availableFrom) > new Date()
+}
 
-function isComingSoon(size: BannerSize): boolean {
-  if (!size.availableFrom) return false
-  return new Date(size.availableFrom) > new Date()
+/** Suggested default banner height per material (cm). 154 for 160 cm rolls, 180 for 180 cm rolls. */
+function defaultHeightForMaterial(m: Material): number {
+  return m.widthCm >= 180 ? 180 : 154
 }
 
 // ── Client-side dimension math (mirrors BannerDimensions.cs) ─────────────────
@@ -121,29 +112,28 @@ function computeWidthFromHeight(
   return Math.max(50, Math.min(1000, rounded))
 }
 
-// Width to display for a material option button (before user clicks it)
-function previewWidthForMaterialSize(sz: BannerSize): number {
+function previewWidthForMaterial(m: Material): number {
   if (!design.value) return 0
   return computeWidthFromHeight(
     design.value.widthPx,
     design.value.heightPx,
     rotationDegrees.value,
-    sz.heightCm,
+    defaultHeightForMaterial(m),
   )
 }
 
-// ── Applying a material size ──────────────────────────────────────────────────
+// ── Applying a material default size ──────────────────────────────────────────
 const settingHeight = ref(false)
 const setHeightError = ref<string | null>(null)
 
-async function applyMaterialSize(szId: number) {
+async function applyMaterialSize(matId: number) {
   if (!design.value || settingHeight.value) return
-  const sz = allSizes.value.find((s) => s.id === szId)
-  if (!sz) return
+  const m = materials.value.find((x) => x.id === matId)
+  if (!m) return
   settingHeight.value = true
   setHeightError.value = null
   try {
-    const resp = await setBannerHeight(design.value.designId, sz.heightCm)
+    const resp = await setBannerHeight(design.value.designId, defaultHeightForMaterial(m))
     heightCm.value = resp.selectedHeightCm
     computedWidthCm.value = resp.computedWidthCm
   } catch (e: unknown) {
@@ -162,7 +152,7 @@ watch(sizeMode, async (mode) => {
 // ── Custom size ───────────────────────────────────────────────────────────────
 const customHeight = ref<number | null>(null)
 const customWidth = ref<number | null>(null)
-const customMaterialSizeId = ref<number | null>(null) // ID of the chosen isCustomWidth size
+const customMaterialId = ref<number | null>(null)
 
 // Image aspect ratio (width / height, accounting for rotation)
 const imageAspectRatio = computed<number | null>(() => {
@@ -172,7 +162,6 @@ const imageAspectRatio = computed<number | null>(() => {
   return rot === 90 || rot === 270 ? heightPx / widthPx : widthPx / heightPx
 })
 
-// Linked custom width ↔ height (like AI wizard)
 let customLinkLock = false
 function releaseCustomLink() {
   void nextTick(() => { customLinkLock = false })
@@ -196,22 +185,19 @@ watch(customWidth, (w) => {
   releaseCustomLink()
 })
 
-// When custom mode is activated, prefill from current dims
 watch(sizeMode, (mode) => {
   if (mode !== 'custom') return
   if (customHeight.value == null) {
     customHeight.value = heightCm.value || 150
   }
-  // Auto-pick first non-coming-soon material as default for custom
-  if (customMaterialSizeId.value == null && customWidthSizes.value.length > 0) {
-    const available = customWidthSizes.value.find((s) => !isComingSoon(s))
-    customMaterialSizeId.value = (available ?? customWidthSizes.value[0])?.id ?? null
+  if (customMaterialId.value == null && materials.value.length > 0) {
+    const available = materials.value.find((m) => !isComingSoon(m))
+    customMaterialId.value = (available ?? materials.value[0])?.id ?? null
   }
 })
 
-// Debounced API call when custom height changes
 let customHeightTimer: ReturnType<typeof setTimeout> | null = null
-watch([customHeight, customMaterialSizeId], () => {
+watch([customHeight, customMaterialId], () => {
   if (sizeMode.value !== 'custom' || !design.value) return
   if (customHeightTimer) clearTimeout(customHeightTimer)
   customHeightTimer = setTimeout(async () => {
@@ -219,7 +205,6 @@ watch([customHeight, customMaterialSizeId], () => {
     const resp = await setBannerHeight(design.value.designId, customHeight.value)
     heightCm.value = resp.selectedHeightCm
     computedWidthCm.value = resp.computedWidthCm
-    // Sync customWidth from API response
     if (!customLinkLock) {
       customLinkLock = true
       customWidth.value = resp.computedWidthCm
@@ -228,30 +213,13 @@ watch([customHeight, customMaterialSizeId], () => {
   }, 400)
 })
 
-// Selected custom material max height (for overflow warning)
-const customMaterialMaxHeight = computed<number | null>(() => {
-  if (!customMaterialSizeId.value) return null
-  const sz = allSizes.value.find((s) => s.id === customMaterialSizeId.value)
-  return sz?.material?.widthCm ?? null
-})
-
-const showHeightWarning = computed<boolean>(() => {
-  if (sizeMode.value !== 'custom') return false
-  const h = customHeight.value ?? 0
-  const max = customMaterialMaxHeight.value ?? Infinity
-  return h > max
-})
-
-// ── Pricing size (the isCustomWidth BannerSize to use for cart/price) ────────
-const pricingSize = computed<BannerSize | null>(() => {
+// ── Selected material for the active mode ────────────────────────────────────
+const selectedMaterial = computed<Material | null>(() => {
   if (sizeMode.value === 'custom') {
-    if (!customMaterialSizeId.value) return null
-    return allSizes.value.find((s) => s.id === customMaterialSizeId.value) ?? null
+    return materials.value.find((m) => m.id === customMaterialId.value) ?? null
   }
-  return allSizes.value.find((s) => s.id === sizeMode.value) ?? null
+  return materials.value.find((m) => m.id === sizeMode.value) ?? null
 })
-
-const selectedMaterial = computed(() => pricingSize.value?.material ?? null)
 
 // ── Quantity ─────────────────────────────────────────────────────────────────
 const qty = ref<number>(1)
@@ -267,36 +235,35 @@ const eyeletFeePerUnit = computed(() => eyeletCount.value * eyeletPriceNok.value
 
 // ── Pricing ───────────────────────────────────────────────────────────────────
 const customPriceNok = ref<number | null>(null)
+const matchedSizeId = ref<number | null>(null)
 const priceLoading = ref<boolean>(false)
 const priceError = ref<string | null>(null)
 
 async function refreshPrice() {
-  if (!design.value || !pricingSize.value || !computedWidthCm.value) {
+  const mat = selectedMaterial.value
+  if (!design.value || !mat || !computedWidthCm.value || !heightCm.value) {
     customPriceNok.value = null
+    matchedSizeId.value = null
     return
   }
   priceLoading.value = true
   priceError.value = null
   try {
-    const sizes = await fetchSizes(computedWidthCm.value)
-    const match = sizes.find(
-      (s) => s.id === pricingSize.value?.id,
-    )
-    customPriceNok.value = match?.calculatedPrice ?? null
-    if (customPriceNok.value == null) {
-      priceError.value = 'Fant ikke prisinformasjon for valgt materiale.'
-    }
+    const resp = await fetchPrice(computedWidthCm.value, heightCm.value, mat.id)
+    customPriceNok.value = resp.priceNok
+    matchedSizeId.value = resp.sizeId
   } catch (e: unknown) {
     const ex = e as { response?: { data?: { error?: string } }; message?: string }
     priceError.value = ex.response?.data?.error || ex.message || 'Kunne ikke beregne pris.'
     customPriceNok.value = null
+    matchedSizeId.value = null
   } finally {
     priceLoading.value = false
   }
 }
 
 let priceTimer: ReturnType<typeof setTimeout> | null = null
-watch([computedWidthCm, heightCm, pricingSize], () => {
+watch([computedWidthCm, heightCm, selectedMaterial], () => {
   if (!design.value) return
   priceLoading.value = true
   if (priceTimer) clearTimeout(priceTimer)
@@ -319,24 +286,25 @@ function onUploaded(resp: UploadResponse) {
   rotationDegrees.value = resp.rotationDegrees
   previewBlobUrl.value = null
   void loadPreview()
-  // Select first available material size
-  const firstAvailable = customWidthSizes.value.find((s) => !isComingSoon(s))
+  // Select first non-coming-soon material as default
+  const firstAvailable = materials.value.find((m) => !isComingSoon(m))
   if (firstAvailable) {
     sizeMode.value = firstAvailable.id
-  } else if (customWidthSizes.value.length > 0) {
-    const first = customWidthSizes.value[0]
+  } else if (materials.value.length > 0) {
+    const first = materials.value[0]
     if (first) sizeMode.value = first.id
   }
 }
 
 // ── Add to cart + checkout ────────────────────────────────────────────────────
 function addToCartAndCheckout() {
-  if (!design.value || !pricingSize.value || customPriceNok.value == null) return
+  if (!design.value || !selectedMaterial.value || customPriceNok.value == null) return
 
   const item: CartItem = {
-    bannerSizeId: pricingSize.value.id,
+    bannerSizeId: matchedSizeId.value ?? null,
     bannerSizeName: `Egen design ${computedWidthCm.value} × ${heightCm.value} cm`,
-    customWidthCm: computedWidthCm.value,
+    materialId: selectedMaterial.value.id,
+    widthCm: computedWidthCm.value,
     heightCm: heightCm.value,
     quantity: qty.value,
     unitPriceNok: customPriceNok.value,
@@ -358,7 +326,7 @@ function addToCartAndCheckout() {
 // ── sessionStorage persistence ────────────────────────────────────────────────
 watch(
   [design, heightCm, computedWidthCm, rotationDegrees, qty, eyeletOption, sizeMode,
-   customHeight, customWidth, customMaterialSizeId],
+   customHeight, customWidth, customMaterialId],
   () => {
     if (design.value) {
       sessionStorage.setItem(SESSION_KEY, JSON.stringify({
@@ -371,7 +339,7 @@ watch(
         sizeMode: sizeMode.value,
         customHeight: customHeight.value,
         customWidth: customWidth.value,
-        customMaterialSizeId: customMaterialSizeId.value,
+        customMaterialId: customMaterialId.value,
       }))
     } else {
       sessionStorage.removeItem(SESSION_KEY)
@@ -382,16 +350,14 @@ watch(
 
 // ── Initialisation ────────────────────────────────────────────────────────────
 onMounted(async () => {
-  // Load all sizes first (needed for option rendering)
   try {
-    allSizes.value = await fetchSizes()
+    materials.value = await fetchMaterials()
   } catch { /* non-fatal */ }
 
   try {
     eyeletPriceNok.value = await fetchEyeletPriceNok()
   } catch { /* non-fatal */ }
 
-  // ?designId=<id>: load a previously-uploaded design directly
   const designIdParam = (route.query.designId as string | undefined)?.trim()
   if (designIdParam) {
     const designId = parseInt(designIdParam, 10)
@@ -402,18 +368,14 @@ onMounted(async () => {
         heightCm.value = resp.selectedHeightCm
         computedWidthCm.value = resp.computedWidthCm
         rotationDegrees.value = resp.rotationDegrees
-        // Pick the matching material size
-        const matchingSz = customWidthSizes.value.find(
-          (s) => s.heightCm === resp.selectedHeightCm,
-        )
-        sizeMode.value = matchingSz?.id ?? customWidthSizes.value[0]?.id ?? 0
+        const first = materials.value[0]
+        sizeMode.value = first?.id ?? 0
         void loadPreview()
       } catch { /* non-fatal */ }
       return
     }
   }
 
-  // Restore from sessionStorage
   const saved = sessionStorage.getItem(SESSION_KEY)
   if (saved) {
     try {
@@ -427,7 +389,7 @@ onMounted(async () => {
         sizeMode: SizeMode
         customHeight: number | null
         customWidth: number | null
-        customMaterialSizeId: number | null
+        customMaterialId: number | null
       }
       design.value = state.design
       heightCm.value = state.heightCm
@@ -435,10 +397,10 @@ onMounted(async () => {
       rotationDegrees.value = state.rotationDegrees
       qty.value = state.qty
       eyeletOption.value = state.eyeletOption
-      sizeMode.value = state.sizeMode ?? customWidthSizes.value[0]?.id ?? 0
+      sizeMode.value = state.sizeMode ?? materials.value[0]?.id ?? 0
       customHeight.value = state.customHeight ?? null
       customWidth.value = state.customWidth ?? null
-      customMaterialSizeId.value = state.customMaterialSizeId ?? null
+      customMaterialId.value = state.customMaterialId ?? null
       void loadPreview()
     } catch {
       sessionStorage.removeItem(SESSION_KEY)
@@ -523,7 +485,6 @@ onMounted(async () => {
             </button>
           </div>
 
-          <!-- Single preview: EyeletPreview with uploaded image -->
           <div
             style="border-radius:12px;overflow:hidden;border:1px solid var(--line-soft);background:var(--surface-2)"
           >
@@ -548,23 +509,12 @@ onMounted(async () => {
             />
           </div>
 
-          <!-- Rotation buttons -->
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            <button
-              type="button"
-              class="rotate-btn"
-              :disabled="rotating"
-              @click="rotate(-90)"
-            >
+            <button type="button" class="rotate-btn" :disabled="rotating" @click="rotate(-90)">
               <span style="font-size:18px">↺</span>
               <span>Roter venstre</span>
             </button>
-            <button
-              type="button"
-              class="rotate-btn"
-              :disabled="rotating"
-              @click="rotate(90)"
-            >
+            <button type="button" class="rotate-btn" :disabled="rotating" @click="rotate(90)">
               <span style="font-size:18px">↻</span>
               <span>Roter høyre</span>
             </button>
@@ -582,55 +532,53 @@ onMounted(async () => {
             <h2 class="display" style="font-size:20px;color:var(--text)">Størrelse og detaljer</h2>
           </div>
 
-          <!-- Size selector (3 options: one per material + custom) -->
+          <!-- Size selector -->
           <div>
             <div class="field-label" style="margin-bottom:10px">Velg størrelse</div>
             <div style="display:grid;gap:8px">
-              <!-- One option per custom-width size (one per material) -->
               <label
-                v-for="sz in customWidthSizes"
-                :key="sz.id"
+                v-for="m in materials"
+                :key="m.id"
                 class="size-option"
                 :class="{
-                  'size-option--active': sizeMode === sz.id,
-                  'size-option--disabled': isComingSoon(sz),
+                  'size-option--active': sizeMode === m.id,
+                  'size-option--disabled': isComingSoon(m),
                 }"
-                @click="!isComingSoon(sz) && (sizeMode = sz.id)"
+                @click="!isComingSoon(m) && (sizeMode = m.id)"
               >
                 <div class="size-option-icon">
                   <div
                     class="size-icon-rect"
                     :style="{
-                      aspectRatio: `${previewWidthForMaterialSize(sz)} / ${sz.heightCm}`,
-                      opacity: isComingSoon(sz) ? 0.4 : 1,
+                      aspectRatio: `${previewWidthForMaterial(m)} / ${defaultHeightForMaterial(m)}`,
+                      opacity: isComingSoon(m) ? 0.4 : 1,
                     }"
                   ></div>
                 </div>
                 <div style="flex:1;min-width:0">
                   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                     <span style="font-weight:700;font-size:15px;color:var(--text)">
-                      {{ previewWidthForMaterialSize(sz) }} × {{ sz.heightCm }} cm
+                      {{ previewWidthForMaterial(m) }} × {{ defaultHeightForMaterial(m) }} cm
                     </span>
                     <span
-                      v-if="isComingSoon(sz)"
+                      v-if="isComingSoon(m)"
                       style="font-size:11px;font-weight:700;color:var(--gold);background:rgba(231,185,78,.12);border:1px solid rgba(231,185,78,.3);border-radius:4px;padding:1px 6px"
                     >Kommer snart</span>
                   </div>
                   <div style="font-size:13px;color:var(--faint);margin-top:2px">
-                    {{ sz.material?.name }}
+                    {{ m.name }}
                   </div>
-                  <div v-if="sizeMode === sz.id && !isComingSoon(sz)" style="font-size:13px;color:var(--muted);margin-top:2px">
+                  <div v-if="sizeMode === m.id && !isComingSoon(m)" style="font-size:13px;color:var(--muted);margin-top:2px">
                     Bredde beregnet fra ditt bilde
                   </div>
                 </div>
                 <div class="size-option-radio">
-                  <div class="radio-outer" :class="{ 'radio-outer--active': sizeMode === sz.id && !isComingSoon(sz) }">
-                    <div v-if="sizeMode === sz.id && !isComingSoon(sz)" class="radio-inner"></div>
+                  <div class="radio-outer" :class="{ 'radio-outer--active': sizeMode === m.id && !isComingSoon(m) }">
+                    <div v-if="sizeMode === m.id && !isComingSoon(m)" class="radio-inner"></div>
                   </div>
                 </div>
               </label>
 
-              <!-- Custom size option -->
               <label
                 class="size-option"
                 :class="{ 'size-option--active': isCustomMode }"
@@ -650,45 +598,42 @@ onMounted(async () => {
                 </div>
               </label>
 
-              <!-- Custom fields (expanded when custom is chosen) -->
               <div
                 v-if="isCustomMode"
                 style="border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--surface-2);display:grid;gap:14px"
               >
-                <!-- Material picker -->
                 <div>
                   <div class="field-label" style="margin-bottom:8px">Materiale</div>
                   <div style="display:grid;gap:6px">
                     <label
-                      v-for="sz in customWidthSizes"
-                      :key="sz.id"
+                      v-for="m in materials"
+                      :key="m.id"
                       class="mat-option"
                       :class="{
-                        'mat-option--active': customMaterialSizeId === sz.id,
-                        'mat-option--disabled': isComingSoon(sz),
+                        'mat-option--active': customMaterialId === m.id,
+                        'mat-option--disabled': isComingSoon(m),
                       }"
-                      @click="!isComingSoon(sz) && (customMaterialSizeId = sz.id)"
+                      @click="!isComingSoon(m) && (customMaterialId = m.id)"
                     >
                       <div style="flex:1">
                         <div style="font-size:13.5px;font-weight:600;color:var(--text)">
-                          {{ sz.material?.name }}
+                          {{ m.name }}
                         </div>
                         <div style="font-size:12px;color:var(--faint)">
-                          Maks høyde {{ sz.material?.widthCm }} cm
+                          Maks rull-bredde {{ m.widthCm }} cm
                           <span
-                            v-if="isComingSoon(sz)"
+                            v-if="isComingSoon(m)"
                             style="margin-left:6px;font-size:11px;font-weight:700;color:var(--gold)"
                           >Kommer snart</span>
                         </div>
                       </div>
-                      <div class="radio-outer" :class="{ 'radio-outer--active': customMaterialSizeId === sz.id && !isComingSoon(sz) }">
-                        <div v-if="customMaterialSizeId === sz.id && !isComingSoon(sz)" class="radio-inner"></div>
+                      <div class="radio-outer" :class="{ 'radio-outer--active': customMaterialId === m.id && !isComingSoon(m) }">
+                        <div v-if="customMaterialId === m.id && !isComingSoon(m)" class="radio-inner"></div>
                       </div>
                     </label>
                   </div>
                 </div>
 
-                <!-- Width & Height inputs (linked via image ratio) -->
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
                   <div>
                     <label class="field-label" style="display:block;margin-bottom:6px" for="custom-w">Bredde (cm)</label>
@@ -721,17 +666,6 @@ onMounted(async () => {
                   <i class="fa-solid fa-link" style="margin-right:4px"></i>
                   Bredde og høyde er låst til bildets størrelsesforhold.
                 </div>
-
-                <!-- Height-over-max warning -->
-                <div
-                  v-if="showHeightWarning"
-                  style="display:flex;align-items:flex-start;gap:10px;background:rgba(231,185,78,.1);border:1px solid rgba(231,185,78,.28);border-radius:10px;padding:10px 14px"
-                >
-                  <i class="fa-solid fa-triangle-exclamation" style="color:var(--gold);flex-shrink:0;margin-top:2px"></i>
-                  <span style="font-size:13px;color:var(--gold)">
-                    Vi må lime flere banner for å oppnå din ønskede størrelse
-                  </span>
-                </div>
               </div>
             </div>
 
@@ -740,7 +674,6 @@ onMounted(async () => {
             </p>
           </div>
 
-          <!-- Final size display -->
           <div v-if="computedWidthCm > 0">
             <div class="field-label">Endelig størrelse</div>
             <div class="display" style="font-size:26px;color:var(--text);margin-top:4px">
@@ -751,7 +684,6 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- Quantity -->
           <div style="display:flex;align-items:center;gap:12px">
             <label for="qty" style="font-size:14px;color:var(--muted);font-weight:600">Antall</label>
             <input
@@ -765,7 +697,6 @@ onMounted(async () => {
             />
           </div>
 
-          <!-- Eyelet (malje) option -->
           <div>
             <div class="field-label" style="margin-bottom:8px">
               Maljer (øyebolter)
@@ -802,7 +733,6 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- Price box -->
           <div style="border-top:1px solid var(--line-soft);padding-top:16px;display:grid;gap:8px">
             <div style="display:flex;justify-content:space-between;font-size:14px">
               <span style="color:var(--muted)">Bannerpris</span>
@@ -841,7 +771,6 @@ onMounted(async () => {
             <i class="fa-solid fa-circle-exclamation"></i> {{ priceError }}
           </div>
 
-          <!-- Soft login nudge -->
           <div v-if="!auth.isLoggedIn" class="notice-gold">
             <i class="fa-solid fa-circle-info"></i>
             <span style="font-size:13px">

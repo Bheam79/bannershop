@@ -122,22 +122,43 @@ public class OrderService : IOrderService
             }
         }
 
-        // ── Load all referenced banner sizes (with material) in one round-trip ──
-        var sizeIds = req.Items.Select(i => i.BannerSizeId).Distinct().ToList();
-        var sizes = await _db.BannerSizes
-            .Include(s => s.Material)
-            .Where(s => sizeIds.Contains(s.Id) && s.IsActive)
-            .ToDictionaryAsync(s => s.Id, ct);
-
+        // ── Validate inputs + resolve the matching banner-size pricing rule ──
+        // BANNERSH-255: items now carry their actual (width, height) — there are no
+        // "fixed" vs "custom" sizes anymore. For each item we either honour the
+        // explicitly-chosen BannerSizeId (when it covers the dimensions) or find
+        // the cheapest matching rule across all materials.
         foreach (var input in req.Items)
         {
-            if (!sizes.ContainsKey(input.BannerSizeId))
-                return Fail($"Banner size {input.BannerSizeId} not found or inactive.");
-            var size = sizes[input.BannerSizeId];
-            if (size.IsCustomWidth && input.CustomWidthCm is null)
-                return Fail($"Banner size {input.BannerSizeId} requires customWidthCm.");
-            if (!size.IsCustomWidth && input.CustomWidthCm is not null)
-                return Fail($"Banner size {input.BannerSizeId} is not a custom-width size.");
+            if (input.WidthCm <= 0 || input.HeightCm <= 0)
+                return Fail("Each item must include positive widthCm and heightCm.");
+        }
+
+        var sizes = new Dictionary<int, BannerSize>();
+        var resolvedSizes = new Dictionary<int, BannerSize>(); // index → matched rule
+        for (int i = 0; i < req.Items.Count; i++)
+        {
+            var input = req.Items[i];
+            BannerSize? rule = null;
+            if (input.BannerSizeId.HasValue)
+            {
+                rule = await _db.BannerSizes
+                    .Include(s => s.Material)
+                    .FirstOrDefaultAsync(s => s.Id == input.BannerSizeId.Value && s.IsActive, ct);
+                if (rule is null)
+                    return Fail($"Banner size {input.BannerSizeId} not found or inactive.");
+                if (input.WidthCm < rule.MinWidthCm || input.WidthCm > rule.MaxWidthCm
+                    || input.HeightCm < rule.MinHeightCm || input.HeightCm > rule.MaxHeightCm)
+                    return Fail($"Banner size {rule.Id} does not cover dimensions {input.WidthCm}×{input.HeightCm} cm.");
+            }
+            else
+            {
+                var match = await _pricing.FindCheapestAsync(input.WidthCm, input.HeightCm, input.MaterialId, ct);
+                if (match is null)
+                    return Fail($"No pricing rule matches dimensions {input.WidthCm}×{input.HeightCm} cm.");
+                rule = match.Rule;
+            }
+            resolvedSizes[i] = rule;
+            sizes[rule.Id] = rule;
         }
 
         // ── Snapshot pricing per item ──
@@ -147,19 +168,19 @@ public class OrderService : IOrderService
         // The order detail view derives the fee back from the linked DR for display.
         var items = new List<OrderItem>(req.Items.Count);
         decimal itemsSubtotal = 0m;
-        foreach (var input in req.Items)
+        for (int i = 0; i < req.Items.Count; i++)
         {
-            var size = sizes[input.BannerSizeId];
-            var unitPrice = await _pricing.CalculatePriceAsync(
-                size, input.CustomWidthCm,
-                skipCustomSurcharge: input.SkipCustomSurcharge);
-            var widthCm = size.IsCustomWidth ? (input.CustomWidthCm ?? 0) : (size.WidthCm ?? 0);
-            var areaSqm = decimal.Round((widthCm / 100m) * (size.HeightCm / 100m), 4);
+            var input = req.Items[i];
+            var size = resolvedSizes[i];
+            var unitPrice = await _pricing.CalculatePriceAsync(size, input.WidthCm, input.HeightCm);
+            var widthCm = input.WidthCm;
+            var heightCm = input.HeightCm;
+            var areaSqm = decimal.Round((widthCm / 100m) * (heightCm / 100m), 4);
 
             // Eyelet (malje) addon — calculated server-side so the price is snapshotted
             // against the pricing parameters at order time.
             var (eyeletFee, eyeletCount) = await _pricing.CalculateEyeletCostAsync(
-                widthCm, size.HeightCm, input.EyeletOption);
+                widthCm, heightCm, input.EyeletOption);
 
             // BANNERSH-249: bundle the manual designer fee (DR.PriceNok, default 495 kr)
             // into the linked banner item. Charged once per design, NOT per quantity —
@@ -180,8 +201,10 @@ public class OrderService : IOrderService
             items.Add(new OrderItem
             {
                 BannerSizeId     = size.Id,
-                CustomWidthCm    = input.CustomWidthCm,
-                HeightCm         = size.HeightCm,
+                // BANNERSH-255: the customer always specifies their actual width — we
+                // persist it into the existing CustomWidthCm column for back-compat.
+                CustomWidthCm    = widthCm,
+                HeightCm         = heightCm,
                 Quantity         = input.Quantity,
                 AreaSqm          = areaSqm,
                 UnitPriceNok     = decimal.Round(unitPrice, 2),
@@ -203,12 +226,13 @@ public class OrderService : IOrderService
         {
             try
             {
-                foreach (var input in req.Items)
+                for (int i = 0; i < req.Items.Count; i++)
                 {
-                    var size = sizes[input.BannerSizeId];
-                    // BANNERSH-143: pass through the customer's packing choice so the
-                    // server-side quote matches the price they saw in the cart.
-                    var parcel = await _parcels.CalculateAsync(size, input.CustomWidthCm, input.Quantity, req.PackingMode, ct);
+                    var input = req.Items[i];
+                    var size = resolvedSizes[i];
+                    // BANNERSH-143/255: pass actual dims + material gsm directly. The
+                    // server-side quote uses the same numbers the customer saw.
+                    var parcel = await _parcels.CalculateAsync(input.WidthCm, input.HeightCm, size.Material.WeightGsm, input.Quantity, req.PackingMode, ct);
                     var quote = await _shipping.CalculateAsync(req.ShippingAddress!.PostalCode, req.ShippingAddress.City, parcel, ct);
                     shippingCost += quote.Standard.CostNok;
                     if (quote.Standard.EstimatedDays > maxCarrierDays)

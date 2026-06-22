@@ -19,11 +19,16 @@ public class SizesController : ControllerBase
         _pricing = pricing;
     }
 
-    // ── GET /api/sizes?customWidthCm=X&customHeightCm=Y ──────────────────────
+    // ── GET /api/sizes ────────────────────────────────────────────────────────
+    /// <summary>
+    /// Returns all active banner pricing rules. With BANNERSH-255 each row describes
+    /// a (material × width-range × height-range) combo plus a pricing formula —
+    /// callers that need a price for specific dimensions should use the
+    /// <c>/api/sizes/price</c> endpoint instead, which finds the cheapest matching
+    /// rule across all materials.
+    /// </summary>
     [HttpGet]
-    public async Task<IActionResult> GetSizes(
-        [FromQuery] int? customWidthCm = null,
-        [FromQuery] int? customHeightCm = null)
+    public async Task<IActionResult> GetSizes()
     {
         var sizes = await _db.BannerSizes
             .Include(s => s.Material)
@@ -34,7 +39,10 @@ public class SizesController : ControllerBase
         var result = new List<BannerSizeDto>(sizes.Count);
         foreach (var s in sizes)
         {
-            var price = await _pricing.CalculatePriceAsync(s, customWidthCm, customHeightCm);
+            // Sample at the lower-left of the range for the list payload.
+            var sampleW = s.MinWidthCm  > 0 ? s.MinWidthCm  : 1;
+            var sampleH = s.MinHeightCm > 0 ? s.MinHeightCm : 1;
+            var price = await _pricing.CalculatePriceAsync(s, sampleW, sampleH);
             result.Add(ToDto(s, price));
         }
 
@@ -42,10 +50,6 @@ public class SizesController : ControllerBase
     }
 
     // ── GET /api/sizes/eyelet-price ───────────────────────────────────────────
-    /// <summary>
-    /// Returns the current price per eyelet (malje) in NOK.
-    /// Used by the frontend to compute eyelet addon costs before order submission.
-    /// </summary>
     [HttpGet("eyelet-price")]
     public async Task<IActionResult> GetEyeletPrice()
     {
@@ -53,33 +57,32 @@ public class SizesController : ControllerBase
         return Ok(new { pricePerEyeletNok = pricePerEyelet });
     }
 
-    // ── GET /api/sizes/{id}/price?customWidthCm=X&customHeightCm=Y&noCustomSurcharge=true ─
-    [HttpGet("{id:int}/price")]
+    // ── GET /api/sizes/price?widthCm=X&heightCm=Y[&materialId=Z] ──────────────
+    /// <summary>
+    /// Finds the cheapest matching pricing rule for the requested banner dimensions.
+    /// Returns 404 when no rule covers the requested (width × height [× material]).
+    /// </summary>
+    [HttpGet("price")]
     public async Task<IActionResult> GetPrice(
-        int id,
-        [FromQuery] int? customWidthCm = null,
-        [FromQuery] int? customHeightCm = null,
-        [FromQuery] bool noCustomSurcharge = false)
+        [FromQuery] int widthCm,
+        [FromQuery] int heightCm,
+        [FromQuery] int? materialId = null,
+        CancellationToken ct = default)
     {
-        // Include Material so PricingService can apply the multi-panel multiplier
-        // (BANNERSH-88) when the requested width exceeds Material.MaxBannerWidthCm.
-        var size = await _db.BannerSizes
-            .Include(s => s.Material)
-            .FirstOrDefaultAsync(s => s.Id == id);
-        if (size == null) return NotFound();
+        if (widthCm <= 0 || heightCm <= 0)
+            return BadRequest(new { error = "widthCm and heightCm must be positive." });
 
-        if (size.IsCustomWidth && customWidthCm is null)
-            return BadRequest(new { error = "customWidthCm is required for custom-width banner sizes." });
-        if (size.IsCustomHeight && customHeightCm is null)
-            return BadRequest(new { error = "customHeightCm is required for custom-height banner sizes." });
+        var match = await _pricing.FindCheapestAsync(widthCm, heightCm, materialId, ct);
+        if (match is null)
+            return NotFound(new { error = "No matching banner size rule for the requested dimensions." });
 
-        var price = await _pricing.CalculatePriceAsync(size, customWidthCm, customHeightCm, noCustomSurcharge);
         return Ok(new PriceResponseDto
         {
-            SizeId = size.Id,
-            CustomWidthCm = customWidthCm,
-            CustomHeightCm = customHeightCm,
-            PriceNok = price
+            SizeId = match.Rule.Id,
+            WidthCm = widthCm,
+            HeightCm = heightCm,
+            MaterialId = match.Rule.MaterialId,
+            PriceNok = match.PriceNok
         });
     }
 
@@ -88,13 +91,17 @@ public class SizesController : ControllerBase
     private static BannerSizeDto ToDto(BannerShop.Core.Entities.BannerSize s, decimal price) => new()
     {
         Id = s.Id,
-        WidthCm = s.WidthCm,
-        HeightCm = s.HeightCm,
-        IsCustomWidth = s.IsCustomWidth,
-        IsCustomHeight = s.IsCustomHeight,
         Name = s.Name,
         IsActive = s.IsActive,
         MaterialId = s.MaterialId,
+        SortOrder = s.SortOrder,
+        MinWidthCm = s.MinWidthCm,
+        MaxWidthCm = s.MaxWidthCm,
+        MinHeightCm = s.MinHeightCm,
+        MaxHeightCm = s.MaxHeightCm,
+        PricingHeightCm = s.PricingHeightCm,
+        PricingMultiplier = s.PricingMultiplier,
+        FixedPrice = s.FixedPrice,
         Material = new MaterialDto
         {
             Id = s.Material.Id,
@@ -105,8 +112,6 @@ public class SizesController : ControllerBase
             PricePerSqm = s.Material.PricePerSqm,
             AvailableFrom = s.Material.AvailableFrom
         },
-        FixedPrice = s.FixedPrice,
-        SortOrder = s.SortOrder,
         CalculatedPrice = price,
         AvailableFrom = s.Material.AvailableFrom
     };

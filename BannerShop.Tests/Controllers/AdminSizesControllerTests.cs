@@ -9,7 +9,8 @@ using Xunit;
 namespace BannerShop.Tests.Controllers;
 
 /// <summary>
-/// Integration tests for AdminSizesController (CRUD for banner sizes).
+/// Integration tests for AdminSizesController. BANNERSH-255 — pricing rules are
+/// (min/max width × min/max height + pricing formula).
 /// </summary>
 public class AdminSizesControllerTests : IClassFixture<TestWebApplicationFactory>
 {
@@ -40,7 +41,6 @@ public class AdminSizesControllerTests : IClassFixture<TestWebApplicationFactory
     private HttpClient CustomerClient() =>
         _factory.CreateAuthenticatedClient(userId: 50, email: "cust@test.com", name: "Customer", role: UserRole.Customer);
 
-    /// <summary>Gets the first seeded material id (always present).</summary>
     private async Task<int> GetFirstMaterialIdAsync()
     {
         var resp = await AdminClient().GetAsync("/api/admin/materials");
@@ -58,7 +58,7 @@ public class AdminSizesControllerTests : IClassFixture<TestWebApplicationFactory
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("widthCm");
+        body.Should().Contain("minWidthCm");
         body.Should().Contain("calculatedPrice");
     }
 
@@ -85,21 +85,23 @@ public class AdminSizesControllerTests : IClassFixture<TestWebApplicationFactory
 
         var response = await AdminClient().PostAsJsonAsync("/api/admin/sizes", new
         {
-            widthCm = (int?)400,
-            heightCm = (int?)200,
-            isCustomWidth = false,
-            isCustomHeight = false,
             name = "TestSize-" + Guid.NewGuid().ToString("N")[..8],
             isActive = true,
             materialId,
-            fixedPrice = (decimal?)null,
-            sortOrder = 99
+            sortOrder = 99,
+            minWidthCm = 1,
+            maxWidthCm = 500,
+            minHeightCm = 1,
+            maxHeightCm = 200,
+            pricingHeightCm = 154,
+            pricingMultiplier = 1,
+            fixedPrice = (decimal?)null
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("400");
-        body.Should().Contain("200");
+        body.Should().Contain("minWidthCm");
+        body.Should().Contain("pricingHeightCm");
     }
 
     [Fact]
@@ -107,15 +109,17 @@ public class AdminSizesControllerTests : IClassFixture<TestWebApplicationFactory
     {
         var response = await AdminClient().PostAsJsonAsync("/api/admin/sizes", new
         {
-            widthCm = (int?)300,
-            heightCm = (int?)150,
-            isCustomWidth = false,
-            isCustomHeight = false,
             name = "GhostSize",
             isActive = true,
             materialId = 99999,
-            fixedPrice = (decimal?)null,
-            sortOrder = 1
+            sortOrder = 1,
+            minWidthCm = 1,
+            maxWidthCm = 500,
+            minHeightCm = 1,
+            maxHeightCm = 150,
+            pricingHeightCm = 150,
+            pricingMultiplier = 1,
+            fixedPrice = (decimal?)null
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -128,18 +132,19 @@ public class AdminSizesControllerTests : IClassFixture<TestWebApplicationFactory
     {
         var materialId = await GetFirstMaterialIdAsync();
 
-        // Create a size first
         var createResp = await AdminClient().PostAsJsonAsync("/api/admin/sizes", new
         {
-            widthCm = (int?)350,
-            heightCm = (int?)175,
-            isCustomWidth = false,
-            isCustomHeight = false,
             name = "ToUpdate-" + Guid.NewGuid().ToString("N")[..8],
             isActive = true,
             materialId,
-            fixedPrice = (decimal?)null,
-            sortOrder = 98
+            sortOrder = 98,
+            minWidthCm = 1,
+            maxWidthCm = 500,
+            minHeightCm = 1,
+            maxHeightCm = 200,
+            pricingHeightCm = 154,
+            pricingMultiplier = 1,
+            fixedPrice = (decimal?)null
         });
         createResp.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = JsonSerializer.Deserialize<JsonElement>(
@@ -148,15 +153,17 @@ public class AdminSizesControllerTests : IClassFixture<TestWebApplicationFactory
 
         var response = await AdminClient().PutAsJsonAsync($"/api/admin/sizes/{id}", new
         {
-            widthCm = (int?)400,
-            heightCm = (int?)200,
-            isCustomWidth = false,
-            isCustomHeight = false,
             name = "UpdatedSize",
             isActive = false,
             materialId,
-            fixedPrice = (decimal?)500m,
-            sortOrder = 97
+            sortOrder = 97,
+            minWidthCm = 1,
+            maxWidthCm = 500,
+            minHeightCm = 1,
+            maxHeightCm = 300,
+            pricingHeightCm = 180,
+            pricingMultiplier = 2,
+            fixedPrice = (decimal?)500m
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -171,15 +178,17 @@ public class AdminSizesControllerTests : IClassFixture<TestWebApplicationFactory
 
         var response = await AdminClient().PutAsJsonAsync("/api/admin/sizes/99999", new
         {
-            widthCm = (int?)300,
-            heightCm = (int?)150,
-            isCustomWidth = false,
-            isCustomHeight = false,
             name = "Ghost",
             isActive = true,
             materialId,
-            fixedPrice = (decimal?)null,
-            sortOrder = 1
+            sortOrder = 1,
+            minWidthCm = 1,
+            maxWidthCm = 500,
+            minHeightCm = 1,
+            maxHeightCm = 154,
+            pricingHeightCm = 154,
+            pricingMultiplier = 1,
+            fixedPrice = (decimal?)null
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -192,18 +201,19 @@ public class AdminSizesControllerTests : IClassFixture<TestWebApplicationFactory
     {
         var materialId = await GetFirstMaterialIdAsync();
 
-        // Create a size with no orders attached
         var createResp = await AdminClient().PostAsJsonAsync("/api/admin/sizes", new
         {
-            widthCm = (int?)999,
-            heightCm = (int?)888,
-            isCustomWidth = false,
-            isCustomHeight = false,
             name = "DeleteMe-" + Guid.NewGuid().ToString("N")[..8],
             isActive = false,
             materialId,
-            fixedPrice = (decimal?)null,
-            sortOrder = 100
+            sortOrder = 100,
+            minWidthCm = 1,
+            maxWidthCm = 999,
+            minHeightCm = 1,
+            maxHeightCm = 888,
+            pricingHeightCm = 154,
+            pricingMultiplier = 1,
+            fixedPrice = (decimal?)null
         });
         createResp.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = JsonSerializer.Deserialize<JsonElement>(

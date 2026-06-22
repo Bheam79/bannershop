@@ -313,48 +313,20 @@ public sealed class DesignRequestService : IDesignRequestService
     /// <summary>
     /// Maps a banner dimension string to a concrete <see cref="BannerSize"/> and returns its
     /// production cost. Accepts legacy '16:9'/'18:9' strings and the new 'WxH' format (e.g. '250x150').
-    /// Prefers an exact fixed-width match; falls back to a custom-width size with the same height;
-    /// returns 0 / null when no matching size exists so the manual flow degrades to design-fee-only.
+    ///
+    /// BANNERSH-255: uses <see cref="IPricingService.FindCheapestAsync"/> to locate the cheapest
+    /// matching pricing rule across all materials. Returns 0 / null when no rule covers the
+    /// derived dimensions so the manual flow degrades to design-fee-only.
     /// </summary>
     private async Task<(decimal PriceNok, int? BannerSizeId, int? CustomWidthCm)> ResolveBannerProductionCostAsync(
         string aspectRatio, CancellationToken ct)
     {
         var (targetWidthCm, targetHeightCm) = ParseDimensions(aspectRatio);
 
-        // Prefer an exact fixed-width match — avoids the custom-width surcharge.
-        var exact = await _db.BannerSizes
-            .Include(s => s.Material)
-            .Where(s => s.IsActive
-                     && !s.IsCustomWidth
-                     && s.WidthCm == targetWidthCm
-                     && s.HeightCm == targetHeightCm)
-            .OrderBy(s => s.SortOrder)
-            .FirstOrDefaultAsync(ct);
-        if (exact is not null)
-        {
-            var price = await _pricing.CalculatePriceAsync(exact);
-            return (decimal.Round(price, 2), exact.Id, null);
-        }
+        var match = await _pricing.FindCheapestAsync(targetWidthCm, targetHeightCm, materialId: null, ct);
+        if (match is not null)
+            return (decimal.Round(match.PriceNok, 2), match.Rule.Id, targetWidthCm);
 
-        // Fall back to a custom-width size of the same height.
-        var custom = await _db.BannerSizes
-            .Include(s => s.Material)
-            .Where(s => s.IsActive && s.IsCustomWidth && s.HeightCm == targetHeightCm)
-            .OrderBy(s => s.SortOrder)
-            .FirstOrDefaultAsync(ct);
-        if (custom is not null)
-        {
-            // BANNERSH-250: skip the `custom_width_surcharge` — the width here is
-            // derived from the customer's chosen aspect ratio (e.g. 16:9 → 267×150),
-            // not a width they explicitly typed in as a custom size. This mirrors
-            // the AI flow (loadTilpassPricing passes noSurcharge=true) so manual
-            // and AI orders cost the same for the same dimensions.
-            var price = await _pricing.CalculatePriceAsync(custom, targetWidthCm, skipCustomSurcharge: true);
-            return (decimal.Round(price, 2), custom.Id, targetWidthCm);
-        }
-
-        // No matching size — log so admins notice the catalog gap. The manual flow still
-        // works, the customer just only pays the design fee (same as pre-104 behaviour).
         _log.LogWarning(
             "ResolveBannerProductionCostAsync: no BannerSize matches aspectRatio={Ratio} ({W}×{H} cm). " +
             "Falling back to design-fee-only pricing.",

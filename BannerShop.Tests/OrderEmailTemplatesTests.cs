@@ -18,12 +18,14 @@ public class OrderEmailTemplatesTests
     {
         var user = new User { Id = 1, Name = "Ola Nordmann", Email = "ola@example.com", PasswordHash = "x", Role = UserRole.Customer };
         var mat  = new Material { Id = 1, Name = "400g Frontlit", WidthCm = 160, MaxBannerWidthCm = 160, WeightGsm = 400, PricePerSqm = 180m };
-        var size = new BannerSize { Id = 1, Name = "300 × 150 cm", WidthCm = 300, HeightCm = 150, IsActive = true, MaterialId = 1, Material = mat };
+        // BANNERSH-255: BannerSize is now a range-based pricing rule.
+        var size = new BannerSize { Id = 1, Name = "400g h 1–154", IsActive = true, MaterialId = 1, Material = mat, MinWidthCm = 1, MaxWidthCm = 500, MinHeightCm = 1, MaxHeightCm = 154, PricingHeightCm = 154, PricingMultiplier = 1 };
         var item = new OrderItem
         {
             Id = 1,
             BannerSizeId = 1,
             BannerSize = size,
+            CustomWidthCm = 300,
             HeightCm = 150,
             Quantity = 2,
             AreaSqm = 9m,
@@ -80,7 +82,9 @@ public class OrderEmailTemplatesTests
         var html = OrderEmailTemplates.BuildOrderConfirmationHtml(order);
 
         // The size name is HTML-encoded by WebUtility.HtmlEncode (× → &#215;)
-        html.Should().Contain("300 &#215; 150 cm");
+        // BANNERSH-255: dimensions now formatted directly into the cell ("WxH cm");
+        // the × character flows through unescaped because it's emitted via a string literal.
+        html.Should().Contain("300×150 cm");
         // Norwegian nb-NO uses NO-BREAK SPACE (U+00A0) as the thousands separator
         html.Should().Contain("1 080");  // 1 080,00 kr
     }
@@ -191,8 +195,10 @@ public class OrderEmailTemplatesTests
     [Fact]
     public void BuildOrderConfirmationHtml_ItemNullWidth_ShowsHeightOnly()
     {
+        // BANNERSH-255: BannerSize has no WidthCm column; only the per-item
+        // CustomWidthCm carries the actual width. Old orders may have null
+        // CustomWidthCm — in that case the email falls back to height-only.
         var order = MakeOrder();
-        order.Items.First().BannerSize!.WidthCm = null;
         order.Items.First().CustomWidthCm = null;
 
         var html = OrderEmailTemplates.BuildOrderConfirmationHtml(order);

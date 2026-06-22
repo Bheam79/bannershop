@@ -34,7 +34,11 @@ public class AdminSizesController : ControllerBase
         var result = new List<BannerSizeDto>(sizes.Count);
         foreach (var s in sizes)
         {
-            var price = await _pricing.CalculatePriceAsync(s);
+            // Sample the lower-left corner of the range for the admin "calculated price"
+            // column — gives a quick sanity check of the formula output.
+            var sampleWidth  = s.MinWidthCm  > 0 ? s.MinWidthCm  : 1;
+            var sampleHeight = s.MinHeightCm > 0 ? s.MinHeightCm : 1;
+            var price = await _pricing.CalculatePriceAsync(s, sampleWidth, sampleHeight);
             result.Add(ToDto(s, price));
         }
         return Ok(result);
@@ -49,21 +53,25 @@ public class AdminSizesController : ControllerBase
 
         var s = new BannerSize
         {
-            WidthCm = req.WidthCm,
-            HeightCm = req.HeightCm,
-            IsCustomWidth = req.IsCustomWidth,
-            IsCustomHeight = req.IsCustomHeight,
             Name = req.Name,
             IsActive = req.IsActive,
             MaterialId = req.MaterialId,
-            FixedPrice = req.FixedPrice,
-            SortOrder = req.SortOrder
+            SortOrder = req.SortOrder,
+            MinWidthCm = req.MinWidthCm,
+            MaxWidthCm = req.MaxWidthCm,
+            MinHeightCm = req.MinHeightCm,
+            MaxHeightCm = req.MaxHeightCm,
+            PricingHeightCm = req.PricingHeightCm,
+            PricingMultiplier = req.PricingMultiplier <= 0 ? 1 : req.PricingMultiplier,
+            FixedPrice = req.FixedPrice
         };
         _db.BannerSizes.Add(s);
         await _db.SaveChangesAsync();
 
         await _db.Entry(s).Reference(x => x.Material).LoadAsync();
-        var price = await _pricing.CalculatePriceAsync(s);
+        var price = await _pricing.CalculatePriceAsync(s,
+            s.MinWidthCm > 0 ? s.MinWidthCm : 1,
+            s.MinHeightCm > 0 ? s.MinHeightCm : 1);
         return CreatedAtAction(nameof(GetAll), new { }, ToDto(s, price));
     }
 
@@ -77,22 +85,25 @@ public class AdminSizesController : ControllerBase
         if (req.MaterialId != s.MaterialId && !await _db.Materials.AnyAsync(m => m.Id == req.MaterialId))
             return BadRequest(new { error = "Material not found." });
 
-        s.WidthCm = req.WidthCm;
-        s.HeightCm = req.HeightCm;
-        s.IsCustomWidth = req.IsCustomWidth;
-        s.IsCustomHeight = req.IsCustomHeight;
         s.Name = req.Name;
         s.IsActive = req.IsActive;
         s.MaterialId = req.MaterialId;
-        s.FixedPrice = req.FixedPrice;
         s.SortOrder = req.SortOrder;
+        s.MinWidthCm = req.MinWidthCm;
+        s.MaxWidthCm = req.MaxWidthCm;
+        s.MinHeightCm = req.MinHeightCm;
+        s.MaxHeightCm = req.MaxHeightCm;
+        s.PricingHeightCm = req.PricingHeightCm;
+        s.PricingMultiplier = req.PricingMultiplier <= 0 ? 1 : req.PricingMultiplier;
+        s.FixedPrice = req.FixedPrice;
         await _db.SaveChangesAsync();
 
-        // Reload material if it changed
         if (s.Material.Id != req.MaterialId)
             await _db.Entry(s).Reference(x => x.Material).LoadAsync();
 
-        var price = await _pricing.CalculatePriceAsync(s);
+        var price = await _pricing.CalculatePriceAsync(s,
+            s.MinWidthCm > 0 ? s.MinWidthCm : 1,
+            s.MinHeightCm > 0 ? s.MinHeightCm : 1);
         return Ok(ToDto(s, price));
     }
 
@@ -115,13 +126,17 @@ public class AdminSizesController : ControllerBase
     private static BannerSizeDto ToDto(BannerSize s, decimal price) => new()
     {
         Id = s.Id,
-        WidthCm = s.WidthCm,
-        HeightCm = s.HeightCm,
-        IsCustomWidth = s.IsCustomWidth,
-        IsCustomHeight = s.IsCustomHeight,
         Name = s.Name,
         IsActive = s.IsActive,
         MaterialId = s.MaterialId,
+        SortOrder = s.SortOrder,
+        MinWidthCm = s.MinWidthCm,
+        MaxWidthCm = s.MaxWidthCm,
+        MinHeightCm = s.MinHeightCm,
+        MaxHeightCm = s.MaxHeightCm,
+        PricingHeightCm = s.PricingHeightCm,
+        PricingMultiplier = s.PricingMultiplier,
+        FixedPrice = s.FixedPrice,
         Material = new MaterialDto
         {
             Id = s.Material.Id,
@@ -132,8 +147,6 @@ public class AdminSizesController : ControllerBase
             PricePerSqm = s.Material.PricePerSqm,
             AvailableFrom = s.Material.AvailableFrom
         },
-        FixedPrice = s.FixedPrice,
-        SortOrder = s.SortOrder,
         CalculatedPrice = price,
         AvailableFrom = s.Material.AvailableFrom
     };

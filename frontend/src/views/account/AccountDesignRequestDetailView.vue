@@ -15,7 +15,7 @@ import {
   type PaywallOptions,
 } from '@/api/designRequests'
 import { getBannerDesign } from '@/api/bannerBuilder'
-import { fetchSizes } from '@/api/shop'
+import { fetchPrice } from '@/api/shop'
 import { formatNok, formatDateTime } from '@/utils/format'
 import { drStatusCustomerLabel as statusLabel, drStatusClass as statusClass } from '@/utils/orderStatus'
 import { generateRequestIntegrity } from '@/composables/useRequestIntegrity'
@@ -309,18 +309,17 @@ async function reorder() {
   reorderError.value = null
   try {
     const design = await getBannerDesign(request.value.finalBannerDesignId)
-    const sizes = await fetchSizes(design.computedWidthCm)
-    const pricingSize = sizes.find(
-      (s) => s.isCustomWidth && s.heightCm === design.selectedHeightCm,
-    )
-    if (pricingSize && pricingSize.calculatedPrice != null) {
+    // BANNERSH-255: ask the server for the cheapest matching pricing rule.
+    const priceResp = await fetchPrice(design.computedWidthCm, design.selectedHeightCm)
+    if (priceResp) {
       cart.addItem({
-        bannerSizeId: pricingSize.id,
+        bannerSizeId: priceResp.sizeId,
         bannerSizeName: `AI banner ${design.computedWidthCm} × ${design.selectedHeightCm} cm`,
-        customWidthCm: design.computedWidthCm,
+        materialId: priceResp.materialId,
+        widthCm: design.computedWidthCm,
         heightCm: design.selectedHeightCm,
         quantity: 1,
-        unitPriceNok: pricingSize.calculatedPrice,
+        unitPriceNok: priceResp.priceNok,
         eyeletOption: 'None',
         eyeletFeeNok: 0,
         designId: request.value.finalBannerDesignId,

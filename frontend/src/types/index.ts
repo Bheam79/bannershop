@@ -15,18 +15,26 @@ export interface Material {
   availableFrom: string | null
 }
 
+/**
+ * Banner pricing rule. BANNERSH-255 — replaced the old "concrete size +
+ * IsCustomWidth/IsCustomHeight" model with a range-based rule table. Each row
+ * defines (material × widthRange × heightRange) plus either a fixed price OR a
+ * pricing-formula override (pricingHeightCm × pricingMultiplier).
+ */
 export interface BannerSize {
   id: number
-  widthCm: number | null
-  heightCm: number
-  isCustomWidth: boolean
-  isCustomHeight: boolean
   name: string
   isActive: boolean
   materialId: number
   material?: Material
-  fixedPrice: number | null
   sortOrder: number
+  minWidthCm: number
+  maxWidthCm: number
+  minHeightCm: number
+  maxHeightCm: number
+  pricingHeightCm: number
+  pricingMultiplier: number
+  fixedPrice: number | null
   calculatedPrice?: number
   availableFrom?: string | null
 }
@@ -109,7 +117,9 @@ export interface OrderItem {
   id: number
   bannerSizeId: number | null
   bannerSizeName: string | null
+  /** Actual banner width in cm chosen by the customer (BANNERSH-255). */
   customWidthCm: number | null
+  /** Actual banner height in cm chosen by the customer. */
   heightCm: number
   quantity: number
   areaSqm: number
@@ -167,9 +177,17 @@ export function countEyelets(widthCm: number, heightCm: number, option: EyeletOp
 // ─── Cart (frontend only) ────────────────────────────────────────────────────
 
 export interface CartItem {
+  /**
+   * Optional explicit pricing-rule id (<c>BannerSize</c>). When omitted the
+   * server picks the cheapest matching rule on submit. BANNERSH-255.
+   */
   bannerSizeId: number | null
   bannerSizeName: string
-  customWidthCm: number | null
+  /** Material id — used by the server when picking the cheapest matching rule. */
+  materialId?: number
+  /** Actual banner width in cm. Always populated post-BANNERSH-255. */
+  widthCm: number
+  /** Actual banner height in cm. */
   heightCm: number
   quantity: number
   /** Base banner price per unit (excl. eyelets). */
@@ -202,10 +220,4 @@ export interface CartItem {
    * a round-trip. Falls back to `getBannerDesign(designId)` when missing.
    */
   previewUrl?: string
-  /**
-   * When true the backend skips the `custom_width_surcharge` when computing the
-   * unit price.  Set for AI banner items whose dimensions are derived automatically
-   * (not manually chosen as a custom size by the customer) — BANNERSH-228.
-   */
-  skipCustomSurcharge?: boolean
 }

@@ -11,32 +11,39 @@ export async function fetchMaterials(): Promise<Material[]> {
 
 // ─── Banner size endpoints ──────────────────────────────────────────────────
 
-/** Fetches all active banner sizes with calculated prices (custom-width sizes use the optional width). */
-export async function fetchSizes(customWidthCm?: number): Promise<BannerSize[]> {
-  const params: Record<string, number> = {}
-  if (customWidthCm) params.customWidthCm = customWidthCm
-  const { data } = await apiClient.get<BannerSize[]>('/sizes', { params })
+/**
+ * Fetches all active banner pricing rules. BANNERSH-255 — each row describes a
+ * (material × widthRange × heightRange) combo plus a pricing formula, NOT a
+ * single concrete size. Callers that need a price for specific dimensions
+ * should use {@link fetchPrice} which returns the cheapest matching rule.
+ */
+export async function fetchSizes(): Promise<BannerSize[]> {
+  const { data } = await apiClient.get<BannerSize[]>('/sizes')
   return data
 }
 
-/** Fetches a single price for a banner size (optionally for a custom width).
- *  Pass noSurcharge=true to omit the custom-width surcharge — used when
- *  dimensions are derived automatically (e.g. the AI quality-picker) rather
- *  than explicitly requested as a custom size by the customer.
+interface PriceResponseDto {
+  sizeId: number
+  widthCm: number
+  heightCm: number
+  materialId: number
+  priceNok: number
+}
+
+/**
+ * Looks up the cheapest matching pricing rule for the given banner dimensions.
+ * Optionally pin to a specific material. Returns the resolved size id alongside
+ * the price so callers can persist the chosen rule on the cart line.
  */
 export async function fetchPrice(
-  sizeId: number,
-  customWidthCm?: number,
-  noSurcharge?: boolean,
-): Promise<number> {
-  const params: Record<string, number | boolean> = {}
-  if (customWidthCm) params.customWidthCm = customWidthCm
-  if (noSurcharge) params.noCustomSurcharge = true
-  const { data } = await apiClient.get<{ priceNok: number }>(
-    `/sizes/${sizeId}/price`,
-    { params },
-  )
-  return data.priceNok
+  widthCm: number,
+  heightCm: number,
+  materialId?: number,
+): Promise<PriceResponseDto> {
+  const params: Record<string, number> = { widthCm, heightCm }
+  if (materialId) params.materialId = materialId
+  const { data } = await apiClient.get<PriceResponseDto>('/sizes/price', { params })
+  return data
 }
 
 /** Returns the current price per eyelet (malje) in NOK. */
@@ -52,8 +59,9 @@ export type PackingMode = 'Rolled' | 'Folded'
 export interface ShippingCalculateRequest {
   postalCode: string
   city?: string
-  bannerSizeId: number
-  customWidthCm?: number
+  materialId: number
+  widthCm: number
+  heightCm: number
   qty: number
   /** BANNERSH-143 — defaults to Rolled when omitted. */
   packingMode?: PackingMode
@@ -84,8 +92,9 @@ export async function calculateShipping(
 // ─── Parcel preview (no postal code) — BANNERSH-180 ─────────────────────────
 
 export interface ParcelPreviewRequest {
-  bannerSizeId: number
-  customWidthCm?: number
+  materialId: number
+  widthCm: number
+  heightCm: number
   qty: number
   packingMode: PackingMode
 }

@@ -7,10 +7,15 @@ using Xunit;
 
 namespace BannerShop.Tests;
 
+/// <summary>
+/// Tests for <see cref="PricingService"/> against the BANNERSH-255 range-based
+/// pricing rules. Each <see cref="BannerSize"/> defines a (width × height)
+/// range, a pricing height that overrides the actual height in the formula, and
+/// a multiplier (1×, 2×, 3× …) so the admin can encode banner gluing tiers
+/// without an external panel calculator.
+/// </summary>
 public class PricingServiceTests
 {
-    // ── Helpers ──────────────────────────────────────────────────────────────
-
     private static (PricingService service, BannerShop.Infrastructure.Data.BannerShopDbContext db) CreateSeeded()
     {
         var db = DbHelper.CreateInMemory();
@@ -18,82 +23,131 @@ public class PricingServiceTests
         return (new PricingService(db), db);
     }
 
-    // ── Fixed price sizes ────────────────────────────────────────────────────
+    // ── Fixed price rules ────────────────────────────────────────────────────
 
     [Fact]
-    public async Task CalculatePrice_FixedPriceSize_ReturnsFixedPriceWithoutDbLookup()
+    public async Task CalculatePrice_FixedPriceRule_ReturnsFixedPriceIgnoringDims()
     {
-        // No pricing params seeded → if formula runs it would return default values.
-        // The fixed-price path must return early.
         var db = DbHelper.CreateInMemory();
         var service = new PricingService(db);
 
         var material = DbHelper.MakeMaterial();
-        var size = DbHelper.MakeStandardSize(1, 300, 180, material, fixedPrice: 699m);
+        var rule = DbHelper.MakeSizeRule(1, material, 1, 500, 1, 500, pricingHeight: 150, multiplier: 1, fixedPrice: 699m);
 
-        var price = await service.CalculatePriceAsync(size);
+        var price = await service.CalculatePriceAsync(rule, 300, 180);
 
         price.Should().Be(699m);
     }
 
     [Fact]
-    public async Task CalculatePrice_FixedPriceSize_IgnoresCustomWidthCm()
+    public async Task CalculatePrice_FixedPriceRule_IgnoresMultiplier()
     {
-        var db = DbHelper.CreateInMemory();
-        var service = new PricingService(db);
-
+        // FixedPrice short-circuits the formula AND the multiplier.
+        var (service, _) = CreateSeeded();
         var material = DbHelper.MakeMaterial();
-        var size = DbHelper.MakeStandardSize(1, 300, 180, material, fixedPrice: 499m);
+        var rule = DbHelper.MakeSizeRule(1, material, 1, 500, 1, 500, pricingHeight: 150, multiplier: 3, fixedPrice: 499m);
 
-        // customWidthCm should be ignored for fixed-price sizes
-        var price = await service.CalculatePriceAsync(size, customWidthCm: 999);
+        var price = await service.CalculatePriceAsync(rule, 400, 400);
 
         price.Should().Be(499m);
     }
 
-    // ── Standard sizes (formula-based) ───────────────────────────────────────
+    // ── Formula-based rules ─────────────────────────────────────────────────
 
     [Fact]
-    public async Task CalculatePrice_StandardSizeLargeArea_ReturnsAreaTimesBasePricePerSqm()
+    public async Task CalculatePrice_StandardRule_AppliesAreaTimesBasePrice()
     {
-        // 300cm × 150cm = 4.5 sqm; 4.5 × 180 = 810 > minimum 399
+        // 300 cm × pricingHeight 150 cm × 180 NOK/m² = 810 NOK
         var (service, _) = CreateSeeded();
-        var material = DbHelper.MakeMaterial(weightGsm: 400);
-        var size = DbHelper.MakeStandardSize(1, 300, 150, material);
+        var material = DbHelper.MakeMaterial();
+        var rule = DbHelper.MakeSizeRule(1, material, 1, 500, 1, 154, pricingHeight: 150, multiplier: 1);
 
-        var price = await service.CalculatePriceAsync(size);
+        var price = await service.CalculatePriceAsync(rule, widthCm: 300, heightCm: 100);
 
         price.Should().Be(810m);
     }
 
     [Fact]
-    public async Task CalculatePrice_StandardSizeSmallArea_ReturnsMinimumPrice()
+    public async Task CalculatePrice_SmallBanner_ClampsToMinimum()
     {
-        // 50cm × 50cm = 0.25 sqm; 0.25 × 180 = 45 < minimum 399 → returns 399
+        // 50 × 50 cm × 180 NOK/m² = 45 NOK < 399 minimum → 399
         var (service, _) = CreateSeeded();
         var material = DbHelper.MakeMaterial();
-        var size = DbHelper.MakeStandardSize(1, 50, 50, material);
+        var rule = DbHelper.MakeSizeRule(1, material, 1, 500, 1, 154, pricingHeight: 50, multiplier: 1);
 
-        var price = await service.CalculatePriceAsync(size);
+        var price = await service.CalculatePriceAsync(rule, widthCm: 50, heightCm: 50);
 
         price.Should().Be(399m);
     }
 
     [Fact]
-    public async Task CalculatePrice_StandardSizeExactlyAtMinimum_ReturnsMinimumPrice()
+    public async Task CalculatePrice_PricingHeightOverridesActualHeight()
     {
-        // ~150cm × 148cm ≈ 2.22sqm; 2.22 × 180 = 399.6 ≥ 399 — result is formula price
-        // But with 100cm × 100cm = 1sqm; 1 × 180 = 180 < 399 → minimum
+        // pricingHeight = 154; actualHeight = 100. The customer is charged for 154 cm.
+        // (200/100) × (154/100) × 180 = 554.4
         var (service, _) = CreateSeeded();
         var material = DbHelper.MakeMaterial();
-        var size = DbHelper.MakeStandardSize(1, 100, 100, material);
+        var rule = DbHelper.MakeSizeRule(1, material, 1, 500, 1, 154, pricingHeight: 154, multiplier: 1);
 
-        var price = await service.CalculatePriceAsync(size);
+        var price = await service.CalculatePriceAsync(rule, widthCm: 200, heightCm: 100);
 
-        price.Should().Be(399m);
+        // 2 × 1.54 × 180 = 554.4, > 399 minimum
+        price.Should().Be(554.4m);
     }
 
-    // ── Eyelet (malje) addon ─────────────────────────────────────────────────────
+    [Fact]
+    public async Task CalculatePrice_MultiplierApplied()
+    {
+        // Tier 2 rule (multiplier=2). 300 cm wide × 154 cm pricingHeight × 180 NOK/m² = 831.6 × 2 = 1663.2
+        var (service, _) = CreateSeeded();
+        var material = DbHelper.MakeMaterial();
+        var rule = DbHelper.MakeSizeRule(1, material, 1, 500, 154, 300, pricingHeight: 154, multiplier: 2);
+
+        var price = await service.CalculatePriceAsync(rule, widthCm: 300, heightCm: 200);
+
+        // 3 × 1.54 × 180 = 831.6; × 2 = 1663.2
+        price.Should().Be(1663.2m);
+    }
+
+    [Fact]
+    public async Task CalculatePrice_UsesPerMaterialPricePerSqm()
+    {
+        // Material with pricePerSqm = 140 instead of global 180.
+        var (service, _) = CreateSeeded();
+        var material = DbHelper.MakeMaterial(pricePerSqm: 140m);
+        var rule = DbHelper.MakeSizeRule(1, material, 1, 500, 1, 200, pricingHeight: 180, multiplier: 1);
+
+        var price = await service.CalculatePriceAsync(rule, widthCm: 300, heightCm: 180);
+
+        // 3 × 1.8 × 140 = 756
+        price.Should().Be(756m);
+    }
+
+    [Fact]
+    public async Task CalculatePrice_MissingMaterialNavigation_FallsBackToGlobalParameter()
+    {
+        var (service, _) = CreateSeeded();
+        var rule = new BannerSize
+        {
+            Id = 1,
+            Name = "no-mat",
+            MaterialId = 1,
+            MinWidthCm = 1,
+            MaxWidthCm = 500,
+            MinHeightCm = 1,
+            MaxHeightCm = 200,
+            PricingHeightCm = 150,
+            PricingMultiplier = 1,
+            Material = null!
+        };
+
+        var price = await service.CalculatePriceAsync(rule, widthCm: 300, heightCm: 150);
+
+        // Falls back to global 180 NOK/m²: 3 × 1.5 × 180 = 810
+        price.Should().Be(810m);
+    }
+
+    // ── Eyelet (malje) addon ─────────────────────────────────────────────────
 
     [Fact]
     public async Task CalculateEyeletCost_NoneOption_ReturnsZero()
@@ -110,280 +164,71 @@ public class PricingServiceTests
     public async Task CalculateEyeletCost_FourCorners_ReturnsFourTimesPrice()
     {
         var db = DbHelper.CreateInMemory();
-        db.PricingParameters.AddRange(
-            new PricingParameter { Id = 4, Name = "eyelet", Key = "eyelet_price_nok", Value = 10m }
-        );
+        db.PricingParameters.Add(new PricingParameter { Id = 4, Name = "eyelet", Key = "eyelet_price_nok", Value = 10m });
         db.SaveChanges();
 
         var service = new PricingService(db);
         var (fee, count) = await service.CalculateEyeletCostAsync(300, 150, EyeletOption.FourCorners);
 
         count.Should().Be(4);
-        fee.Should().Be(40m); // 4 × 10
+        fee.Should().Be(40m);
     }
 
+    // ── FindCheapestAsync ───────────────────────────────────────────────────
+
     [Fact]
-    public async Task CalculateEyeletCost_PerMeter_300x150_Returns10Eyelets()
+    public async Task FindCheapest_ReturnsCheapestMatchingRule()
     {
-        // 300cm width: 2 intermediates per side (at 100 and 200) → top+bottom = 4
-        // 150cm height: 1 intermediate per side (at 75) → left+right = 2
-        // Total: 4 corners + 4 + 2 = 10 eyelets
-        var db = DbHelper.CreateInMemory();
-        db.PricingParameters.Add(new PricingParameter { Id = 4, Name = "eyelet", Key = "eyelet_price_nok", Value = 15m });
+        var (service, db) = CreateSeeded();
+        var mat = DbHelper.MakeMaterial(maxBannerWidthCm: 160);
+        db.Materials.Add(mat);
+
+        // Two competing rules. Rule A: formula price 810; Rule B: fixedPrice 499.
+        db.BannerSizes.AddRange(
+            DbHelper.MakeSizeRule(10, mat, 1, 500, 1, 200, pricingHeight: 150, multiplier: 1),
+            DbHelper.MakeSizeRule(11, mat, 200, 400, 100, 200, pricingHeight: 150, multiplier: 1, fixedPrice: 499m)
+        );
         db.SaveChanges();
 
-        var service = new PricingService(db);
-        var (fee, count) = await service.CalculateEyeletCostAsync(300, 150, EyeletOption.PerMeter);
+        var match = await service.FindCheapestAsync(widthCm: 300, heightCm: 150, materialId: mat.Id);
 
-        count.Should().Be(10);
-        fee.Should().Be(150m); // 10 × 15
+        match.Should().NotBeNull();
+        match!.PriceNok.Should().Be(499m);
+        match.Rule.Id.Should().Be(11);
     }
 
     [Fact]
-    public async Task CalculateEyeletCost_PerMeter_ZeroPriceParam_ReturnsZeroFeeNonZeroCount()
+    public async Task FindCheapest_NoMatch_ReturnsNull()
     {
-        // If admin hasn't set a price yet (0m), count is computed but fee is 0.
-        var (service, _) = CreateSeeded(); // seeded eyelet_price_nok = 0m
+        var (service, db) = CreateSeeded();
+        var mat = DbHelper.MakeMaterial();
+        db.Materials.Add(mat);
+        db.BannerSizes.Add(DbHelper.MakeSizeRule(10, mat, 1, 100, 1, 100, pricingHeight: 100, multiplier: 1));
+        db.SaveChanges();
 
-        var (fee, count) = await service.CalculateEyeletCostAsync(300, 150, EyeletOption.PerMeter);
+        // Banner too tall — outside any rule's range.
+        var match = await service.FindCheapestAsync(widthCm: 50, heightCm: 500, materialId: mat.Id);
 
-        count.Should().Be(10);
-        fee.Should().Be(0m);
+        match.Should().BeNull();
     }
 
     [Fact]
-    public async Task CalculatePrice_UsesPerMaterialPricePerSqm_NotGlobalParameter()
+    public async Task FindCheapest_AcrossAllMaterials_PicksAnyCheapest()
     {
-        // Global base_price_per_sqm = 180; material has PricePerSqm = 140 (e.g. 680g heavy-duty).
-        // 300cm × 150cm = 4.5 sqm; 4.5 × 140 = 630 > minimum 399 → result must be 630, not 810.
-        var (service, _) = CreateSeeded(); // global seeded with 180 NOK/m²
-        var material = DbHelper.MakeMaterial(pricePerSqm: 140m); // diverges from global
-        var size = DbHelper.MakeStandardSize(1, 300, 150, material);
+        var (service, db) = CreateSeeded();
+        var matA = DbHelper.MakeMaterial(id: 10, pricePerSqm: 200m);
+        var matB = DbHelper.MakeMaterial(id: 11, pricePerSqm: 100m);
+        db.Materials.AddRange(matA, matB);
 
-        var price = await service.CalculatePriceAsync(size);
+        db.BannerSizes.AddRange(
+            DbHelper.MakeSizeRule(20, matA, 1, 500, 1, 200, pricingHeight: 150, multiplier: 1),
+            DbHelper.MakeSizeRule(21, matB, 1, 500, 1, 200, pricingHeight: 150, multiplier: 1)
+        );
+        db.SaveChanges();
 
-        price.Should().Be(630m); // 4.5 × 140 = 630
-    }
+        var match = await service.FindCheapestAsync(widthCm: 300, heightCm: 150, materialId: null);
 
-    [Fact]
-    public async Task CalculatePrice_MissingMaterialNavigation_FallsBackToGlobalParameter()
-    {
-        // When Material is null (caller forgot .Include), the service falls back to the
-        // global base_price_per_sqm parameter (180 NOK/m²) so it never crashes.
-        var (service, _) = CreateSeeded();
-        var size = new BannerSize
-        {
-            Id = 1,
-            WidthCm = 300,
-            HeightCm = 150,
-            IsCustomWidth = false,
-            Name = "300 × 150 cm",
-            IsActive = true,
-            MaterialId = 1,
-            Material = null! // navigation not loaded
-        };
-
-        var price = await service.CalculatePriceAsync(size);
-
-        // Falls back to global 180 NOK/m²: 4.5 × 180 = 810
-        price.Should().Be(810m);
-    }
-
-    // ── Custom-width sizes ───────────────────────────────────────────────────
-
-    [Fact]
-    public async Task CalculatePrice_CustomWidthWithWidth_IncludesCustomSurcharge()
-    {
-        // 200cm × 150cm = 3.0sqm; 3.0 × 180 = 540 > 399; + 150 surcharge = 690
-        var (service, _) = CreateSeeded();
-        var material = DbHelper.MakeMaterial();
-        var size = DbHelper.MakeCustomWidthSize(1, 150, material);
-
-        var price = await service.CalculatePriceAsync(size, customWidthCm: 200);
-
-        price.Should().Be(690m);
-    }
-
-    [Fact]
-    public async Task CalculatePrice_CustomWidthWithSmallWidth_ReturnsMinimumPlusSurcharge()
-    {
-        // 50cm × 150cm = 0.75sqm; 0.75 × 180 = 135 < 399 → use min 399; + 150 surcharge = 549
-        var (service, _) = CreateSeeded();
-        var material = DbHelper.MakeMaterial();
-        var size = DbHelper.MakeCustomWidthSize(1, 150, material);
-
-        var price = await service.CalculatePriceAsync(size, customWidthCm: 50);
-
-        price.Should().Be(549m);
-    }
-
-    [Fact]
-    public async Task CalculatePrice_CustomWidthWithoutWidth_ReturnsMinimumPlusSurcharge()
-    {
-        // No customWidthCm → widthCm = 0 → base = minimum_price; + surcharge = 399 + 150 = 549
-        var (service, _) = CreateSeeded();
-        var material = DbHelper.MakeMaterial();
-        var size = DbHelper.MakeCustomWidthSize(1, 150, material);
-
-        var price = await service.CalculatePriceAsync(size, customWidthCm: null);
-
-        price.Should().Be(549m);
-    }
-
-    // ── BANNERSH-88: multi-panel multiplier ──────────────────────────────────
-
-    [Fact]
-    public async Task CalculatePrice_BannerMinDimExceedsMax_DoublesThePrice()
-    {
-        // BANNERSH-125: panels are based on the MINIMUM dimension (the side that runs
-        // along the material roll width). Both 200 cm and 300 cm exceed max=160 cm, so
-        // min(200, 300) = 200 → 2 panels needed.
-        // 200×300 = 6.0 sqm × 180 = 1080 NOK base; ×2 panels = 2160 NOK.
-        var (service, _) = CreateSeeded();
-        var material = DbHelper.MakeMaterial(maxBannerWidthCm: 160);
-        var size = DbHelper.MakeStandardSize(1, 200, 300, material);
-
-        var price = await service.CalculatePriceAsync(size);
-
-        price.Should().Be(2160m);
-    }
-
-    [Fact]
-    public async Task CalculatePrice_BannerMinDimAtExact2xBoundary_DoublesThePrice()
-    {
-        // min dimension = 2·M − overlap = 2·160 − 5 = 315 cm → exactly 2 panels.
-        // Custom-width size with heightCm=315, customWidthCm=400.
-        // min(400, 315) = 315 → PanelsNeeded(315, 160, 5) = 2.
-        var (service, _) = CreateSeeded();
-        var material = DbHelper.MakeMaterial(maxBannerWidthCm: 160);
-        var size = DbHelper.MakeCustomWidthSize(1, 315, material);
-
-        var price = await service.CalculatePriceAsync(size, customWidthCm: 400);
-
-        // base = (400/100) × (315/100) × 180 = 4.0 × 3.15 × 180 = 2268; × 2 = 4536; + 150 surcharge (once) = 4686
-        price.Should().Be(4686m);
-    }
-
-    [Fact]
-    public async Task CalculatePrice_BannerMinDimJustOver2xBoundary_TriplesThePrice()
-    {
-        // min dimension 316 > 2·160 − 5 = 315 → 3 panels needed.
-        // Custom-width size with heightCm=316, customWidthCm=400.
-        // min(400, 316) = 316 → PanelsNeeded(316, 160, 5) = 3.
-        var (service, _) = CreateSeeded();
-        var material = DbHelper.MakeMaterial(maxBannerWidthCm: 160);
-        var size = DbHelper.MakeCustomWidthSize(1, 316, material);
-
-        var price = await service.CalculatePriceAsync(size, customWidthCm: 400);
-
-        // base = (400/100) × (316/100) × 180 = 4.0 × 3.16 × 180 = 2275.2; × 3 = 6825.6; + 150 surcharge (once) = 6975.6
-        price.Should().Be(6975.60m);
-    }
-
-    [Fact]
-    public async Task CalculatePrice_BannerLargeDimExceedsMaxButSmallDimFits_NoMultiplier()
-    {
-        // BANNERSH-125: regression test for the original bug. A 300×150 cm banner on a
-        // 160 cm material roll: widthCm=300 > 160, but heightCm=150 ≤ 160, so the banner
-        // is printed with the 150 cm side along the roll — only 1 panel needed.
-        var (service, _) = CreateSeeded();
-        var material = DbHelper.MakeMaterial(maxBannerWidthCm: 160);
-        var size = DbHelper.MakeStandardSize(1, 300, 150, material);
-
-        var price = await service.CalculatePriceAsync(size);
-
-        // 4.5 sqm × 180 = 810; ×1 panel = 810 (no multiplier)
-        price.Should().Be(810m);
-    }
-
-    [Fact]
-    public async Task CalculatePrice_BannerWidthAtOrBelowMax_NoMultiplier()
-    {
-        // 160 cm banner on 160 cm max → 1 panel.
-        var (service, _) = CreateSeeded();
-        var material = DbHelper.MakeMaterial(maxBannerWidthCm: 160);
-        var size = DbHelper.MakeStandardSize(1, 160, 150, material);
-
-        var price = await service.CalculatePriceAsync(size);
-
-        // 1.6 × 1.5 × 180 = 432, ≥ 399 minimum, ×1 = 432
-        price.Should().Be(432m);
-    }
-
-    [Fact]
-    public async Task CalculatePrice_FixedPriceSize_IgnoresPanelMultiplier()
-    {
-        // Fixed-price sizes skip the formula AND the multiplier.
-        var (service, _) = CreateSeeded();
-        var material = DbHelper.MakeMaterial(maxBannerWidthCm: 160);
-        var size = DbHelper.MakeStandardSize(1, 400, 150, material, fixedPrice: 699m);
-
-        var price = await service.CalculatePriceAsync(size);
-
-        price.Should().Be(699m);
-    }
-
-    [Fact]
-    public async Task CalculatePrice_MissingMaterialNavigation_DoesNotApplyMultiplier()
-    {
-        // Defensive: if a caller forgets to Include(s => s.Material), we should not crash
-        // and not retroactively triple legacy prices.
-        var (service, _) = CreateSeeded();
-        var size = new BannerSize
-        {
-            Id = 1,
-            WidthCm = 500,
-            HeightCm = 150,
-            IsCustomWidth = false,
-            Name = "500 × 150 cm",
-            IsActive = true,
-            MaterialId = 1,
-            Material = null! // navigation not loaded
-        };
-
-        var price = await service.CalculatePriceAsync(size);
-
-        // 5 × 1.5 × 180 = 1350; ×1 = 1350
-        price.Should().Be(1350m);
-    }
-
-    [Theory]
-    // (bannerWidth, maxPerPanel, overlap, expectedPanels)
-    [InlineData(100, 160, 5, 1)]   // smaller than max → 1
-    [InlineData(160, 160, 5, 1)]   // exactly at max → 1
-    [InlineData(161, 160, 5, 2)]   // just over max → 2
-    [InlineData(315, 160, 5, 2)]   // 2·160 − 5 boundary → 2
-    [InlineData(316, 160, 5, 3)]   // just over 2x boundary → 3
-    [InlineData(470, 160, 5, 3)]   // 3·160 − 2·5 boundary → 3
-    [InlineData(471, 160, 5, 4)]   // just over 3-panel boundary → 4
-    [InlineData(500, 180, 0, 3)]   // material 180, zero overlap, 500/180 → 3
-    [InlineData(0,   160, 5, 1)]   // degenerate width → 1
-    [InlineData(300, 0,   5, 1)]   // degenerate max → 1 (defensive)
-    public void PanelsNeeded_ReturnsExpected(int bannerWidth, int maxPerPanel, int overlap, int expected)
-    {
-        PricingService.PanelsNeeded(bannerWidth, maxPerPanel, overlap).Should().Be(expected);
-    }
-
-    [Fact]
-    public async Task CalculatePrice_StandardSize_ThrowsWhenWidthCmIsNull()
-    {
-        var (service, _) = CreateSeeded();
-        var material = DbHelper.MakeMaterial();
-        // A non-custom size with null WidthCm is a data error
-        var size = new BannerSize
-        {
-            Id = 1,
-            WidthCm = null,
-            HeightCm = 150,
-            IsCustomWidth = false,
-            Name = "Bad size",
-            IsActive = true,
-            MaterialId = material.Id,
-            Material = material
-        };
-
-        var act = () => service.CalculatePriceAsync(size);
-
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        match.Should().NotBeNull();
+        match!.Rule.MaterialId.Should().Be(matB.Id); // cheaper material wins
     }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import apiClient from '@/api/client'
 import type { BannerSize, Material } from '@/types'
 
@@ -15,15 +15,17 @@ const saving = ref(false)
 const modalError = ref('')
 const form = reactive({
   id: 0,
-  widthCm: null as number | null,
-  heightCm: 150,
-  isCustomWidth: false,
-  isCustomHeight: false,
   name: '',
   isActive: true,
   materialId: 1,
-  fixedPrice: null as number | null,
   sortOrder: 0,
+  minWidthCm: 1,
+  maxWidthCm: 500,
+  minHeightCm: 1,
+  maxHeightCm: 154,
+  pricingHeightCm: 154,
+  pricingMultiplier: 1,
+  fixedPrice: null as number | null,
 })
 
 const hasFixedPrice = ref(false)
@@ -49,9 +51,18 @@ function openCreate() {
   isEditing.value = false
   hasFixedPrice.value = false
   Object.assign(form, {
-    id: 0, widthCm: null, heightCm: 150, isCustomWidth: false, isCustomHeight: false,
-    name: '', isActive: true, materialId: materials.value[0]?.id ?? 1,
-    fixedPrice: null, sortOrder: (sizes.value.length + 1) * 10,
+    id: 0,
+    name: '',
+    isActive: true,
+    materialId: materials.value[0]?.id ?? 1,
+    sortOrder: (sizes.value.length + 1) * 10,
+    minWidthCm: 1,
+    maxWidthCm: 500,
+    minHeightCm: 1,
+    maxHeightCm: 154,
+    pricingHeightCm: 154,
+    pricingMultiplier: 1,
+    fixedPrice: null,
   })
   modalError.value = ''
   showModal.value = true
@@ -61,10 +72,18 @@ function openEdit(s: BannerSize) {
   isEditing.value = true
   hasFixedPrice.value = s.fixedPrice != null
   Object.assign(form, {
-    id: s.id, widthCm: s.widthCm, heightCm: s.heightCm,
-    isCustomWidth: s.isCustomWidth, isCustomHeight: s.isCustomHeight,
-    name: s.name, isActive: s.isActive,
-    materialId: s.materialId, fixedPrice: s.fixedPrice, sortOrder: s.sortOrder,
+    id: s.id,
+    name: s.name,
+    isActive: s.isActive,
+    materialId: s.materialId,
+    sortOrder: s.sortOrder,
+    minWidthCm: s.minWidthCm,
+    maxWidthCm: s.maxWidthCm,
+    minHeightCm: s.minHeightCm,
+    maxHeightCm: s.maxHeightCm,
+    pricingHeightCm: s.pricingHeightCm,
+    pricingMultiplier: s.pricingMultiplier,
+    fixedPrice: s.fixedPrice,
   })
   modalError.value = ''
   showModal.value = true
@@ -74,15 +93,17 @@ async function save() {
   modalError.value = ''
   saving.value = true
   const payload = {
-    widthCm: form.isCustomWidth ? null : form.widthCm,
-    heightCm: form.isCustomHeight ? 150 : form.heightCm,
-    isCustomWidth: form.isCustomWidth,
-    isCustomHeight: form.isCustomHeight,
     name: form.name,
     isActive: form.isActive,
     materialId: form.materialId,
-    fixedPrice: hasFixedPrice.value ? form.fixedPrice : null,
     sortOrder: form.sortOrder,
+    minWidthCm: form.minWidthCm,
+    maxWidthCm: form.maxWidthCm,
+    minHeightCm: form.minHeightCm,
+    maxHeightCm: form.maxHeightCm,
+    pricingHeightCm: form.pricingHeightCm,
+    pricingMultiplier: form.pricingMultiplier,
+    fixedPrice: hasFixedPrice.value ? form.fixedPrice : null,
   }
   try {
     if (isEditing.value) {
@@ -110,35 +131,13 @@ async function deleteSize(s: BannerSize) {
 }
 
 function formatPrice(s: BannerSize): string {
-  const p = s.fixedPrice ?? s.calculatedPrice
-  return p != null ? `${p.toFixed(0)} NOK` : '—'
+  if (s.fixedPrice != null) return `${s.fixedPrice.toFixed(0)} NOK (fast)`
+  if (s.calculatedPrice != null) return `${s.calculatedPrice.toFixed(0)} NOK`
+  return '—'
 }
 
-/**
- * Compute how many panels the given size needs based on the material's
- * MaxBannerWidthCm. Mirrors PricingService.PanelsNeeded server-side.
- * Returns null when width or material data are unavailable.
- *
- * BANNERSH-125: uses the minimum of width and height, since the banner is
- * oriented on the material roll so its smaller dimension runs along the roll
- * width (e.g. 300 × 150 cm on 160 cm material → height=150 fits, 1 panel).
- */
-function panelsNeeded(s: BannerSize): number | null {
-  if (s.fixedPrice != null) return null // fixed-price: panels irrelevant
-  const mat = s.material
-  if (!mat) return null
-  const maxWidth = mat.maxBannerWidthCm || mat.widthCm
-  if (!maxWidth) return null
-  const rawW = s.isCustomWidth ? null : s.widthCm
-  if (!rawW) return null // custom without width — panels unknown
-  // Use the minimum dimension: the banner is oriented so its smaller side runs
-  // along the material roll width. Only if even the smaller side exceeds the
-  // roll width do we need multiple panels.
-  const w = Math.min(rawW, s.heightCm)
-  if (w <= maxWidth) return 1
-  const overlap = 5 // matches banner_panel_overlap_cm default
-  const safeOverlap = Math.max(0, Math.min(overlap, maxWidth - 1))
-  return Math.ceil((w - safeOverlap) / (maxWidth - safeOverlap))
+function formatRange(min: number, max: number, unit = 'cm') {
+  return min === max ? `${min} ${unit}` : `${min}–${max} ${unit}`
 }
 
 function formatDate(d: string | null | undefined) {
@@ -151,11 +150,17 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="max-w-6xl mx-auto px-4 py-10">
+  <div class="max-w-7xl mx-auto px-4 py-10">
     <div class="flex items-center justify-between mb-6">
-      <h1 class="text-2xl font-bold text-white">Bannerstørrelser</h1>
+      <div>
+        <h1 class="text-2xl font-bold text-white">Bannerstørrelser (prisregler)</h1>
+        <p class="text-sm text-gray-400 mt-1">
+          Definer prisregler basert på størrelsesområder og prismultiplikator —
+          systemet velger automatisk billigste regel for kunden.
+        </p>
+      </div>
       <button @click="openCreate" class="bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-600">
-        + Ny størrelse
+        + Ny regel
       </button>
     </div>
 
@@ -168,7 +173,10 @@ onMounted(load)
           <tr>
             <th class="text-left px-4 py-3 font-medium text-gray-400">Navn</th>
             <th class="text-left px-4 py-3 font-medium text-gray-400">Materiale</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-400">Pris</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-400">Bredde-område</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-400">Høyde-område</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-400">Prisformel</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-400">Pris (eks.)</th>
             <th class="text-left px-4 py-3 font-medium text-gray-400">Status</th>
             <th class="text-left px-4 py-3 font-medium text-gray-400">Tilg. fra</th>
             <th class="px-4 py-3"></th>
@@ -176,21 +184,19 @@ onMounted(load)
         </thead>
         <tbody class="divide-y divide-gray-700">
           <tr v-for="s in sizes" :key="s.id" class="hover:bg-gray-700">
-            <td class="px-4 py-3 font-medium text-gray-200">
-              {{ s.name }}
-              <span v-if="s.isCustomWidth" class="ml-1 text-xs bg-purple-900/60 text-purple-300 px-1.5 py-0.5 rounded">Custom bredde</span>
-              <span v-if="s.isCustomHeight" class="ml-1 text-xs bg-indigo-900/60 text-indigo-300 px-1.5 py-0.5 rounded">Custom høyde</span>
-            </td>
+            <td class="px-4 py-3 font-medium text-gray-200">{{ s.name }}</td>
             <td class="px-4 py-3 text-gray-400 text-xs">{{ s.material?.name }}</td>
-            <td class="px-4 py-3 text-gray-300">
-              {{ formatPrice(s) }}
-              <span v-if="s.fixedPrice != null" class="ml-1 text-xs text-orange-400">(fast)</span>
-              <span v-else-if="(panelsNeeded(s) ?? 1) > 1"
-                class="ml-1 text-xs text-yellow-400"
-                :title="`${panelsNeeded(s)} paneler — banner bredere enn materialets maks-bredde`">
-                ×{{ panelsNeeded(s) }}
-              </span>
+            <td class="px-4 py-3 text-gray-300 text-xs whitespace-nowrap">{{ formatRange(s.minWidthCm, s.maxWidthCm) }}</td>
+            <td class="px-4 py-3 text-gray-300 text-xs whitespace-nowrap">{{ formatRange(s.minHeightCm, s.maxHeightCm) }}</td>
+            <td class="px-4 py-3 text-gray-300 text-xs whitespace-nowrap">
+              <template v-if="s.fixedPrice != null">
+                <span class="text-orange-400">Fast pris</span>
+              </template>
+              <template v-else>
+                pricingH={{ s.pricingHeightCm }} × {{ s.pricingMultiplier }}
+              </template>
             </td>
+            <td class="px-4 py-3 text-gray-300">{{ formatPrice(s) }}</td>
             <td class="px-4 py-3">
               <span :class="s.isActive ? 'bg-green-900/50 text-green-400' : 'bg-gray-700 text-gray-400'"
                 class="text-xs px-2 py-0.5 rounded-full font-medium">
@@ -213,42 +219,14 @@ onMounted(load)
     <!-- Modal -->
     <Teleport to="body">
       <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 overflow-y-auto py-8">
-        <div class="bg-gray-800 rounded-2xl shadow-xl w-full max-w-md p-6 border border-gray-700">
+        <div class="bg-gray-800 rounded-2xl shadow-xl w-full max-w-lg p-6 border border-gray-700">
           <h2 class="text-lg font-semibold text-gray-100 mb-4">
-            {{ isEditing ? 'Rediger størrelse' : 'Ny størrelse' }}
+            {{ isEditing ? 'Rediger prisregel' : 'Ny prisregel' }}
           </h2>
           <form @submit.prevent="save" class="space-y-3">
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-1">Navn</label>
               <input v-model="form.name" type="text" required class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            </div>
-
-            <div class="flex items-center gap-4 flex-wrap">
-              <div class="flex items-center gap-2">
-                <input v-model="form.isCustomWidth" type="checkbox" id="customWidth" class="rounded" />
-                <label for="customWidth" class="text-sm text-gray-300">Valgfri bredde</label>
-              </div>
-              <div class="flex items-center gap-2">
-                <input v-model="form.isCustomHeight" type="checkbox" id="customHeight" class="rounded" />
-                <label for="customHeight" class="text-sm text-gray-300">Valgfri høyde</label>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="block text-sm font-medium text-gray-300 mb-1">Bredde (cm)</label>
-                <input v-model.number="form.widthCm" type="number" min="1" :disabled="form.isCustomWidth"
-                  :class="form.isCustomWidth ? 'opacity-40' : ''"
-                  class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-300 mb-1">Høyde (cm)</label>
-                <input v-model.number="form.heightCm" type="number" min="1"
-                  :required="!form.isCustomHeight"
-                  :disabled="form.isCustomHeight"
-                  :class="form.isCustomHeight ? 'opacity-40' : ''"
-                  class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
             </div>
 
             <div>
@@ -258,10 +236,50 @@ onMounted(load)
               </select>
             </div>
 
-            <div>
-              <label class="block text-sm font-medium text-gray-300 mb-1">Sorteringsrekkefølge</label>
-              <input v-model.number="form.sortOrder" type="number" class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            </div>
+            <fieldset class="border border-gray-700 rounded-lg p-3">
+              <legend class="text-xs text-gray-400 px-1">Størrelses-område (regelen gjelder banner i dette området)</legend>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-medium text-gray-400 mb-1">Min bredde (cm)</label>
+                  <input v-model.number="form.minWidthCm" type="number" min="1" required class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-400 mb-1">Maks bredde (cm)</label>
+                  <input v-model.number="form.maxWidthCm" type="number" min="1" required class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-400 mb-1">Min høyde (cm)</label>
+                  <input v-model.number="form.minHeightCm" type="number" min="1" required class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-400 mb-1">Maks høyde (cm)</label>
+                  <input v-model.number="form.maxHeightCm" type="number" min="1" required class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset class="border border-gray-700 rounded-lg p-3">
+              <legend class="text-xs text-gray-400 px-1">Prisformel (ignoreres når fast pris er på)</legend>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-medium text-gray-400 mb-1">
+                    Pris-høyde (cm)
+                    <span class="block text-[10px] text-gray-500 mt-0.5">Faktureres alltid for denne høyden</span>
+                  </label>
+                  <input v-model.number="form.pricingHeightCm" type="number" min="1" required class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-400 mb-1">
+                    Multiplikator
+                    <span class="block text-[10px] text-gray-500 mt-0.5">Antall panel som limes (1, 2, 3…)</span>
+                  </label>
+                  <input v-model.number="form.pricingMultiplier" type="number" min="1" max="20" required class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+              <p class="text-[11px] text-gray-500 mt-2 leading-snug">
+                Pris = max(min-pris, faktisk bredde × pris-høyde × pris-per-m²) × multiplikator
+              </p>
+            </fieldset>
 
             <div class="flex items-center gap-2">
               <input v-model="hasFixedPrice" type="checkbox" id="fixedPriceToggle" class="rounded" />
@@ -270,6 +288,11 @@ onMounted(load)
             <div v-if="hasFixedPrice">
               <label class="block text-sm font-medium text-gray-300 mb-1">Fast pris (NOK)</label>
               <input v-model.number="form.fixedPrice" type="number" min="0" step="0.01" class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1">Sorteringsrekkefølge</label>
+              <input v-model.number="form.sortOrder" type="number" class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
 
             <div class="flex items-center gap-2">

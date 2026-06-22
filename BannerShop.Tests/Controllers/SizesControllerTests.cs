@@ -1,17 +1,14 @@
 using System.Net;
 using System.Text.Json;
-using BannerShop.Core.Entities;
-using BannerShop.Infrastructure.Data;
 using BannerShop.Tests.Helpers;
 using FluentAssertions;
-using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace BannerShop.Tests.Controllers;
 
 /// <summary>
-/// Integration tests for the public SizesController.
-/// Seeds catalog data per-test to keep tests isolated.
+/// Integration tests for the public SizesController. BANNERSH-255 — sizes are
+/// now range-based pricing rules and pricing is queried with explicit width/height.
 /// </summary>
 public class SizesControllerTests : IClassFixture<TestWebApplicationFactory>
 {
@@ -61,78 +58,61 @@ public class SizesControllerTests : IClassFixture<TestWebApplicationFactory>
 
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("calculatedPrice");
+        body.Should().Contain("pricingHeightCm");
+        body.Should().Contain("pricingMultiplier");
     }
 
+    // ── GET /api/sizes/price?widthCm=&heightCm= ───────────────────────────────
+
     [Fact]
-    public async Task GetSizes_WithCustomWidthCm_Returns200()
+    public async Task GetPrice_ValidDims_Returns200WithCheapestMatch()
     {
         EnsureCatalogSeeded();
         var client = _factory.CreateClient();
 
-        var response = await client.GetAsync("/api/sizes?customWidthCm=200");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    // ── GET /api/sizes/{id}/price ─────────────────────────────────────────────
-
-    [Fact]
-    public async Task GetPrice_StandardSize_Returns200WithPrice()
-    {
-        EnsureCatalogSeeded();
-        var client = _factory.CreateClient();
-
-        var response = await client.GetAsync("/api/sizes/1/price");
+        var response = await client.GetAsync("/api/sizes/price?widthCm=300&heightCm=150");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("priceNok");
+        body.Should().Contain("sizeId");
     }
 
     [Fact]
-    public async Task GetPrice_FixedPriceSize_Returns699()
+    public async Task GetPrice_FixedSizeDimensions_PicksFixedPriceRule()
     {
         EnsureCatalogSeeded();
         var client = _factory.CreateClient();
 
-        var response = await client.GetAsync("/api/sizes/7/price");
+        // Seeded rule id=7 covers 300×180 with FixedPrice = 699.
+        var response = await client.GetAsync("/api/sizes/price?widthCm=300&heightCm=180&materialId=2");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
         var doc = JsonSerializer.Deserialize<JsonElement>(body, _json);
         doc.GetProperty("priceNok").GetDecimal().Should().Be(699m);
+        doc.GetProperty("sizeId").GetInt32().Should().Be(7);
     }
 
     [Fact]
-    public async Task GetPrice_CustomWidthSizeWithoutCustomWidthCm_Returns400()
+    public async Task GetPrice_MissingDims_Returns400()
     {
         EnsureCatalogSeeded();
         var client = _factory.CreateClient();
 
-        // Size 6 is custom-width → requires ?customWidthCm
-        var response = await client.GetAsync("/api/sizes/6/price");
+        var response = await client.GetAsync("/api/sizes/price?widthCm=0&heightCm=150");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact]
-    public async Task GetPrice_CustomWidthSizeWithCustomWidthCm_Returns200()
+    public async Task GetPrice_NoMatchingRule_Returns404()
     {
         EnsureCatalogSeeded();
         var client = _factory.CreateClient();
 
-        var response = await client.GetAsync("/api/sizes/6/price?customWidthCm=200");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [Fact]
-    public async Task GetPrice_UnknownSizeId_Returns404()
-    {
-        EnsureCatalogSeeded();
-        var client = _factory.CreateClient();
-
-        var response = await client.GetAsync("/api/sizes/99999/price");
+        // No seeded rule covers 9999×9999.
+        var response = await client.GetAsync("/api/sizes/price?widthCm=9999&heightCm=9999");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }

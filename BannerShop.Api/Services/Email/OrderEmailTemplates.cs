@@ -35,7 +35,11 @@ public static class OrderEmailTemplates
         foreach (var item in o.Items.OrderBy(i => i.Id))
         {
             var sizeName = item.BannerSize?.Name ?? $"Bannerstørrelse {item.BannerSizeId}";
-            var widthCm = item.CustomWidthCm ?? item.BannerSize?.WidthCm;
+            // BANNERSH-255: actual ordered width lives in CustomWidthCm; HeightCm is the
+            // customer-chosen height. Both are always populated for new orders. Older
+            // rows may have CustomWidthCm=null — fall back to the pricing-rule range
+            // midpoint for display only.
+            var widthCm = item.CustomWidthCm;
             var dims = widthCm.HasValue
                 ? $"{widthCm}×{item.HeightCm} cm"
                 : $"{item.HeightCm} cm høyde";

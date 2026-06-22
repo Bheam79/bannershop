@@ -587,22 +587,18 @@ async function loadTilpassPricing(bannerDesignId: number) {
   tilpassError.value = null
   try {
     const design = await getBannerDesign(bannerDesignId)
-    const designSizes = await fetchSizes(design.computedWidthCm)
-    const pricingSize = designSizes.find(
-      (s: BannerSize) => s.isCustomWidth && s.heightCm === design.selectedHeightCm,
-    )
+    // BANNERSH-255: ask the server for the cheapest matching pricing rule.
+    const priceResp = await fetchPrice(design.computedWidthCm, design.selectedHeightCm)
+    // Load the matched size for display (sortOrder, name, material).
+    const allSizes: BannerSize[] = await fetchSizes()
+    const pricingSize = allSizes.find((s: BannerSize) => s.id === priceResp.sizeId) ?? null
     if (!pricingSize) {
       throw new Error('Pricing not available for this banner.')
     }
-    // Fetch price without the custom-width surcharge — the dimensions are
-    // AI-derived (not explicitly requested by the customer as a custom size),
-    // so the surcharge must not apply.  This mirrors the same logic used by
-    // the quality picker in useBannerPricing.ts.
-    const bannerPrice = await fetchPrice(pricingSize.id, design.computedWidthCm, true)
     tilpassDesignWidthCm.value = design.computedWidthCm
     tilpassDesignHeightCm.value = design.selectedHeightCm
     tilpassBannerSize.value = pricingSize
-    tilpassBannerPriceNok.value = bannerPrice
+    tilpassBannerPriceNok.value = priceResp.priceNok
     tilpassEyeletOption.value = 'None'
     try {
       tilpassEyeletPriceNok.value = await fetchEyeletPriceNok()
@@ -623,7 +619,8 @@ function addTilpassToCartAndCheckout() {
   cart.addItem({
     bannerSizeId: size.id,
     bannerSizeName: `AI banner ${tilpassDesignWidthCm.value} × ${tilpassDesignHeightCm.value} cm`,
-    customWidthCm: tilpassDesignWidthCm.value,
+    materialId: size.materialId,
+    widthCm: tilpassDesignWidthCm.value,
     heightCm: tilpassDesignHeightCm.value,
     quantity: 1,
     unitPriceNok: tilpassBannerPriceNok.value,
@@ -632,9 +629,6 @@ function addTilpassToCartAndCheckout() {
     designId: d.finalBannerDesignId,
     previewUrl: d.previewUrl ?? undefined,
     notes: `AI banner design #${d.finalBannerDesignId}`,
-    // AI-derived dimensions must not attract the custom-width surcharge
-    // (the customer did not manually choose a custom size).
-    skipCustomSurcharge: true,
   })
   void router.push('/checkout')
 }
@@ -656,7 +650,8 @@ function addManualToCartAndCheckout() {
   const bannerItem: CartItem = {
     bannerSizeId: size.id,
     bannerSizeName: `Manuelt banner ${tilpassDesignWidthCm.value} × ${tilpassDesignHeightCm.value} cm`,
-    customWidthCm: size.isCustomWidth ? tilpassDesignWidthCm.value : null,
+    materialId: size.materialId,
+    widthCm: tilpassDesignWidthCm.value,
     heightCm: tilpassDesignHeightCm.value,
     quantity: 1,
     unitPriceNok: manualBannerPriceNok.value,
@@ -665,11 +660,6 @@ function addManualToCartAndCheckout() {
     notes: `Manuelt designet banner — bestilling #${reqId}`,
     designRequestId: reqId,
     manualDesignFeeNok: manualDesignPriceNok.value,
-    // BANNERSH-250: the width here is derived from the customer's chosen aspect
-    // ratio (e.g. 16:9 → 267×150), not a width they explicitly typed in as a
-    // custom size. Match the AI flow's behaviour so the order total matches the
-    // 877 kr the customer saw on the preview page rather than 1027 kr.
-    skipCustomSurcharge: true,
   }
   cart.addItem(bannerItem)
   void router.push('/checkout')

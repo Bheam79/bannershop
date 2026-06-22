@@ -51,11 +51,12 @@ internal static class DbHelper
         var mat2 = new Material { Id = 2, Name = "680g Heavy Duty Banner (180cm)", WidthCm = 180, MaxBannerWidthCm = 180, WeightGsm = 680, PricePerSqm = 140m, AvailableFrom = new DateTime(2026, 8, 31, 0, 0, 0, DateTimeKind.Utc) };
         db.Materials.AddRange(mat1, mat2);
 
+        // BANNERSH-255: range-based pricing rules (matches BannerShopSeedData.SeedBannerSizes).
         db.BannerSizes.AddRange(
-            new BannerSize { Id = 1, WidthCm = 300, HeightCm = 150, IsCustomWidth = false, Name = "300 × 150 cm", IsActive = true, MaterialId = 1, SortOrder = 1 },
-            new BannerSize { Id = 2, WidthCm = 350, HeightCm = 150, IsCustomWidth = false, Name = "350 × 150 cm", IsActive = true, MaterialId = 1, SortOrder = 2 },
-            new BannerSize { Id = 6, WidthCm = null, HeightCm = 150, IsCustomWidth = true,  Name = "Custom × 150 cm", IsActive = true, MaterialId = 1, SortOrder = 6 },
-            new BannerSize { Id = 7, WidthCm = 300, HeightCm = 180, IsCustomWidth = false, Name = "300 × 180 cm", IsActive = true, MaterialId = 2, FixedPrice = 699m, SortOrder = 7 }
+            new BannerSize { Id = 1, Name = "400g 1p (h 1–154)",  IsActive = true, MaterialId = 1, SortOrder = 10, MinWidthCm = 1, MaxWidthCm = 500, MinHeightCm = 1,   MaxHeightCm = 154, PricingHeightCm = 154, PricingMultiplier = 1 },
+            new BannerSize { Id = 2, Name = "400g 2p (h 154–300)", IsActive = true, MaterialId = 1, SortOrder = 20, MinWidthCm = 1, MaxWidthCm = 500, MinHeightCm = 154, MaxHeightCm = 300, PricingHeightCm = 154, PricingMultiplier = 2 },
+            new BannerSize { Id = 6, Name = "680g 1p (h 1–180)",   IsActive = true, MaterialId = 2, SortOrder = 60, MinWidthCm = 1, MaxWidthCm = 500, MinHeightCm = 1,   MaxHeightCm = 180, PricingHeightCm = 180, PricingMultiplier = 1 },
+            new BannerSize { Id = 7, Name = "300 × 180 (fast)",    IsActive = true, MaterialId = 2, SortOrder = 70, MinWidthCm = 300, MaxWidthCm = 300, MinHeightCm = 180, MaxHeightCm = 180, PricingHeightCm = 180, PricingMultiplier = 1, FixedPrice = 699m }
         );
         db.SaveChanges();
     }
@@ -67,42 +68,34 @@ internal static class DbHelper
             Id = id,
             Name = $"Test Material {id}",
             WidthCm = widthCm,
-            // Default MaxBannerWidthCm to a large value so existing tests (written before
-            // BANNERSH-88) don't accidentally trigger the multi-panel multiplier. Tests
-            // that need to exercise the multiplier should pass `maxBannerWidthCm` explicitly.
             MaxBannerWidthCm = maxBannerWidthCm ?? 10_000,
             WeightGsm = weightGsm,
             PricePerSqm = pricePerSqm,
             AvailableFrom = availableFrom
         };
 
-    /// <summary>Creates a standard (fixed-width) banner size with the given material attached.</summary>
-    public static BannerSize MakeStandardSize(int id, int widthCm, int heightCm, Material material, decimal? fixedPrice = null)
+    /// <summary>
+    /// Creates a range-based pricing rule covering the given (width, height) area
+    /// at the supplied pricing height and multiplier. BANNERSH-255.
+    /// </summary>
+    public static BannerSize MakeSizeRule(
+        int id, Material material, int minW, int maxW, int minH, int maxH,
+        int pricingHeight, int multiplier = 1, decimal? fixedPrice = null)
         => new BannerSize
         {
             Id = id,
-            WidthCm = widthCm,
-            HeightCm = heightCm,
-            IsCustomWidth = false,
-            Name = $"{widthCm} × {heightCm} cm",
+            Name = $"Rule {id}",
             IsActive = true,
             MaterialId = material.Id,
             Material = material,
+            SortOrder = id,
+            MinWidthCm = minW,
+            MaxWidthCm = maxW,
+            MinHeightCm = minH,
+            MaxHeightCm = maxH,
+            PricingHeightCm = pricingHeight,
+            PricingMultiplier = multiplier,
             FixedPrice = fixedPrice
-        };
-
-    /// <summary>Creates a custom-width banner size with the given material attached.</summary>
-    public static BannerSize MakeCustomWidthSize(int id, int heightCm, Material material)
-        => new BannerSize
-        {
-            Id = id,
-            WidthCm = null,
-            HeightCm = heightCm,
-            IsCustomWidth = true,
-            Name = $"Custom × {heightCm} cm",
-            IsActive = true,
-            MaterialId = material.Id,
-            Material = material
         };
 
     public static User MakeUser(int id = 1, string email = "test@example.com", UserRole role = UserRole.Customer)

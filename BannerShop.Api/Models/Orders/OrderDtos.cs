@@ -48,11 +48,28 @@ public class AddressInputDto
 
 public class OrderItemInputDto
 {
+    /// <summary>
+    /// Optional explicit pricing rule (<see cref="BannerShop.Core.Entities.BannerSize"/>).
+    /// When omitted the server picks the cheapest matching rule from the catalogue based
+    /// on <see cref="WidthCm"/>, <see cref="HeightCm"/> and optional <see cref="MaterialId"/>
+    /// (BANNERSH-255).
+    /// </summary>
     [Range(1, int.MaxValue)]
-    public int BannerSizeId { get; set; }
+    public int? BannerSizeId { get; set; }
 
-    [Range(50, 1000)]
-    public int? CustomWidthCm { get; set; }
+    /// <summary>
+    /// Optional material filter applied to the cheapest-rule search when
+    /// <see cref="BannerSizeId"/> is omitted. Lets the customer pick a specific
+    /// material (e.g. heavier-duty 680g) without binding to a single pricing rule.
+    /// </summary>
+    [Range(1, int.MaxValue)]
+    public int? MaterialId { get; set; }
+
+    [Range(1, 1000)]
+    public int WidthCm { get; set; }
+
+    [Range(1, 1000)]
+    public int HeightCm { get; set; }
 
     [Range(1, 100)]
     public int Quantity { get; set; } = 1;
@@ -76,15 +93,6 @@ public class OrderItemInputDto
     /// Defaults to <see cref="EyeletOption.None"/> (no eyelets).
     /// </summary>
     public EyeletOption EyeletOption { get; set; } = EyeletOption.None;
-
-    /// <summary>
-    /// When <c>true</c> the pricing service omits the <c>custom_width_surcharge</c>
-    /// for this item.  Set by the frontend for AI banner items whose dimensions are
-    /// derived automatically (not manually chosen as a custom size by the customer)
-    /// so the displayed price matches what was shown in the AI banner builder
-    /// (BANNERSH-228).
-    /// </summary>
-    public bool SkipCustomSurcharge { get; set; } = false;
 }
 
 public class UpdateOrderStatusRequest

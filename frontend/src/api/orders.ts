@@ -19,8 +19,18 @@ export interface OrderDraftRequest {
    */
   packingMode?: 'Rolled' | 'Folded'
   items: Array<{
-    bannerSizeId: number
-    customWidthCm?: number
+    /**
+     * Optional pricing-rule id (<c>BannerSize</c>). When omitted the server picks
+     * the cheapest matching rule from the catalogue based on widthCm/heightCm and
+     * optional materialId. BANNERSH-255.
+     */
+    bannerSizeId?: number
+    /** Optional material filter when bannerSizeId is omitted. */
+    materialId?: number
+    /** Actual banner width in cm. */
+    widthCm: number
+    /** Actual banner height in cm. */
+    heightCm: number
     quantity: number
     notes?: string
     bannerDesignId?: number
@@ -31,8 +41,6 @@ export interface OrderDraftRequest {
      */
     designRequestId?: number
     eyeletOption?: EyeletOption
-    /** When true the backend skips the custom-width surcharge (BANNERSH-228). */
-    skipCustomSurcharge?: boolean
   }>
 }
 

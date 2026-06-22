@@ -84,30 +84,39 @@ export function useBannerPricing() {
   })
 
   // ── Banner-size catalogue helpers ──────────────────────────────────────────
+  /**
+   * BANNERSH-255: picks the cheapest matching pricing rule for the given
+   * (width, height [, materialGsm]) by searching the loaded catalogue. Returns
+   * the rule + the actual widthCm so the cart can persist the chosen rule id.
+   */
   function pickBannerSize(
     catalog: BannerSize[],
     targetWidthCm: number,
     targetHeightCm: number,
     materialGsm?: number,
-  ): { size: BannerSize; customWidthCm?: number } | null {
-    const exact = catalog.find(
+  ): { size: BannerSize; customWidthCm: number } | null {
+    const matching = catalog.filter(
       (s) =>
         s.isActive &&
-        !s.isCustomWidth &&
-        s.widthCm === targetWidthCm &&
-        s.heightCm === targetHeightCm &&
+        s.minWidthCm <= targetWidthCm && targetWidthCm <= s.maxWidthCm &&
+        s.minHeightCm <= targetHeightCm && targetHeightCm <= s.maxHeightCm &&
         (materialGsm == null || s.material?.weightGsm === materialGsm),
     )
-    if (exact) return { size: exact }
-    const custom = catalog.find(
-      (s) =>
-        s.isActive &&
-        s.isCustomWidth &&
-        s.heightCm === targetHeightCm &&
-        (materialGsm == null || s.material?.weightGsm === materialGsm),
-    )
-    if (custom) return { size: custom, customWidthCm: targetWidthCm }
-    return null
+    if (matching.length === 0) return null
+    // Estimate price locally so we pick the cheapest. Server confirms via fetchPrice.
+    const priceOf = (s: BannerSize) => {
+      if (s.fixedPrice != null) return s.fixedPrice
+      const pps = s.material?.pricePerSqm ?? 180
+      const area = (targetWidthCm / 100) * (s.pricingHeightCm / 100)
+      return Math.max(area * pps, 399) * (s.pricingMultiplier || 1)
+    }
+    let best = matching[0]!
+    let bestPrice = priceOf(best)
+    for (const s of matching.slice(1)) {
+      const p = priceOf(s)
+      if (p < bestPrice) { best = s; bestPrice = p }
+    }
+    return { size: best, customWidthCm: targetWidthCm }
   }
 
   function isComingSoon(size: BannerSize): boolean {
@@ -121,7 +130,6 @@ export function useBannerPricing() {
     targetHeight: number,
     state: OptionPriceState,
     materialGsm?: number,
-    skipSurcharge?: boolean,
   ) {
     state.loading = true
     state.price = null
@@ -130,7 +138,8 @@ export function useBannerPricing() {
       const picked = pickBannerSize(sizes.value, targetWidth, targetHeight, materialGsm)
       if (!picked) { state.price = null; return }
       state.comingSoon = isComingSoon(picked.size)
-      state.price = await fetchPrice(picked.size.id, picked.customWidthCm, skipSurcharge)
+      const resp = await fetchPrice(targetWidth, targetHeight, picked.size.materialId)
+      state.price = resp.priceNok
     } catch {
       state.price = null
     } finally {
@@ -141,8 +150,8 @@ export function useBannerPricing() {
   async function refreshAllPrices() {
     if (!sizesLoaded.value) return
     await Promise.all([
-      computeOptionPrice(highOptionWidthCm.value, 150, option1State.value, undefined, true),
-      computeOptionPrice(goodOptionWidthCm.value, 180, option2State.value, undefined, true),
+      computeOptionPrice(highOptionWidthCm.value, 150, option1State.value),
+      computeOptionPrice(goodOptionWidthCm.value, 180, option2State.value),
     ])
   }
 

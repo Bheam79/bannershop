@@ -444,7 +444,9 @@ public class AdminOrdersControllerTests : IClassFixture<TestWebApplicationFactor
     {
         deliveryType = "Standard",
         shippingAddress = new { line1 = "Admin Test St 1", postalCode = "0001", city = "Oslo", country = "NO" },
-        items = new[] { new { bannerSizeId, quantity = 1 } }
+        // BANNERSH-255: items now carry actual dimensions; pick values inside the
+        // seeded rule range (id=1 covers w 1–500, h 1–154).
+        items = new[] { new { bannerSizeId, quantity = 1, widthCm = 300, heightCm = 150 } }
     };
 
     /// <summary>Creates a draft order and returns its orderId.</summary>

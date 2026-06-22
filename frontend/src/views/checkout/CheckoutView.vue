@@ -135,7 +135,8 @@ async function computeShipping() {
     return
   }
   const firstItem = cart.items[0]
-  if (!firstItem?.bannerSizeId) {
+  // BANNERSH-255: shipping API now expects actual dims + materialId.
+  if (!firstItem || !firstItem.materialId || firstItem.widthCm <= 0 || firstItem.heightCm <= 0) {
     shippingEstimate.value = null
     return
   }
@@ -144,8 +145,9 @@ async function computeShipping() {
     shippingEstimate.value = await calculateShipping({
       postalCode: pc,
       city: city.value.trim() || undefined,
-      bannerSizeId: firstItem.bannerSizeId,
-      customWidthCm: firstItem.customWidthCm ?? undefined,
+      materialId: firstItem.materialId,
+      widthCm: firstItem.widthCm,
+      heightCm: firstItem.heightCm,
       qty: cart.itemCount,
       packingMode: packingMode.value,
     })
@@ -180,15 +182,17 @@ const parcelLoading = ref(false)
 
 async function loadParcelPreviews() {
   const firstItem = cart.items[0]
-  if (!firstItem?.bannerSizeId) {
+  // BANNERSH-255: parcel preview API now expects actual dims + materialId.
+  if (!firstItem || !firstItem.materialId || firstItem.widthCm <= 0 || firstItem.heightCm <= 0) {
     parcelFolded.value = null
     parcelRolled.value = null
     return
   }
   parcelLoading.value = true
   const base = {
-    bannerSizeId: firstItem.bannerSizeId,
-    customWidthCm: firstItem.customWidthCm ?? undefined,
+    materialId: firstItem.materialId,
+    widthCm: firstItem.widthCm,
+    heightCm: firstItem.heightCm,
     qty: cart.itemCount,
   }
   try {
@@ -207,7 +211,7 @@ async function loadParcelPreviews() {
 }
 
 // Re-fetch when the underlying cart changes (qty, items added/removed, etc.).
-watch(() => [cart.itemCount, cart.items.map(i => `${i.bannerSizeId}:${i.customWidthCm ?? ''}`).join(',')], loadParcelPreviews)
+watch(() => [cart.itemCount, cart.items.map(i => `${i.materialId ?? ''}:${i.widthCm}x${i.heightCm}`).join(',')], loadParcelPreviews)
 
 function formatParcelDims(p: ParcelDimensions): string {
   const round = (n: number) => (Number.isInteger(n) ? n.toString() : n.toFixed(1))
@@ -311,9 +315,8 @@ function eyeletShortLabel(option: EyeletOption): string {
 }
 
 function eyeletCountFor(item: import('@/types').CartItem): number {
-  // Compute width: prefer customWidthCm (set by the banner builder) when present.
-  const widthCm = item.customWidthCm ?? 0
-  return countEyelets(widthCm, item.heightCm, item.eyeletOption)
+  // BANNERSH-255: actual width lives directly on the cart item.
+  return countEyelets(item.widthCm, item.heightCm, item.eyeletOption)
 }
 </script>
 

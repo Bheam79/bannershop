@@ -123,7 +123,40 @@ because Bring is now considered configured by default, tests would otherwise hit
 the live API. Persisting the choice on the `Order` entity for fulfilment is filed
 as a follow-up.
 
-## Multi-panel pricing (BANNERSH-88)
+## Range-based pricing rules (BANNERSH-255)
+`BannerSize` is now a pricing-rules table: each row defines a
+`(material × widthRange × heightRange)` and either a `FixedPrice` OR a
+`(PricingHeightCm × PricingMultiplier)` formula. The customer always submits
+their actual `widthCm`/`heightCm` and the server (or
+`IPricingService.FindCheapestAsync`) picks the cheapest matching rule across
+the catalogue.
+
+- Old fields removed: `WidthCm`, `HeightCm`, `IsCustomWidth`, `IsCustomHeight`.
+- New fields: `MinWidthCm`, `MaxWidthCm`, `MinHeightCm`, `MaxHeightCm`,
+  `PricingHeightCm`, `PricingMultiplier`. `FixedPrice` short-circuits both the
+  formula AND the multiplier.
+- Seed encodes 1×/2×/3× panel-gluing tiers per material via the height ranges
+  (e.g. 400g material: 1–154 → ×1 @ pricingHeight 154; 154–300 → ×2; 300–450 → ×3).
+- `IPricingService.CalculatePriceAsync(BannerSize rule, int widthCm, int heightCm)`
+  is the entry point — the old `(BannerSize, int?, int?)` overload is gone.
+- `OrderItemInputDto` carries `WidthCm` + `HeightCm` directly. `BannerSizeId` is
+  optional — the server falls back to `FindCheapestAsync` when omitted (with
+  optional `MaterialId` pin). The `OrderItem.CustomWidthCm` DB column is kept
+  for back-compat and is now always populated with the actual width.
+- `ParcelCalculator.CalculateAsync` takes
+  `(int widthCm, int heightCm, int materialWeightGsm, int qty, PackingMode)` —
+  no BannerSize lookup. Shipping endpoints now accept
+  `{ materialId, widthCm, heightCm, qty, packingMode }`.
+- `GET /api/sizes/price?widthCm=X&heightCm=Y[&materialId=Z]` returns the
+  cheapest match plus the resolved `sizeId` for cart persistence.
+- Tests use `DbHelper.MakeSizeRule(...)` instead of the old
+  `MakeStandardSize`/`MakeCustomWidthSize` helpers.
+
+The BANNERSH-88 panel multiplier in `PricingService.PanelsNeeded` is **gone** —
+panel multipliers are now encoded in the rules table directly (admin sets
+`PricingMultiplier = 2/3/…` for the appropriate height tier).
+
+## Multi-panel pricing (BANNERSH-88) — superseded by BANNERSH-255
 `Material.MaxBannerWidthCm` is the max banner width producible as a single panel. When a
 banner exceeds it, `PricingService` multiplies the per-panel formula price by the panel
 count (×1 / ×2 / ×3 / …). The panel formula is `⌈(width − overlap) / (max − overlap)⌉`

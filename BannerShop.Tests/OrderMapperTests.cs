@@ -32,14 +32,15 @@ public class OrderMapperTests
 
     private static BannerSize MakeSize(Material mat) => new()
     {
-        Id = 1, Name = "300 × 150 cm", WidthCm = 300, HeightCm = 150,
-        IsActive = true, MaterialId = mat.Id, Material = mat
+        Id = 1, Name = "Rule 300 × 150", IsActive = true, MaterialId = mat.Id, Material = mat,
+        MinWidthCm = 1, MaxWidthCm = 500, MinHeightCm = 1, MaxHeightCm = 154,
+        PricingHeightCm = 154, PricingMultiplier = 1
     };
 
     private static OrderItem MakeItem(BannerSize size) => new()
     {
         Id = 10, BannerSizeId = size.Id, BannerSize = size,
-        HeightCm = 150, Quantity = 1, AreaSqm = 4.5m,
+        CustomWidthCm = 300, HeightCm = 150, Quantity = 1, AreaSqm = 4.5m,
         UnitPriceNok = 540m, EyeletOption = EyeletOption.None,
         EyeletCount = 0, EyeletFeeNok = 0m, LineTotalNok = 540m
     };

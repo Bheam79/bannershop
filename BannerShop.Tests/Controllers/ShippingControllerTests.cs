@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using BannerShop.Core.Enums;
 using BannerShop.Tests.Helpers;
 using FluentAssertions;
 using Xunit;
@@ -9,8 +8,8 @@ using Xunit;
 namespace BannerShop.Tests.Controllers;
 
 /// <summary>
-/// Integration tests for ShippingController.
-/// Uses MockShippingService (injected by TestWebApplicationFactory).
+/// Integration tests for ShippingController. BANNERSH-255 — requests carry
+/// (materialId + widthCm + heightCm) directly; there's no banner-size-id lookup.
 /// </summary>
 public class ShippingControllerTests : IClassFixture<TestWebApplicationFactory>
 {
@@ -43,7 +42,9 @@ public class ShippingControllerTests : IClassFixture<TestWebApplicationFactory>
         var client = _factory.CreateClient();
         var req = new
         {
-            bannerSizeId = 1,
+            materialId = 1,
+            widthCm = 300,
+            heightCm = 150,
             qty = 1,
             postalCode = "0001",
             city = "Oslo",
@@ -59,12 +60,14 @@ public class ShippingControllerTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Calculate_NonExistentSize_Returns404()
+    public async Task Calculate_NonExistentMaterial_Returns404()
     {
         var client = _factory.CreateClient();
         var req = new
         {
-            bannerSizeId = 99999,
+            materialId = 99999,
+            widthCm = 300,
+            heightCm = 150,
             qty = 1,
             postalCode = "0001",
             city = "Oslo",
@@ -76,44 +79,6 @@ public class ShippingControllerTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    [Fact]
-    public async Task Calculate_CustomWidthSizeWithoutCustomWidthCm_Returns400()
-    {
-        var client = _factory.CreateClient();
-        var req = new
-        {
-            bannerSizeId = 6,       // Size 6 is custom-width
-            qty = 1,
-            postalCode = "0001",
-            city = "Oslo",
-            packingMode = "Folded"
-            // no customWidthCm
-        };
-
-        var response = await client.PostAsJsonAsync("/api/shipping/calculate", req);
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [Fact]
-    public async Task Calculate_CustomWidthSizeWithCustomWidthCm_Returns200()
-    {
-        var client = _factory.CreateClient();
-        var req = new
-        {
-            bannerSizeId = 6,
-            customWidthCm = 250,
-            qty = 1,
-            postalCode = "0001",
-            city = "Oslo",
-            packingMode = "Rolled"
-        };
-
-        var response = await client.PostAsJsonAsync("/api/shipping/calculate", req);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
     // ── POST /api/shipping/parcel-preview ─────────────────────────────────────
 
     [Fact]
@@ -122,7 +87,9 @@ public class ShippingControllerTests : IClassFixture<TestWebApplicationFactory>
         var client = _factory.CreateClient();
         var req = new
         {
-            bannerSizeId = 1,
+            materialId = 1,
+            widthCm = 300,
+            heightCm = 150,
             qty = 1,
             packingMode = "Folded"
         };
@@ -142,7 +109,9 @@ public class ShippingControllerTests : IClassFixture<TestWebApplicationFactory>
         var client = _factory.CreateClient();
         var req = new
         {
-            bannerSizeId = 1,
+            materialId = 1,
+            widthCm = 300,
+            heightCm = 150,
             qty = 2,
             packingMode = "Rolled"
         };
@@ -153,12 +122,14 @@ public class ShippingControllerTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task ParcelPreview_NonExistentSize_Returns404()
+    public async Task ParcelPreview_NonExistentMaterial_Returns404()
     {
         var client = _factory.CreateClient();
         var req = new
         {
-            bannerSizeId = 99999,
+            materialId = 99999,
+            widthCm = 300,
+            heightCm = 150,
             qty = 1,
             packingMode = "Folded"
         };
@@ -167,42 +138,6 @@ public class ShippingControllerTests : IClassFixture<TestWebApplicationFactory>
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
-
-    [Fact]
-    public async Task ParcelPreview_CustomWidthSizeWithoutCustomWidthCm_Returns400()
-    {
-        var client = _factory.CreateClient();
-        var req = new
-        {
-            bannerSizeId = 6,       // custom-width size
-            qty = 1,
-            packingMode = "Folded"
-            // no customWidthCm
-        };
-
-        var response = await client.PostAsJsonAsync("/api/shipping/parcel-preview", req);
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [Fact]
-    public async Task ParcelPreview_CustomWidthSizeWithCustomWidthCm_Returns200()
-    {
-        var client = _factory.CreateClient();
-        var req = new
-        {
-            bannerSizeId = 6,
-            customWidthCm = 300,
-            qty = 1,
-            packingMode = "Folded"
-        };
-
-        var response = await client.PostAsJsonAsync("/api/shipping/parcel-preview", req);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    // ── POST /api/shipping/calculate — error paths ────────────────────────────
 
     [Fact]
     public async Task Calculate_InvalidModelState_Returns400()
@@ -211,8 +146,10 @@ public class ShippingControllerTests : IClassFixture<TestWebApplicationFactory>
         // PostalCode is too short (min 4 chars)
         var req = new
         {
-            postalCode = "AB",   // too short — violates [StringLength(20, MinimumLength = 4)]
-            bannerSizeId = 1,
+            postalCode = "AB",
+            materialId = 1,
+            widthCm = 300,
+            heightCm = 150,
             qty = 1
         };
 
@@ -220,44 +157,6 @@ public class ShippingControllerTests : IClassFixture<TestWebApplicationFactory>
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
-
-    [Fact]
-    public async Task Calculate_NonExistentBannerSize_Returns404()
-    {
-        var client = _factory.CreateClient();
-        var req = new
-        {
-            postalCode = "0150",
-            city = "Oslo",
-            bannerSizeId = 99999,
-            qty = 1
-        };
-
-        var response = await client.PostAsJsonAsync("/api/shipping/calculate", req);
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    [Fact]
-    public async Task Calculate_CustomWidthSizeExistingBanner_MissingCustomWidth_Returns400()
-    {
-        var client = _factory.CreateClient();
-        // size id 6 is custom-width
-        var req = new
-        {
-            postalCode = "0150",
-            city = "Oslo",
-            bannerSizeId = 6,
-            qty = 1
-            // no customWidthCm
-        };
-
-        var response = await client.PostAsJsonAsync("/api/shipping/calculate", req);
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    // ── POST /api/shipping/parcel-preview — model state failure ───────────────
 
     [Fact]
     public async Task ParcelPreview_InvalidModelState_Returns400()
@@ -266,8 +165,10 @@ public class ShippingControllerTests : IClassFixture<TestWebApplicationFactory>
         // qty = 0 violates [Range(1, 1000)]
         var req = new
         {
-            bannerSizeId = 1,
-            qty = 0,           // invalid: must be >= 1
+            materialId = 1,
+            widthCm = 300,
+            heightCm = 150,
+            qty = 0,
             packingMode = "Folded"
         };
 

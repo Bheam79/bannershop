@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace BannerShop.Api.Services.Shipping;
 
 /// <summary>
-/// Converts an ordered banner (size + optional custom width + qty + packing mode)
+/// Converts an ordered banner (material + actual dimensions + qty + packing mode)
 /// into the physical parcel dimensions used by the carrier rating API.
 ///
 /// BANNERSH-143 — two customer-selectable packing modes:
@@ -26,6 +26,10 @@ namespace BannerShop.Api.Services.Shipping;
 /// </list>
 ///
 /// Weight stays material-area × gsm × qty + packaging in both modes.
+///
+/// BANNERSH-255: the old <see cref="BannerSize"/>-driven overloads are gone — the
+/// banner-size catalogue is now a range-based pricing-rules table, so callers must
+/// pass the concrete (widthCm, heightCm, materialWeightGsm) directly.
 /// </summary>
 public class ParcelCalculator
 {
@@ -47,20 +51,24 @@ public class ParcelCalculator
     public ParcelCalculator(BannerShopDbContext db) => _db = db;
 
     public Task<ParcelDimensions> CalculateAsync(
-        BannerSize size,
-        int? customWidthCm,
+        int widthCm,
+        int heightCm,
+        int materialWeightGsm,
         int qty,
         CancellationToken ct = default)
-        => CalculateAsync(size, customWidthCm, qty, PackingMode.Rolled, ct);
+        => CalculateAsync(widthCm, heightCm, materialWeightGsm, qty, PackingMode.Rolled, ct);
 
     public async Task<ParcelDimensions> CalculateAsync(
-        BannerSize size,
-        int? customWidthCm,
+        int widthCm,
+        int heightCm,
+        int materialWeightGsm,
         int qty,
         PackingMode packing,
         CancellationToken ct = default)
     {
         if (qty < 1) qty = 1;
+        if (widthCm <= 0) throw new InvalidOperationException("Banner width must be > 0.");
+        if (heightCm <= 0) throw new InvalidOperationException("Banner height must be > 0.");
 
         // BANNERSH-180: fallback packaging weight reduced from 500 g → 200 g
         // (Michael's measured average). Existing DBs keep whatever the admin
@@ -71,52 +79,36 @@ public class ParcelCalculator
             .Select(x => (decimal?)x.Value)
             .FirstOrDefaultAsync(ct) ?? 200m;
 
-        // ── Determine banner width in cm ─────────────────────────────────────
-        int bannerWidthCm;
-        if (size.IsCustomWidth)
-        {
-            // Fall back to the material's max width if the caller didn't pass one
-            bannerWidthCm = customWidthCm
-                ?? (size.Material?.WidthCm ?? 150);
-        }
-        else
-        {
-            bannerWidthCm = size.WidthCm
-                ?? throw new InvalidOperationException($"Banner size {size.Id} has no WidthCm.");
-        }
-
-        var heightCm = size.HeightCm;
-
         // For these formulas "long side" is whichever banner edge is wider, and
         // "shortest side" is the other. For a 300×150 banner the long side is
         // 300 cm and the shortest is 150 cm.
-        var longestCm  = Math.Max(bannerWidthCm, heightCm);
-        var shortestCm = Math.Min(bannerWidthCm, heightCm);
+        var longestCm  = Math.Max(widthCm, heightCm);
+        var shortestCm = Math.Min(widthCm, heightCm);
         var longestM   = longestCm / 100m;
 
-        decimal lengthCm, widthCm, heightOutCm;
+        decimal lengthCm, parcelWidthCm, heightOutCm;
 
         if (packing == PackingMode.Folded)
         {
             // Folded: fixed 50×60 cm footprint, height scales with long side and qty.
             var perItemHeight = FoldedBaseHeightCm + FoldedHeightPerMeterCm * longestM;
-            lengthCm   = FoldedLengthCm;
-            widthCm    = FoldedWidthCm;
-            heightOutCm = decimal.Round(perItemHeight * qty, 1);
+            lengthCm      = FoldedLengthCm;
+            parcelWidthCm = FoldedWidthCm;
+            heightOutCm   = decimal.Round(perItemHeight * qty, 1);
         }
         else
         {
             // Rolled: tube length = shortest + 2 cm; cross-section scales with √qty.
             var perItemCross = RolledBaseCrossCm + RolledCrossPerMeterCm * longestM;
             var crossSection = decimal.Round(perItemCross * (decimal)Math.Sqrt(qty), 1);
-            lengthCm    = shortestCm + RolledLengthPaddingCm;
-            widthCm     = crossSection;
-            heightOutCm = crossSection;
+            lengthCm      = shortestCm + RolledLengthPaddingCm;
+            parcelWidthCm = crossSection;
+            heightOutCm   = crossSection;
         }
 
         // ── Weight: material gsm × area × qty + packaging (mode-independent) ─
-        var gsm = (decimal)(size.Material?.WeightGsm ?? 400);
-        var areaSqm = (bannerWidthCm / 100m) * (heightCm / 100m);
+        var gsm = (decimal)materialWeightGsm;
+        var areaSqm = (widthCm / 100m) * (heightCm / 100m);
         var contentsGrams = gsm * areaSqm * qty;
         var totalGrams = contentsGrams + packagingGrams;
         var weightKg = decimal.Round(totalGrams / 1000m, 2);
@@ -132,7 +124,7 @@ public class ParcelCalculator
 
         return new ParcelDimensions(
             LengthCm: lengthCm,
-            WidthCm: widthCm,
+            WidthCm: parcelWidthCm,
             HeightCm: heightOutCm,
             WeightKg: weightKg,
             NonStackable: nonStackable,

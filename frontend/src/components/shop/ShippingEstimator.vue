@@ -4,8 +4,12 @@ import type { ShippingEstimate } from '@/types'
 import { calculateShipping, type PackingMode } from '@/api/shop'
 
 const props = defineProps<{
-  bannerSizeId: number | null
-  customWidthCm: number | null
+  /** Material id used to look up the gsm for parcel weight. BANNERSH-255. */
+  materialId: number | null
+  /** Actual banner width in cm. */
+  widthCm: number | null
+  /** Actual banner height in cm. */
+  heightCm: number | null
   qty: number
 }>()
 
@@ -35,7 +39,7 @@ async function compute() {
     emit('estimate', null)
     return
   }
-  if (!props.bannerSizeId) {
+  if (!props.materialId || !props.widthCm || !props.heightCm) {
     error.value = 'Velg en bannerstørrelse først.'
     return
   }
@@ -44,8 +48,9 @@ async function compute() {
     const result = await calculateShipping({
       postalCode: postalCode.value.trim(),
       city: city.value.trim() || undefined,
-      bannerSizeId: props.bannerSizeId,
-      customWidthCm: props.customWidthCm ?? undefined,
+      materialId: props.materialId,
+      widthCm: props.widthCm,
+      heightCm: props.heightCm,
       qty: props.qty,
       packingMode: packingMode.value,
     })
@@ -65,7 +70,7 @@ async function compute() {
 
 // Recompute when banner selection / qty / packing changes (only if a valid postcode is set)
 watch(
-  () => [props.bannerSizeId, props.customWidthCm, props.qty, packingMode.value],
+  () => [props.materialId, props.widthCm, props.heightCm, props.qty, packingMode.value],
   () => {
     if (/^\d{4}$/.test(postalCode.value.trim())) compute()
   },

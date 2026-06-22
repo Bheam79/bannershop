@@ -45,7 +45,7 @@ public class OrdersControllerTests : IClassFixture<TestWebApplicationFactory>
         {
             deliveryType = "Standard",
             shippingAddress = new { line1 = "Test St", postalCode = "0001", city = "Oslo" },
-            items = new[] { new { bannerSizeId = 1, quantity = 1 } }
+            items = new[] { new { bannerSizeId = 1, quantity = 1, widthCm = 300, heightCm = 150 } }
         };
 
         var response = await client.PostAsJsonAsync("/api/orders/draft", req);
@@ -183,11 +183,11 @@ public class OrdersControllerTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task CreateDraft_CustomWidthSizeWithoutWidth_Returns400()
+    public async Task CreateDraft_DimensionsOutsideRuleRange_Returns400()
     {
-        // Size 6 requires customWidthCm
+        // BANNERSH-255: seeded size id=1 (h 1–154); request a 500-cm-tall banner.
         var client = RegisterAndGetAuthenticatedClient();
-        var req = BuildDraftRequest(bannerSizeId: 6); // no customWidthCm
+        var req = BuildDraftRequest(bannerSizeId: 1, widthCm: 200, heightCm: 500);
 
         var response = await client.PostAsJsonAsync("/api/orders/draft", req);
 
@@ -363,11 +363,11 @@ public class OrdersControllerTests : IClassFixture<TestWebApplicationFactory>
         return doc.GetProperty("orderId").GetInt32();
     }
 
-    private static object BuildDraftRequest(int bannerSizeId, string deliveryType = "Standard", int? customWidthCm = null)
+    private static object BuildDraftRequest(int bannerSizeId, string deliveryType = "Standard", int widthCm = 300, int heightCm = 150)
     {
-        var item = customWidthCm.HasValue
-            ? (object)new { bannerSizeId, quantity = 1, customWidthCm }
-            : new { bannerSizeId, quantity = 1 };
+        // BANNERSH-255: items now carry actual width/height. We pick dims that fall
+        // inside the seeded rule's range (id 1 covers 1–500 wide, 1–154 tall).
+        var item = (object)new { bannerSizeId, quantity = 1, widthCm, heightCm };
 
         return new
         {

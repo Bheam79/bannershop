@@ -177,20 +177,20 @@ async function confirmMockPayment() {
           packingMode: checkout.packingMode,
           // BANNERSH-249: manual designer fee is bundled server-side into the
           // linked banner item's LineTotalNok (no separate fee-only line).
-          items: cart.items
-            .filter((item) => item.bannerSizeId != null)
-            .map((item) => ({
-              bannerSizeId: item.bannerSizeId!,
-              customWidthCm: item.customWidthCm ?? undefined,
-              quantity: item.quantity,
-              notes: item.notes ?? undefined,
-              eyeletOption: item.eyeletOption,
-              // Pass the uploaded / AI-generated design file so the backend can
-              // link OrderItem.BannerDesignId → admin can download the print file.
-              bannerDesignId: item.designId ?? undefined,
-              designRequestId: item.designRequestId ?? undefined,
-              skipCustomSurcharge: item.skipCustomSurcharge ?? undefined,
-            })),
+          items: cart.items.map((item) => ({
+            // BANNERSH-255: items now carry actual width/height + optional
+            // material/size hints; the server picks the cheapest matching rule
+            // when bannerSizeId is omitted.
+            bannerSizeId: item.bannerSizeId ?? undefined,
+            materialId: item.materialId ?? undefined,
+            widthCm: item.widthCm,
+            heightCm: item.heightCm,
+            quantity: item.quantity,
+            notes: item.notes ?? undefined,
+            eyeletOption: item.eyeletOption,
+            bannerDesignId: item.designId ?? undefined,
+            designRequestId: item.designRequestId ?? undefined,
+          })),
         })
         mockOrderId.value = resp.orderId
         checkout.setDraftOrder(resp.orderId, currentCartHash)
@@ -306,20 +306,20 @@ async function pay() {
           // linked banner item's LineTotalNok (no separate fee-only line), so we
           // only send items that have a banner size. The designRequestId is passed
           // through so the server can resolve the per-DR fee + design preview.
-          items: cart.items
-            .filter((item) => item.bannerSizeId != null)
-            .map((item) => ({
-              bannerSizeId: item.bannerSizeId!,
-              customWidthCm: item.customWidthCm ?? undefined,
-              quantity: item.quantity,
-              notes: item.notes ?? undefined,
-              eyeletOption: item.eyeletOption,
-              // Pass the uploaded / AI-generated design file so the backend can
-              // link OrderItem.BannerDesignId → admin can download the print file.
-              bannerDesignId: item.designId ?? undefined,
-              designRequestId: item.designRequestId ?? undefined,
-              skipCustomSurcharge: item.skipCustomSurcharge ?? undefined,
-            })),
+          items: cart.items.map((item) => ({
+            // BANNERSH-255: items now carry actual width/height + optional
+            // material/size hints; the server picks the cheapest matching rule
+            // when bannerSizeId is omitted.
+            bannerSizeId: item.bannerSizeId ?? undefined,
+            materialId: item.materialId ?? undefined,
+            widthCm: item.widthCm,
+            heightCm: item.heightCm,
+            quantity: item.quantity,
+            notes: item.notes ?? undefined,
+            eyeletOption: item.eyeletOption,
+            bannerDesignId: item.designId ?? undefined,
+            designRequestId: item.designRequestId ?? undefined,
+          })),
         })
         payOrderId.value = resp.orderId
         payClientSecret.value = resp.clientSecret

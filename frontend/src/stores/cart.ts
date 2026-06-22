@@ -12,7 +12,8 @@ export function computeCartHash(items: ReadonlyArray<CartItem>): string {
     .map((i) =>
       [
         i.bannerSizeId ?? 'null',
-        i.customWidthCm ?? 'null',
+        i.materialId ?? 'null',
+        i.widthCm,
         i.heightCm,
         i.quantity,
         i.unitPriceNok,
@@ -21,7 +22,6 @@ export function computeCartHash(items: ReadonlyArray<CartItem>): string {
         i.designId ?? 'null',
         i.designRequestId ?? 'null',
         i.manualDesignFeeNok ?? 0,
-        i.skipCustomSurcharge === true ? '1' : '0',
       ].join(':'),
     )
     .join('|')

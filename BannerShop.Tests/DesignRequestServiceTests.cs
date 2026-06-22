@@ -713,12 +713,15 @@ public class DesignRequestServiceTests
         });
 
         result.Success.Should().BeTrue();
-        // 266×150 = 3.99 m² × 180 kr/m² = 718.20.  WITH the (incorrect) custom-width
-        // surcharge the price would be 868.20.  This guards against regression.
-        result.BannerPriceNok.Should().Be(718.20m);
+        // BANNERSH-255: cheapest matching rule across all materials wins. For 266×150
+        // the seeded rule id=6 (Material 2, 140 NOK/m², pricingHeight 180) beats rule
+        // id=1 (Material 1, 180 NOK/m², pricingHeight 154):
+        //   id=6: 2.66 × 1.80 × 140 = 670.32
+        //   id=1: 2.66 × 1.54 × 180 = 737.35
+        result.BannerPriceNok.Should().Be(670.32m);
 
         var saved = db.DesignRequests.Single();
-        saved.BannerSizeId.Should().Be(6); // custom-width × 150 cm size
+        saved.BannerSizeId.Should().Be(6); // cheapest matching rule (Material 2)
         saved.CustomBannerWidthCm.Should().Be(266);
     }
 

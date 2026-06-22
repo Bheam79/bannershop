@@ -10,6 +10,7 @@ using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
 using BannerShop.Tests.Helpers;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -81,9 +82,19 @@ public class OrderServiceTests
                 Standard: new ShippingOption(200m, 3, "SERVICEPAKKE", "Servicepakke"),
                 Express:  new ShippingOption(700m, 1, "SERVICEPAKKE", "Servicepakke")));
 
-        // Default pricing mock
-        pricingMock.Setup(p => p.CalculatePriceAsync(It.IsAny<BannerSize>(), It.IsAny<int?>(), It.IsAny<int?>()))
+        // Default pricing mock (BANNERSH-255 signature: rule + widthCm + heightCm).
+        pricingMock.Setup(p => p.CalculatePriceAsync(It.IsAny<BannerSize>(), It.IsAny<int>(), It.IsAny<int>()))
             .ReturnsAsync(810m);
+        // BANNERSH-255: when bannerSizeId is omitted, OrderService asks the pricing
+        // service for the cheapest matching rule. The mock resolves any (w,h) to the
+        // first seeded BannerSize so the tests stay isolated from catalogue specifics.
+        pricingMock.Setup(p => p.FindCheapestAsync(
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                var rule = db.BannerSizes.Include(s => s.Material).FirstOrDefault();
+                return rule is null ? null : new PriceMatch(rule, 810m);
+            });
 
         // Default stripe mock
         stripeMock.Setup(s => s.CreatePaymentIntentAsync(
@@ -143,10 +154,11 @@ public class OrderServiceTests
     }
 
     private static CreateOrderDraftRequest MakeRequest(
-        int bannerSizeId = 1,
+        int? bannerSizeId = 1,
         DeliveryType delivery = DeliveryType.Standard,
         int qty = 1,
-        int? customWidthCm = null)
+        int widthCm = 300,
+        int heightCm = 150)
         => new CreateOrderDraftRequest
         {
             DeliveryType = delivery,
@@ -163,7 +175,8 @@ public class OrderServiceTests
                 {
                     BannerSizeId = bannerSizeId,
                     Quantity = qty,
-                    CustomWidthCm = customWidthCm
+                    WidthCm = widthCm,
+                    HeightCm = heightCm
                 }
             }
         };
@@ -272,12 +285,12 @@ public class OrderServiceTests
     }
 
     [Fact]
-    public async Task CreateDraft_CustomWidthSize_Succeeds()
+    public async Task CreateDraft_AutoMatchedSize_Succeeds()
     {
-        // BannerSize id=6 is the custom-width size; needs customWidthCm
+        // BANNERSH-255: omit bannerSizeId → server picks cheapest matching rule.
         var (service, _, _, _, _) = CreateService();
 
-        var result = await service.CreateDraftAsync(1, MakeRequest(bannerSizeId: 6, customWidthCm: 200));
+        var result = await service.CreateDraftAsync(1, MakeRequest(bannerSizeId: null, widthCm: 200, heightCm: 100));
 
         result.Success.Should().BeTrue();
     }
@@ -313,27 +326,16 @@ public class OrderServiceTests
     }
 
     [Fact]
-    public async Task CreateDraft_CustomWidthSizeWithoutCustomWidthCm_ReturnsFail()
+    public async Task CreateDraft_DimensionsOutsideRuleRange_ReturnsFail()
     {
-        // Size 6 is custom-width → must provide customWidthCm
+        // BANNERSH-255: requesting a size with dimensions outside its range fails.
         var (service, _, _, _, _) = CreateService();
 
-        var result = await service.CreateDraftAsync(1, MakeRequest(bannerSizeId: 6, customWidthCm: null));
+        // Size 1 is the "h 1–154" rule; ask for height 500.
+        var result = await service.CreateDraftAsync(1, MakeRequest(bannerSizeId: 1, widthCm: 300, heightCm: 500));
 
         result.Success.Should().BeFalse();
-        result.Error.Should().Contain("customWidthCm");
-    }
-
-    [Fact]
-    public async Task CreateDraft_StandardSizeWithCustomWidthCm_ReturnsFail()
-    {
-        // Size 1 is standard width → must NOT provide customWidthCm
-        var (service, _, _, _, _) = CreateService();
-
-        var result = await service.CreateDraftAsync(1, MakeRequest(bannerSizeId: 1, customWidthCm: 200));
-
-        result.Success.Should().BeFalse();
-        result.Error.Should().Contain("not a custom-width");
+        result.Error.Should().Contain("does not cover");
     }
 
     [Fact]
@@ -407,6 +409,8 @@ public class OrderServiceTests
                 {
                     BannerSizeId    = 1,
                     Quantity        = 1,
+                    WidthCm         = 300,
+                    HeightCm        = 150,
                     DesignRequestId = designRequest.Id
                 }
             }
@@ -883,8 +887,8 @@ public class OrderServiceTests
             ShippingAddress = new AddressInputDto { Line1 = "St 1", PostalCode = "0001", City = "Oslo" },
             Items = new List<OrderItemInputDto>
             {
-                new OrderItemInputDto { BannerSizeId = 1, Quantity = 1 },
-                new OrderItemInputDto { BannerSizeId = 2, Quantity = 1 }
+                new OrderItemInputDto { BannerSizeId = 1, Quantity = 1, WidthCm = 300, HeightCm = 150 },
+                new OrderItemInputDto { BannerSizeId = 2, Quantity = 1, WidthCm = 300, HeightCm = 200 }
             }
         };
         var draft = await service.CreateDraftAsync(1, twoItemReq);
@@ -1456,7 +1460,7 @@ public class OrderServiceTests
             ShippingAddress = null, // missing — required for non-Pickup
             Items = new List<OrderItemInputDto>
             {
-                new OrderItemInputDto { BannerSizeId = 1, Quantity = 1 }
+                new OrderItemInputDto { BannerSizeId = 1, Quantity = 1, WidthCm = 300, HeightCm = 150 }
             }
         };
 
@@ -1500,6 +1504,8 @@ public class OrderServiceTests
                 {
                     BannerSizeId   = 1,
                     Quantity       = 1,
+                    WidthCm        = 267,
+                    HeightCm       = 150,
                     BannerDesignId = design.Id
                 }
             }
@@ -1544,6 +1550,8 @@ public class OrderServiceTests
                 {
                     BannerSizeId   = 1,
                     Quantity       = 1,
+                    WidthCm        = 200,
+                    HeightCm       = 150,
                     BannerDesignId = design.Id // owned by user 2, not user 1
                 }
             }

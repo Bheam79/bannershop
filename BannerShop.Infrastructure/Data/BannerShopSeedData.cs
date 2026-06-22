@@ -47,15 +47,31 @@ public static class BannerShopSeedData
 
     private static void SeedBannerSizes(ModelBuilder modelBuilder)
     {
+        // BANNERSH-255: pricing rules are now range-based. Each row covers a
+        // (width range × height range) on a given material with a pricing formula
+        // (PricingHeightCm × PricingMultiplier) OR a fixed price.
+        //
+        // Defaults model:
+        //   – Material 1 (400g, 160 cm wide roll):
+        //       Banner widths 1–500 cm, three height tiers driven by banner gluing:
+        //         1–154 cm tall   → priced at 154 cm × 1 panel
+        //         154–300 cm tall → priced at 154 cm × 2 panels
+        //         300–450 cm tall → priced at 154 cm × 3 panels
+        //   – Material 2 (680g, 180 cm wide roll): same tiers at 180 cm pricing height.
+        //   – Fixed-price standard: 300 × 180 cm on Material 2 at 699 NOK.
         modelBuilder.Entity<BannerSize>().HasData(
-            new BannerSize { Id = 1, WidthCm = 300, HeightCm = 150, IsCustomWidth = false, Name = "300 × 150 cm", IsActive = true, MaterialId = 1, FixedPrice = null, SortOrder = 1 },
-            new BannerSize { Id = 2, WidthCm = 350, HeightCm = 150, IsCustomWidth = false, Name = "350 × 150 cm", IsActive = true, MaterialId = 1, FixedPrice = null, SortOrder = 2 },
-            new BannerSize { Id = 3, WidthCm = 400, HeightCm = 150, IsCustomWidth = false, Name = "400 × 150 cm", IsActive = true, MaterialId = 1, FixedPrice = null, SortOrder = 3 },
-            new BannerSize { Id = 4, WidthCm = 450, HeightCm = 150, IsCustomWidth = false, Name = "450 × 150 cm", IsActive = true, MaterialId = 1, FixedPrice = null, SortOrder = 4 },
-            new BannerSize { Id = 5, WidthCm = 500, HeightCm = 150, IsCustomWidth = false, Name = "500 × 150 cm", IsActive = true, MaterialId = 1, FixedPrice = null, SortOrder = 5 },
-            new BannerSize { Id = 6, WidthCm = null, HeightCm = 150, IsCustomWidth = true, Name = "Valgfri bredde × 150 cm", IsActive = true, MaterialId = 1, FixedPrice = null, SortOrder = 6 },
-            new BannerSize { Id = 7, WidthCm = 300, HeightCm = 180, IsCustomWidth = false, Name = "300 × 180 cm", IsActive = true, MaterialId = 2, FixedPrice = 699m, SortOrder = 7 },
-            new BannerSize { Id = 100, WidthCm = null, HeightCm = 180, IsCustomWidth = true, Name = "Valgfri bredde × 180 cm", IsActive = true, MaterialId = 2, FixedPrice = null, SortOrder = 8 }
+            // Material 1 — 400g (160 cm roll)
+            new BannerSize { Id = 1, Name = "400g — 1 panel (h 1–154)",  IsActive = true, MaterialId = 1, SortOrder = 10, MinWidthCm = 1, MaxWidthCm = 500, MinHeightCm = 1,   MaxHeightCm = 154, PricingHeightCm = 154, PricingMultiplier = 1, FixedPrice = null },
+            new BannerSize { Id = 2, Name = "400g — 2 panel (h 154–300)", IsActive = true, MaterialId = 1, SortOrder = 20, MinWidthCm = 1, MaxWidthCm = 500, MinHeightCm = 154, MaxHeightCm = 300, PricingHeightCm = 154, PricingMultiplier = 2, FixedPrice = null },
+            new BannerSize { Id = 3, Name = "400g — 3 panel (h 300–450)", IsActive = true, MaterialId = 1, SortOrder = 30, MinWidthCm = 1, MaxWidthCm = 500, MinHeightCm = 300, MaxHeightCm = 450, PricingHeightCm = 154, PricingMultiplier = 3, FixedPrice = null },
+
+            // Material 2 — 680g (180 cm roll)
+            new BannerSize { Id = 4, Name = "680g — 1 panel (h 1–180)",   IsActive = true, MaterialId = 2, SortOrder = 40, MinWidthCm = 1,   MaxWidthCm = 500, MinHeightCm = 1,   MaxHeightCm = 180, PricingHeightCm = 180, PricingMultiplier = 1, FixedPrice = null },
+            new BannerSize { Id = 5, Name = "680g — 2 panel (h 180–360)", IsActive = true, MaterialId = 2, SortOrder = 50, MinWidthCm = 1,   MaxWidthCm = 500, MinHeightCm = 180, MaxHeightCm = 360, PricingHeightCm = 180, PricingMultiplier = 2, FixedPrice = null },
+            new BannerSize { Id = 6, Name = "680g — 3 panel (h 360–540)", IsActive = true, MaterialId = 2, SortOrder = 60, MinWidthCm = 1,   MaxWidthCm = 500, MinHeightCm = 360, MaxHeightCm = 540, PricingHeightCm = 180, PricingMultiplier = 3, FixedPrice = null },
+
+            // Fixed-price standard size (admin example)
+            new BannerSize { Id = 7, Name = "300 × 180 cm — Standard",    IsActive = true, MaterialId = 2, SortOrder = 70, MinWidthCm = 300, MaxWidthCm = 300, MinHeightCm = 180, MaxHeightCm = 180, PricingHeightCm = 180, PricingMultiplier = 1, FixedPrice = 699m }
         );
     }
 
