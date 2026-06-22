@@ -8,7 +8,20 @@
  */
 import { ref, computed, watch, nextTick } from 'vue'
 import { fetchSizes, fetchPrice } from '@/api/shop'
-import type { BannerSize } from '@/types'
+import type { BannerSize, Material } from '@/types'
+
+/**
+ * One preset quality option derived from the loaded catalog.
+ * BANNERSH-259: each option maps to exactly one material, and its target height
+ * is that material's `pricingHeightCm` from the mult-1 (single-panel) rule.
+ */
+export interface MaterialOption {
+  material: Material
+  /** The single-panel (pricingMultiplier = 1, no fixedPrice) rule for this material. */
+  singlePanelRule: BannerSize
+  /** Target print height in cm — equals singlePanelRule.pricingHeightCm. */
+  heightCm: number
+}
 
 export type QualityOption = 'high' | 'good' | 'custom'
 
@@ -33,6 +46,46 @@ export function useBannerPricing() {
   const option1State = ref<OptionPriceState>({ price: null, loading: false, comingSoon: false })
   const option2State = ref<OptionPriceState>({ price: null, loading: false, comingSoon: false })
   const customState = ref<OptionPriceState>({ price: null, loading: false, comingSoon: false })
+
+  // ── BANNERSH-259: per-material preset options derived from the catalog ────────
+  /**
+   * One entry per active material that has a single-panel (pricingMultiplier = 1,
+   * no fixedPrice) rule in the catalog, sorted by that rule's sortOrder. Each
+   * entry's heightCm is the pricingHeightCm of that rule, which becomes the target
+   * height for the corresponding quality button in the picker.
+   *
+   * With the current two-material seed:
+   *   [0] → 680g outdoor, heightCm = 154  (Høykvalitet)
+   *   [1] → 400g indoor,  heightCm = 180  (God kvalitet, Kommer snart)
+   */
+  const materialOptions = computed<MaterialOption[]>(() => {
+    const byMaterial = new Map<number, MaterialOption>()
+    for (const s of sizes.value) {
+      if (!s.isActive || s.pricingMultiplier !== 1 || s.fixedPrice != null) continue
+      if (!s.material) continue
+      if (!byMaterial.has(s.materialId)) {
+        byMaterial.set(s.materialId, {
+          material: s.material,
+          singlePanelRule: s,
+          heightCm: s.pricingHeightCm,
+        })
+      }
+    }
+    return [...byMaterial.values()].sort(
+      (a, b) => a.singlePanelRule.sortOrder - b.singlePanelRule.sortOrder,
+    )
+  })
+
+  /**
+   * Target height in cm for the "Høykvalitet" button (first catalog material, mult=1).
+   * Falls back to 154 (680g pricingHeightCm) when the catalog is not yet loaded.
+   */
+  const highOptionHeightCm = computed(() => materialOptions.value[0]?.heightCm ?? 154)
+  /**
+   * Target height in cm for the "God kvalitet" button (second catalog material, mult=1).
+   * Falls back to 180 (400g pricingHeightCm) when the catalog is not yet loaded.
+   */
+  const goodOptionHeightCm = computed(() => materialOptions.value[1]?.heightCm ?? 180)
 
   // ── BANNERSH-162: AI image aspect ratio ────────────────────────────────────
   // Set when the preview <img> fires @load; cleared on new generation.
@@ -68,18 +121,20 @@ export function useBannerPricing() {
   })
 
   // ── Derived widths for preset quality options ──────────────────────────────
+  // BANNERSH-259: heights come from the catalog (material's mult=1 pricingHeightCm).
   const highOptionWidthCm = computed(() => {
     const r = aiImageAspectRatio.value
-    return r ? Math.round(150 * r) : 360
+    return r ? Math.round(highOptionHeightCm.value * r) : 360
   })
   const goodOptionWidthCm = computed(() => {
     const r = aiImageAspectRatio.value
-    return r ? Math.round(180 * r) : 300
+    return r ? Math.round(goodOptionHeightCm.value * r) : 300
   })
 
   const selectedDimensions = computed(() => {
-    if (selectedQuality.value === 'high') return { width: highOptionWidthCm.value, height: 150 }
-    if (selectedQuality.value === 'good') return { width: goodOptionWidthCm.value, height: 180 }
+    // BANNERSH-259: use catalog-derived heights, not hardcoded 150/180.
+    if (selectedQuality.value === 'high') return { width: highOptionWidthCm.value, height: highOptionHeightCm.value }
+    if (selectedQuality.value === 'good') return { width: goodOptionWidthCm.value, height: goodOptionHeightCm.value }
     return { width: customWidth.value ?? 0, height: customHeight.value ?? 0 }
   })
 
@@ -153,9 +208,16 @@ export function useBannerPricing() {
 
   async function refreshAllPrices() {
     if (!sizesLoaded.value) return
+    // BANNERSH-259: pin each option to its catalog material so coming-soon
+    // materials don't bleed into the wrong button.
+    const opts = materialOptions.value
     await Promise.all([
-      computeOptionPrice(highOptionWidthCm.value, 150, option1State.value),
-      computeOptionPrice(goodOptionWidthCm.value, 180, option2State.value),
+      opts[0]
+        ? computeOptionPrice(highOptionWidthCm.value, opts[0].heightCm, option1State.value, opts[0].material.weightGsm)
+        : Promise.resolve(),
+      opts[1]
+        ? computeOptionPrice(goodOptionWidthCm.value, opts[1].heightCm, option2State.value, opts[1].material.weightGsm)
+        : Promise.resolve(),
     ])
   }
 
@@ -263,6 +325,9 @@ export function useBannerPricing() {
     aiImageNaturalRatio,
     aiImageAspectRatio,
     currentAspectRatioString,
+    materialOptions,
+    highOptionHeightCm,
+    goodOptionHeightCm,
     highOptionWidthCm,
     goodOptionWidthCm,
     selectedDimensions,

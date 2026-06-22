@@ -142,7 +142,9 @@ const {
   sizes, sizesLoaded, selectedQuality, customWidth, customHeight, customMaterialGsm,
   option1State, option2State, customState,
   aiImageNaturalRatio, aiImageAspectRatio, currentAspectRatioString,
-  highOptionWidthCm, goodOptionWidthCm, selectedDimensions,
+  highOptionWidthCm, goodOptionWidthCm,
+  highOptionHeightCm, goodOptionHeightCm, // BANNERSH-259: catalog-derived heights
+  selectedDimensions,
   pickBannerSize, loadSizesAndPricing, onPreviewImageLoaded,
   resetForNewGeneration: resetPricing,
 } = useBannerPricing()
@@ -1228,7 +1230,7 @@ onBeforeUnmount(() => {
             <div class="field-label" style="margin-bottom:12px">Velg kvalitet og størrelse</div>
             <div class="quality-grid">
 
-              <!-- Option 1: Høykvalitet — 150 cm tall, width = 150 × image ratio -->
+              <!-- Option 1: Høykvalitet — height from catalog mult=1 rule, width = height × image ratio (BANNERSH-259) -->
               <button
                 type="button"
                 class="quality-btn"
@@ -1240,7 +1242,7 @@ onBeforeUnmount(() => {
                 <div class="quality-btn-title">Høykvalitet</div>
                 <div class="quality-btn-sub">3 års fargegaranti</div>
                 <div class="quality-btn-dims">
-                  <template v-if="aiImageNaturalRatio">ca. {{ highOptionWidthCm }} × 150 cm</template>
+                  <template v-if="aiImageNaturalRatio">ca. {{ highOptionWidthCm }} × {{ highOptionHeightCm }} cm</template>
                   <i v-else class="fa-solid fa-circle-notch fa-spin" style="font-size:10px;color:var(--faint)"></i>
                 </div>
                 <div class="quality-btn-price">
@@ -1254,7 +1256,7 @@ onBeforeUnmount(() => {
                 </div>
               </button>
 
-              <!-- Option 2: God kvalitet — 180 cm tall, width = 180 × image ratio -->
+              <!-- Option 2: God kvalitet — height from catalog mult=1 rule, width = height × image ratio (BANNERSH-259) -->
               <button
                 type="button"
                 class="quality-btn"
@@ -1266,7 +1268,7 @@ onBeforeUnmount(() => {
                 <div class="quality-btn-title">God kvalitet</div>
                 <div class="quality-btn-sub">3 måneders fargegaranti</div>
                 <div class="quality-btn-dims">
-                  <template v-if="aiImageNaturalRatio">ca. {{ goodOptionWidthCm }} × 180 cm</template>
+                  <template v-if="aiImageNaturalRatio">ca. {{ goodOptionWidthCm }} × {{ goodOptionHeightCm }} cm</template>
                   <i v-else class="fa-solid fa-circle-notch fa-spin" style="font-size:10px;color:var(--faint)"></i>
                 </div>
                 <div class="quality-btn-price">
@@ -1582,8 +1584,8 @@ onBeforeUnmount(() => {
               <div>
                 <dt class="field-label" style="margin-bottom:3px">Størrelse</dt>
                 <dd style="color:var(--text)">
-                  <span v-if="selectedQuality === 'high'">Høykvalitet — ca. {{ highOptionWidthCm }} × 150 cm</span>
-                  <span v-else-if="selectedQuality === 'good'">God kvalitet — ca. {{ goodOptionWidthCm }} × 180 cm</span>
+                  <span v-if="selectedQuality === 'high'">Høykvalitet — ca. {{ highOptionWidthCm }} × {{ highOptionHeightCm }} cm</span>
+                  <span v-else-if="selectedQuality === 'good'">God kvalitet — ca. {{ goodOptionWidthCm }} × {{ goodOptionHeightCm }} cm</span>
                   <span v-else>Egendefinert — {{ customWidth ?? '?' }} × {{ customHeight ?? '?' }} cm</span>
                 </dd>
               </div>
