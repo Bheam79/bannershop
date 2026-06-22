@@ -17,21 +17,86 @@ const router = useRouter()
 const ACTIVE_FILTER_VALUE = '__active__'
 const ACTIVE_STATUSES = ['Paid', 'InProduction', 'ReadyToShip', 'DesignReady', 'CustomerApproval']
 
+// BANNERSH-254: persist the filter + current page in sessionStorage so navigating
+// into an order detail and back doesn't drop the admin's place. sessionStorage
+// (rather than localStorage) means the filter clears when the tab closes, which
+// matches admin expectations for "I'm in the middle of triaging this batch".
+const SESSION_KEY = 'bannershop_admin_orders_filters'
+
+interface PersistedFilters {
+  status: string
+  orderType: string
+  fromDate: string
+  toDate: string
+  search: string
+  includeCreditPacks: boolean
+  excludeZeroValueAiOrders: boolean
+  page: number
+}
+
+function getDefaultFilters(): Omit<PersistedFilters, 'page'> {
+  return {
+    // BANNERSH-246: default to "Aktive" so the admin sees actionable orders on load.
+    status: ACTIVE_FILTER_VALUE,
+    orderType: '',
+    fromDate: '',
+    toDate: '',
+    search: '',
+    // BANNERSH-139: include AI credit-pack purchases in the list. Defaults to false
+    // so the production team isn't distracted by them.
+    includeCreditPacks: false,
+    // BANNERSH-169: hide 0-kr AI design-tracking orders by default — they have no
+    // production items and only confuse the fulfilment team.
+    excludeZeroValueAiOrders: true,
+  }
+}
+
+function loadPersistedFilters(): PersistedFilters | null {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<PersistedFilters>
+    const defaults = getDefaultFilters()
+    return {
+      status: typeof parsed.status === 'string' ? parsed.status : defaults.status,
+      orderType: typeof parsed.orderType === 'string' ? parsed.orderType : defaults.orderType,
+      fromDate: typeof parsed.fromDate === 'string' ? parsed.fromDate : defaults.fromDate,
+      toDate: typeof parsed.toDate === 'string' ? parsed.toDate : defaults.toDate,
+      search: typeof parsed.search === 'string' ? parsed.search : defaults.search,
+      includeCreditPacks: typeof parsed.includeCreditPacks === 'boolean'
+        ? parsed.includeCreditPacks
+        : defaults.includeCreditPacks,
+      excludeZeroValueAiOrders: typeof parsed.excludeZeroValueAiOrders === 'boolean'
+        ? parsed.excludeZeroValueAiOrders
+        : defaults.excludeZeroValueAiOrders,
+      page: typeof parsed.page === 'number' && parsed.page >= 1 ? parsed.page : 1,
+    }
+  } catch {
+    return null
+  }
+}
+
+function persistFilters(p: number): void {
+  try {
+    const payload: PersistedFilters = {
+      status: filters.status,
+      orderType: filters.orderType,
+      fromDate: filters.fromDate,
+      toDate: filters.toDate,
+      search: filters.search,
+      includeCreditPacks: filters.includeCreditPacks,
+      excludeZeroValueAiOrders: filters.excludeZeroValueAiOrders,
+      page: p,
+    }
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload))
+  } catch {
+    // sessionStorage quota / disabled — silently ignore; the filter still works
+    // for the current view, just doesn't survive navigation.
+  }
+}
+
 // ── Filter state ──────────────────────────────────────────────────────────────
-const filters = reactive({
-  // BANNERSH-246: default to "Aktive" so the admin sees actionable orders on load.
-  status: ACTIVE_FILTER_VALUE,
-  orderType: '',
-  fromDate: '',
-  toDate: '',
-  search: '',
-  // BANNERSH-139: include AI credit-pack purchases in the list. Defaults to false
-  // so the production team isn't distracted by them.
-  includeCreditPacks: false,
-  // BANNERSH-169: hide 0-kr AI design-tracking orders by default — they have no
-  // production items and only confuse the fulfilment team.
-  excludeZeroValueAiOrders: true,
-})
+const filters = reactive(getDefaultFilters())
 
 // ── Table state ───────────────────────────────────────────────────────────────
 const orders = ref<OrderListItem[]>([])
@@ -45,6 +110,9 @@ const PAGE_SIZE = 20
 async function load(p = 1) {
   loading.value = true
   error.value = null
+  // BANNERSH-254: persist before the request so a navigation away mid-request
+  // still preserves the user's filter choices.
+  persistFilters(p)
   try {
     // BANNERSH-246: "Aktive" is a pseudo-value that expands to multiple statuses.
     const isActive = filters.status === ACTIVE_FILTER_VALUE
@@ -64,6 +132,8 @@ async function load(p = 1) {
     page.value = result.page
     totalPages.value = result.totalPages
     totalCount.value = result.totalCount
+    // Re-persist with the server-corrected page (e.g. when restored page > totalPages).
+    persistFilters(result.page)
   } catch {
     error.value = 'Kunne ikke laste ordrer.'
   } finally {
@@ -77,17 +147,28 @@ function applyFilters() {
 
 function clearFilters() {
   // BANNERSH-246: reset to "Aktive" (the default) rather than "Alle statuser"
-  filters.status = ACTIVE_FILTER_VALUE
-  filters.orderType = ''
-  filters.fromDate = ''
-  filters.toDate = ''
-  filters.search = ''
-  filters.includeCreditPacks = false
-  filters.excludeZeroValueAiOrders = true
+  Object.assign(filters, getDefaultFilters())
+  // BANNERSH-254: wipe persisted filters so the next visit also gets defaults.
+  try { sessionStorage.removeItem(SESSION_KEY) } catch { /* ignore */ }
   load(1)
 }
 
-onMounted(() => load(1))
+onMounted(() => {
+  // BANNERSH-254: restore filters + page when returning from order detail.
+  const restored = loadPersistedFilters()
+  if (restored) {
+    filters.status = restored.status
+    filters.orderType = restored.orderType
+    filters.fromDate = restored.fromDate
+    filters.toDate = restored.toDate
+    filters.search = restored.search
+    filters.includeCreditPacks = restored.includeCreditPacks
+    filters.excludeZeroValueAiOrders = restored.excludeZeroValueAiOrders
+    load(restored.page)
+  } else {
+    load(1)
+  }
+})
 
 const hasPrev = computed(() => page.value > 1)
 const hasNext = computed(() => page.value < totalPages.value)
