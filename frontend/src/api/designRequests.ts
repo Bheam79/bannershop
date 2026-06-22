@@ -144,6 +144,17 @@ export interface DesignRequestDetail {
   finalBannerDesignId: number | null
   currentGenerationId: number | null
   lastError: string | null
+  /**
+   * Public URL of the portrait photo the customer uploaded for this request.
+   * Null when no photo was provided. (BANNERSH-258)
+   */
+  uploadedPhotoUrl?: string | null
+  /**
+   * Id of the BannerDesign row that holds the uploaded portrait photo.
+   * Null when no photo was provided. Used to carry the photo forward when
+   * creating a new design request from a recalled wizard form. (BANNERSH-258)
+   */
+  uploadedPhotoBannerDesignId?: number | null
   /** All AI generation attempts, oldest first. Always empty for Manual requests. (BANNERSH-84) */
   generationHistory: BannerGenerationHistoryItem[]
   createdAt: string

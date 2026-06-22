@@ -453,7 +453,24 @@ public sealed class DesignRequestService : IDesignRequestService
         // the person typed in the form.  The short-lived design-id is treated as the bearer.
         // Authenticated requests are private to their owner (or admin).
         if (r.UserId is not null && r.UserId != callerUserId && !isAdmin) return null;
-        return ToDetail(r);
+
+        var dto = ToDetail(r);
+
+        // BANNERSH-258: surface the uploaded portrait so the wizard can display
+        // the photo thumbnail and forward the id when creating a new request.
+        if (!string.IsNullOrEmpty(r.UploadedPhotoPath))
+        {
+            dto.UploadedPhotoUrl = _storage.PublicUrlFor(r.UploadedPhotoPath);
+            // Resolve the BannerDesign id by matching the stored path so the
+            // frontend can pass it to a new design-request without re-uploading.
+            dto.UploadedPhotoBannerDesignId = await _db.BannerDesigns
+                .AsNoTracking()
+                .Where(d => d.StoragePath == r.UploadedPhotoPath)
+                .Select(d => (int?)d.Id)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        return dto;
     }
 
     public async Task<DesignRequestActionResult> ApproveAsync(int id, int callerUserId, int? selectedHeightCm = null, CancellationToken ct = default)

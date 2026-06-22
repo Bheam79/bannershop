@@ -231,6 +231,19 @@ public class DesignRequestDetailDto
     public string? LastError { get; set; }
     public DateTime? CustomerApprovedAt { get; set; }
     public string? DesignerNotes { get; set; }
+    /// <summary>
+    /// Public URL of the portrait photo uploaded by the customer, or null when no photo was provided.
+    /// Populated on GET /api/design-requests/{id} so the banner wizard can display the
+    /// photo thumbnail when recalling a past design request (BANNERSH-258).
+    /// </summary>
+    public string? UploadedPhotoUrl { get; set; }
+    /// <summary>
+    /// Id of the <see cref="BannerDesign"/> row that holds the uploaded portrait photo,
+    /// resolved via the stored <c>UploadedPhotoPath</c>.  Null when no photo was uploaded.
+    /// The wizard passes this id when creating a new design request from a recalled form
+    /// so the photo is carried forward without requiring a re-upload (BANNERSH-258).
+    /// </summary>
+    public int? UploadedPhotoBannerDesignId { get; set; }
     public IReadOnlyList<DesignRequestRevisionDto> Revisions { get; set; } = Array.Empty<DesignRequestRevisionDto>();
     /// <summary>All generation attempts, oldest first. Image URLs are not included — only the active one is shown via PreviewUrl.</summary>
     public IReadOnlyList<BannerGenerationHistoryItemDto> GenerationHistory { get; set; } = Array.Empty<BannerGenerationHistoryItemDto>();
@@ -352,7 +365,7 @@ public class AdminDesignRequestDetailDto : DesignRequestDetailDto
 {
     public string CustomerName { get; set; } = string.Empty;
     public string CustomerEmail { get; set; } = string.Empty;
-    public string? UploadedPhotoUrl { get; set; }
+    // UploadedPhotoUrl is inherited from DesignRequestDetailDto (BANNERSH-258)
     public string? TemplateName { get; set; }
 }
 

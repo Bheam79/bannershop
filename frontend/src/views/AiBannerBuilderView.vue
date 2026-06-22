@@ -533,6 +533,16 @@ async function handleSelectPastDesign(item: DesignRequestListItem) {
     } else {
       selectedQuality.value = 'high'
     }
+
+    // BANNERSH-258: restore the uploaded portrait photo so the wizard shows
+    // the thumbnail and carries the id forward when the user clicks "Gå videre"
+    // (Manual) or "Generer ny versjon" (AI). Revoke any previous blob-URL first.
+    if (photoPreviewUrl.value?.startsWith('blob:')) {
+      URL.revokeObjectURL(photoPreviewUrl.value)
+    }
+    photoPreviewUrl.value = detail.uploadedPhotoUrl ?? null
+    uploadedPhotoBannerDesignId.value = detail.uploadedPhotoBannerDesignId ?? null
+
     step.value = 2
     // Manual mode: refresh the canvas placeholder so the "Gå videre" CTA is
     // visible regardless of the past design's status (Approved / Final / etc.)
