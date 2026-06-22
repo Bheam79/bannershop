@@ -713,15 +713,14 @@ public class DesignRequestServiceTests
         });
 
         result.Success.Should().BeTrue();
-        // BANNERSH-255: cheapest matching rule across all materials wins. For 266×150
-        // the seeded rule id=6 (Material 2, 140 NOK/m², pricingHeight 180) beats rule
-        // id=1 (Material 1, 180 NOK/m², pricingHeight 154):
-        //   id=6: 2.66 × 1.80 × 140 = 670.32
-        //   id=1: 2.66 × 1.54 × 180 = 737.35
-        result.BannerPriceNok.Should().Be(670.32m);
+        // BANNERSH-259 (seed update): cheapest matching rule across all materials wins.
+        // For 266×150 with the updated catalog (mat2=680g available, mat1=400g future):
+        //   id=1 (680g×154, mat2, 140 NOK/m²): max(140 × 2.66 × 1.54, 399) = 573.50 ← cheapest
+        //   id=4 (400g×180, mat1, 180 NOK/m²): max(180 × 2.66 × 1.80, 399) = 861.84
+        result.BannerPriceNok.Should().Be(573.50m);
 
         var saved = db.DesignRequests.Single();
-        saved.BannerSizeId.Should().Be(6); // cheapest matching rule (Material 2)
+        saved.BannerSizeId.Should().Be(1); // cheapest matching rule (680g×154, mat2)
         saved.CustomBannerWidthCm.Should().Be(266);
     }
 

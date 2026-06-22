@@ -84,8 +84,8 @@ public class SizesControllerTests : IClassFixture<TestWebApplicationFactory>
         EnsureCatalogSeeded();
         var client = _factory.CreateClient();
 
-        // Seeded rule id=7 covers 300×180 with FixedPrice = 699.
-        var response = await client.GetAsync("/api/sizes/price?widthCm=300&heightCm=180&materialId=2");
+        // Seeded rule id=7 covers 300×180 on mat1 (400g) with FixedPrice = 699. (BANNERSH-259)
+        var response = await client.GetAsync("/api/sizes/price?widthCm=300&heightCm=180&materialId=1");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
@@ -115,6 +115,59 @@ public class SizesControllerTests : IClassFixture<TestWebApplicationFactory>
         var response = await client.GetAsync("/api/sizes/price?widthCm=9999&heightCm=9999");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // ── Availability flag (BANNERSH-259) ─────────────────────────────────────
+    //
+    // The picker composable (useBannerPricing) reads `availableFrom` from the
+    // GET /api/sizes response to determine `isComingSoon`. This test guards the
+    // seed so the 680g material (IDs 1–3, 8) is available NOW and the 400g
+    // material (IDs 4–7) is future. A mismatch here would cause the picker to
+    // show "Kommer snart" on actually-available rules.
+
+    [Fact]
+    public async Task GetSizes_SeededCatalog_680gMaterialHasNullAvailableFrom()
+    {
+        EnsureCatalogSeeded();
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/sizes");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        var sizes = JsonSerializer.Deserialize<JsonElement[]>(body, _json)!;
+
+        // Rule id=1 (680g×154) should have material with no availableFrom (available now).
+        var rule1 = sizes.FirstOrDefault(s => s.GetProperty("id").GetInt32() == 1);
+        rule1.ValueKind.Should().NotBe(JsonValueKind.Undefined, "rule id=1 should exist in seeded catalog");
+        var mat = rule1.GetProperty("material");
+        mat.GetProperty("weightGsm").GetInt32().Should().Be(680);
+        // availableFrom is null → serialized as absent or JsonNull
+        mat.TryGetProperty("availableFrom", out var af).Should().BeTrue();
+        af.ValueKind.Should().Be(JsonValueKind.Null, "680g material must be available now (null availableFrom)");
+    }
+
+    [Fact]
+    public async Task GetSizes_SeededCatalog_400gMaterialHasFutureAvailableFrom()
+    {
+        EnsureCatalogSeeded();
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/sizes");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        var sizes = JsonSerializer.Deserialize<JsonElement[]>(body, _json)!;
+
+        // Rule id=4 (400g×180) should have material with a future availableFrom.
+        var rule4 = sizes.FirstOrDefault(s => s.GetProperty("id").GetInt32() == 4);
+        rule4.ValueKind.Should().NotBe(JsonValueKind.Undefined, "rule id=4 should exist in seeded catalog");
+        var mat = rule4.GetProperty("material");
+        mat.GetProperty("weightGsm").GetInt32().Should().Be(400);
+        mat.TryGetProperty("availableFrom", out var af).Should().BeTrue();
+        af.ValueKind.Should().Be(JsonValueKind.String, "400g material must have a future availableFrom date");
+        var availableFrom = af.GetDateTime();
+        availableFrom.Should().BeAfter(DateTime.UtcNow, "400g material is not yet in production");
     }
 
     // ── GET /api/sizes/eyelet-price ───────────────────────────────────────────

@@ -103,6 +103,10 @@ export function useBannerPricing() {
         (materialGsm == null || s.material?.weightGsm === materialGsm),
     )
     if (matching.length === 0) return null
+    // BANNERSH-259: prefer currently-available rules — only fall back to
+    // coming-soon when no available rule covers the requested dimensions.
+    const availableMatching = matching.filter((s) => !isComingSoon(s))
+    const candidates = availableMatching.length > 0 ? availableMatching : matching
     // Estimate price locally so we pick the cheapest. Server confirms via fetchPrice.
     const priceOf = (s: BannerSize) => {
       if (s.fixedPrice != null) return s.fixedPrice
@@ -110,9 +114,9 @@ export function useBannerPricing() {
       const area = (targetWidthCm / 100) * (s.pricingHeightCm / 100)
       return Math.max(area * pps, 399) * (s.pricingMultiplier || 1)
     }
-    let best = matching[0]!
+    let best = candidates[0]!
     let bestPrice = priceOf(best)
-    for (const s of matching.slice(1)) {
+    for (const s of candidates.slice(1)) {
       const p = priceOf(s)
       if (p < bestPrice) { best = s; bestPrice = p }
     }

@@ -44,19 +44,28 @@ internal static class DbHelper
         db.SaveChanges();
     }
 
-    /// <summary>Seeds materials and banner sizes (matching production seed).</summary>
+    /// <summary>Seeds materials and banner sizes (matching production seed / BannerShopStartupSeeder).</summary>
     public static void SeedCatalog(BannerShopDbContext db)
     {
-        var mat1 = new Material { Id = 1, Name = "400g Frontlit Banner (160cm)", WidthCm = 160, MaxBannerWidthCm = 160, WeightGsm = 400, PricePerSqm = 180m, AvailableFrom = null };
-        var mat2 = new Material { Id = 2, Name = "680g Heavy Duty Banner (180cm)", WidthCm = 180, MaxBannerWidthCm = 180, WeightGsm = 680, PricePerSqm = 140m, AvailableFrom = new DateTime(2026, 8, 31, 0, 0, 0, DateTimeKind.Utc) };
+        // BANNERSH-259: keep in sync with BannerShopStartupSeeder.
+        // mat2 (680g) is available now; mat1 (400g) is future (Aug 2026).
+        var mat1 = new Material { Id = 1, Name = "400g innendørs banner",                     WidthCm = 160, MaxBannerWidthCm = 160, WeightGsm = 400, PricePerSqm = 180m, AvailableFrom = new DateTime(2026, 8, 31, 0, 0, 0, DateTimeKind.Utc) };
+        var mat2 = new Material { Id = 2, Name = "680g kraftig banner - 3 år utendørs garanti", WidthCm = 180, MaxBannerWidthCm = 180, WeightGsm = 680, PricePerSqm = 140m, AvailableFrom = null };
         db.Materials.AddRange(mat1, mat2);
 
-        // BANNERSH-255: range-based pricing rules (matches BannerShopSeedData.SeedBannerSizes).
+        // BANNERSH-255 / BANNERSH-259: range-based pricing rules (matches BannerShopStartupSeeder).
         db.BannerSizes.AddRange(
-            new BannerSize { Id = 1, Name = "400g 1p (h 1–154)",  IsActive = true, MaterialId = 1, SortOrder = 10, MinWidthCm = 1, MaxWidthCm = 500, MinHeightCm = 1,   MaxHeightCm = 154, PricingHeightCm = 154, PricingMultiplier = 1 },
-            new BannerSize { Id = 2, Name = "400g 2p (h 154–300)", IsActive = true, MaterialId = 1, SortOrder = 20, MinWidthCm = 1, MaxWidthCm = 500, MinHeightCm = 154, MaxHeightCm = 300, PricingHeightCm = 154, PricingMultiplier = 2 },
-            new BannerSize { Id = 6, Name = "680g 1p (h 1–180)",   IsActive = true, MaterialId = 2, SortOrder = 60, MinWidthCm = 1, MaxWidthCm = 500, MinHeightCm = 1,   MaxHeightCm = 180, PricingHeightCm = 180, PricingMultiplier = 1 },
-            new BannerSize { Id = 7, Name = "300 × 180 (fast)",    IsActive = true, MaterialId = 2, SortOrder = 70, MinWidthCm = 300, MaxWidthCm = 300, MinHeightCm = 180, MaxHeightCm = 180, PricingHeightCm = 180, PricingMultiplier = 1, FixedPrice = 699m }
+            // Material 2 — 680g outdoor (available now)
+            new BannerSize { Id = 1, Name = "680g × 154",  IsActive = true, MaterialId = 2, SortOrder = 10, MinWidthCm = 1,   MaxWidthCm = 700, MinHeightCm = 1,   MaxHeightCm = 154, PricingHeightCm = 154, PricingMultiplier = 1 },
+            new BannerSize { Id = 2, Name = "680g × 300",  IsActive = true, MaterialId = 2, SortOrder = 20, MinWidthCm = 1,   MaxWidthCm = 700, MinHeightCm = 154, MaxHeightCm = 300, PricingHeightCm = 154, PricingMultiplier = 2 },
+            new BannerSize { Id = 3, Name = "680g × 450",  IsActive = true, MaterialId = 2, SortOrder = 30, MinWidthCm = 1,   MaxWidthCm = 700, MinHeightCm = 300, MaxHeightCm = 450, PricingHeightCm = 154, PricingMultiplier = 3 },
+            // Material 1 — 400g indoor (future, available from Aug 2026)
+            new BannerSize { Id = 4, Name = "400g × 180",  IsActive = true, MaterialId = 1, SortOrder = 40, MinWidthCm = 1,   MaxWidthCm = 800, MinHeightCm = 1,   MaxHeightCm = 180, PricingHeightCm = 180, PricingMultiplier = 1 },
+            new BannerSize { Id = 5, Name = "400g × 355",  IsActive = true, MaterialId = 1, SortOrder = 50, MinWidthCm = 1,   MaxWidthCm = 800, MinHeightCm = 180, MaxHeightCm = 355, PricingHeightCm = 180, PricingMultiplier = 2 },
+            new BannerSize { Id = 6, Name = "400g × 530",  IsActive = true, MaterialId = 1, SortOrder = 60, MinWidthCm = 1,   MaxWidthCm = 800, MinHeightCm = 360, MaxHeightCm = 530, PricingHeightCm = 180, PricingMultiplier = 3 },
+            // Fixed-price standard sizes
+            new BannerSize { Id = 7, Name = "300 × 180 cm — Standard",  IsActive = true, MaterialId = 1, SortOrder = 70, MinWidthCm = 300, MaxWidthCm = 300, MinHeightCm = 180, MaxHeightCm = 180, PricingHeightCm = 180, PricingMultiplier = 1, FixedPrice = 699m  },
+            new BannerSize { Id = 8, Name = "267 × 150 cm — Standard",  IsActive = true, MaterialId = 2, SortOrder = 80, MinWidthCm = 266, MaxWidthCm = 268, MinHeightCm = 149, MaxHeightCm = 154, PricingHeightCm = 154, PricingMultiplier = 1, FixedPrice = 849m  }
         );
         db.SaveChanges();
     }
