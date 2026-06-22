@@ -215,10 +215,14 @@ watch(() => [cart.itemCount, cart.items.map(i => `${i.materialId ?? ''}:${i.widt
 
 function formatParcelDims(p: ParcelDimensions): string {
   const round = (n: number) => (Number.isInteger(n) ? n.toString() : n.toFixed(1))
-  return `${round(p.lengthCm)} × ${round(p.widthCm)} × ${round(p.heightCm)} cm`
+  const dims = `${round(p.lengthCm)} × ${round(p.widthCm)} × ${round(p.heightCm)} cm`
+  const count = p.packageCount ?? 1
+  return count > 1 ? `${count} kolli à ${dims}` : dims
 }
 function formatParcelWeight(p: ParcelDimensions): string {
-  return `${p.weightKg.toFixed(2).replace('.', ',')} kg`
+  const count = p.packageCount ?? 1
+  const totalKg = p.weightKg * count
+  return `${totalKg.toFixed(2).replace('.', ',')} kg`
 }
 
 // ── Price calculations ───────────────────────────────────────────────────────
@@ -507,7 +511,7 @@ function eyeletCountFor(item: import('@/types').CartItem): number {
                     Brettet
                     <span class="badge-packing-default">Anbefalt</span>
                   </div>
-                  <div class="packing-btn__sub">Flat eske 50 × 60 cm</div>
+                  <div class="packing-btn__sub">Flat eske 60 × 40 cm</div>
                   <!-- BANNERSH-180: show actual dims + weight that go to Bring -->
                   <div v-if="parcelFolded" class="packing-btn__dims">
                     <span class="packing-btn__dim">{{ formatParcelDims(parcelFolded) }}</span>

@@ -23,4 +23,11 @@ public class ParcelDimensionsDto
     public decimal WidthCm  { get; set; }
     public decimal HeightCm { get; set; }
     public decimal WeightKg { get; set; }
+
+    /// <summary>
+    /// Total number of physical packages for this shipment.
+    /// Each package holds at most <see cref="ParcelCalculator.MaxItemsPerPackage"/> banners.
+    /// Defaults to 1 for backwards compatibility.
+    /// </summary>
+    public int PackageCount { get; set; } = 1;
 }

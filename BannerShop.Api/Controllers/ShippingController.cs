@@ -40,10 +40,13 @@ public class ShippingController : ControllerBase
         if (material is null)
             return NotFound(new { error = $"Material {req.MaterialId} not found." });
 
-        ParcelDimensions parcel;
+        IReadOnlyList<ParcelDimensions> packages;
         try
         {
-            parcel = await _parcels.CalculateAsync(req.WidthCm, req.HeightCm, material.WeightGsm, req.Qty, req.PackingMode, ct);
+            // BANNERSH-274: split qty into packages of ≤ MaxItemsPerPackage and
+            // quote each package separately; the total shipping cost is the sum.
+            packages = await _parcels.SplitIntoPackagesAsync(
+                req.WidthCm, req.HeightCm, material.WeightGsm, req.Qty, req.PackingMode, ct);
         }
         catch (InvalidOperationException ex)
         {
@@ -52,17 +55,48 @@ public class ShippingController : ControllerBase
 
         try
         {
-            var quote = await _shipping.CalculateAsync(req.PostalCode, req.City, parcel, ct);
+            decimal totalStandardCost = 0m;
+            decimal totalExpressCost  = 0m;
+            int maxDays = 0;
+            string? productId   = null;
+            string? productName = null;
+
+            foreach (var parcel in packages)
+            {
+                var quote = await _shipping.CalculateAsync(req.PostalCode, req.City, parcel, ct);
+                totalStandardCost += quote.Standard.CostNok;
+                totalExpressCost  += quote.Express.CostNok;
+                if (quote.Standard.EstimatedDays > maxDays) maxDays = quote.Standard.EstimatedDays;
+                // Use product info from first successful quote
+                productId   ??= quote.Standard.CarrierProductId;
+                productName ??= quote.Standard.CarrierProductName;
+            }
+
+            // Representative parcel dims for the UI (first package)
+            var repr = packages[0];
             return Ok(new ShippingCalculationResponse
             {
-                Standard = ToDto(quote.Standard),
-                Express  = ToDto(quote.Express),
-                Parcel   = new ParcelDimensionsDto
+                Standard = new ShippingOptionDto
                 {
-                    LengthCm = parcel.LengthCm,
-                    WidthCm  = parcel.WidthCm,
-                    HeightCm = parcel.HeightCm,
-                    WeightKg = parcel.WeightKg
+                    Cost               = totalStandardCost,
+                    EstimatedDays      = maxDays,
+                    CarrierProductId   = productId,
+                    CarrierProductName = productName,
+                },
+                Express = new ShippingOptionDto
+                {
+                    Cost               = totalExpressCost,
+                    EstimatedDays      = maxDays,
+                    CarrierProductId   = productId,
+                    CarrierProductName = productName,
+                },
+                Parcel = new ParcelDimensionsDto
+                {
+                    LengthCm     = repr.LengthCm,
+                    WidthCm      = repr.WidthCm,
+                    HeightCm     = repr.HeightCm,
+                    WeightKg     = repr.WeightKg,
+                    PackageCount = packages.Count,
                 }
             });
         }
@@ -89,22 +123,27 @@ public class ShippingController : ControllerBase
         if (material is null)
             return NotFound(new { error = $"Material {req.MaterialId} not found." });
 
-        ParcelDimensions parcel;
+        IReadOnlyList<ParcelDimensions> packages;
         try
         {
-            parcel = await _parcels.CalculateAsync(req.WidthCm, req.HeightCm, material.WeightGsm, req.Qty, req.PackingMode, ct);
+            // BANNERSH-274: split into packages of ≤ MaxItemsPerPackage; return
+            // representative (first) package dims + the total package count.
+            packages = await _parcels.SplitIntoPackagesAsync(
+                req.WidthCm, req.HeightCm, material.WeightGsm, req.Qty, req.PackingMode, ct);
         }
         catch (InvalidOperationException ex)
         {
             return BadRequest(new { error = ex.Message });
         }
 
+        var repr = packages[0];
         return Ok(new ParcelDimensionsDto
         {
-            LengthCm = parcel.LengthCm,
-            WidthCm  = parcel.WidthCm,
-            HeightCm = parcel.HeightCm,
-            WeightKg = parcel.WeightKg
+            LengthCm     = repr.LengthCm,
+            WidthCm      = repr.WidthCm,
+            HeightCm     = repr.HeightCm,
+            WeightKg     = repr.WeightKg,
+            PackageCount = packages.Count,
         });
     }
 

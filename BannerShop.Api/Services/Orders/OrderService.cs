@@ -230,13 +230,21 @@ public class OrderService : IOrderService
                 {
                     var input = req.Items[i];
                     var size = resolvedSizes[i];
-                    // BANNERSH-143/255: pass actual dims + material gsm directly. The
-                    // server-side quote uses the same numbers the customer saw.
-                    var parcel = await _parcels.CalculateAsync(input.WidthCm, input.HeightCm, size.Material.WeightGsm, input.Quantity, req.PackingMode, ct);
-                    var quote = await _shipping.CalculateAsync(req.ShippingAddress!.PostalCode, req.ShippingAddress.City, parcel, ct);
-                    shippingCost += quote.Standard.CostNok;
-                    if (quote.Standard.EstimatedDays > maxCarrierDays)
-                        maxCarrierDays = quote.Standard.EstimatedDays;
+                    // BANNERSH-143/255: pass actual dims + material gsm directly.
+                    // BANNERSH-274: split each line item into packages of ≤ MaxItemsPerPackage
+                    // and quote each package separately so large orders don't produce
+                    // unrealistically huge parcels.
+                    var packages = await _parcels.SplitIntoPackagesAsync(
+                        input.WidthCm, input.HeightCm, size.Material.WeightGsm,
+                        input.Quantity, req.PackingMode, ct);
+                    foreach (var parcel in packages)
+                    {
+                        var quote = await _shipping.CalculateAsync(
+                            req.ShippingAddress!.PostalCode, req.ShippingAddress.City, parcel, ct);
+                        shippingCost += quote.Standard.CostNok;
+                        if (quote.Standard.EstimatedDays > maxCarrierDays)
+                            maxCarrierDays = quote.Standard.EstimatedDays;
+                    }
                 }
             }
             catch (ShippingUnavailableException ex)

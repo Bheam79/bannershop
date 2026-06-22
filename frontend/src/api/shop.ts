@@ -104,6 +104,8 @@ export interface ParcelDimensions {
   widthCm: number
   heightCm: number
   weightKg: number
+  /** Total number of physical packages (each holds ≤ 4 banners). Defaults to 1. */
+  packageCount?: number
 }
 
 /**

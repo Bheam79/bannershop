@@ -100,17 +100,17 @@ public class ParcelCalculatorTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Folded mode (BANNERSH-143): 50 × 60 cm footprint, H = (10 + 1 × long_m) × qty
+    // Folded mode (BANNERSH-143 / BANNERSH-274): 60 × 40 cm footprint, H = (10 + 1 × long_m) × qty
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Folded_AnySize_FootprintIs50x60cm()
+    public async Task Folded_AnySize_FootprintIs60x40cm()
     {
         var calc = CreateSeeded(out _);
 
         var parcel = await calc.CalculateAsync(300, 150, 400, 1, PackingMode.Folded);
 
-        parcel.WidthCm.Should().Be(50m);
+        parcel.WidthCm.Should().Be(40m);
         parcel.LengthCm.Should().Be(60m);
     }
 
@@ -196,5 +196,79 @@ public class ParcelCalculatorTests
         defaultParcel.WidthCm.Should().Be(rolledParcel.WidthCm);
         defaultParcel.HeightCm.Should().Be(rolledParcel.HeightCm);
         defaultParcel.WeightKg.Should().Be(rolledParcel.WeightKg);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SplitIntoPackagesAsync (BANNERSH-274): at most MaxItemsPerPackage per package
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Split_ExactMultiple_ProducesCorrectPackageCount()
+    {
+        // 16 banners → 4 packages of 4
+        var calc = CreateSeeded(out _);
+
+        var packages = await calc.SplitIntoPackagesAsync(300, 150, 400, 16, PackingMode.Folded);
+        var expectedPkg = await calc.CalculateAsync(300, 150, 400, 4, PackingMode.Folded);
+
+        packages.Should().HaveCount(4);
+        packages.Should().AllSatisfy(p => p.WeightKg.Should().Be(expectedPkg.WeightKg));
+    }
+
+    [Fact]
+    public async Task Split_WithRemainder_LastPackageHasFewer()
+    {
+        // 14 banners → 3 packages of 4 + 1 package of 2
+        var calc = CreateSeeded(out _);
+
+        var packages = await calc.SplitIntoPackagesAsync(300, 150, 400, 14, PackingMode.Folded);
+
+        packages.Should().HaveCount(4);
+
+        var fullPackage = await calc.CalculateAsync(300, 150, 400, 4, PackingMode.Folded);
+        var partPackage = await calc.CalculateAsync(300, 150, 400, 2, PackingMode.Folded);
+
+        packages.Take(3).Should().AllSatisfy(p => p.WeightKg.Should().Be(fullPackage.WeightKg));
+        packages.Last().WeightKg.Should().Be(partPackage.WeightKg);
+    }
+
+    [Fact]
+    public async Task Split_SmallQty_ProducesOnePackage()
+    {
+        // 2 banners → 1 package of 2
+        var calc = CreateSeeded(out _);
+
+        var packages = await calc.SplitIntoPackagesAsync(300, 150, 400, 2, PackingMode.Rolled);
+
+        packages.Should().HaveCount(1);
+        packages[0].WeightKg.Should().Be(
+            (await calc.CalculateAsync(300, 150, 400, 2, PackingMode.Rolled)).WeightKg);
+    }
+
+    [Fact]
+    public async Task Split_ExactlyMaxItemsPerPackage_IsOnePackage()
+    {
+        // 4 banners → exactly 1 package of 4
+        var calc = CreateSeeded(out _);
+
+        var packages = await calc.SplitIntoPackagesAsync(300, 150, 400, ParcelCalculator.MaxItemsPerPackage, PackingMode.Folded);
+
+        packages.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task Split_TotalWeight_EqualsPerPackageWeightSummed()
+    {
+        // Weight of split packages should equal invoking CalculateAsync per group
+        var calc = CreateSeeded(out _);
+        int qty = 9; // 4 + 4 + 1
+
+        var packages = await calc.SplitIntoPackagesAsync(200, 150, 400, qty, PackingMode.Rolled);
+
+        packages.Should().HaveCount(3);
+        var pkg4 = await calc.CalculateAsync(200, 150, 400, 4, PackingMode.Rolled);
+        var pkg1 = await calc.CalculateAsync(200, 150, 400, 1, PackingMode.Rolled);
+        var expected = pkg4.WeightKg + pkg4.WeightKg + pkg1.WeightKg;
+        packages.Sum(p => p.WeightKg).Should().Be(expected);
     }
 }
