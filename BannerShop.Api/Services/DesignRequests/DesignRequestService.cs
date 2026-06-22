@@ -260,8 +260,11 @@ public sealed class DesignRequestService : IDesignRequestService
         // aspect ratio and charge it alongside the design fee. Falls back to 0 if no
         // BannerSize matches the aspect ratio's dimensions (degraded — the customer
         // would only pay the design fee, same as the pre-104 behaviour).
+        // BANNERSH-281: pin the lookup to the customer-picked material (when supplied)
+        // so the displayed banner price matches the quality option they selected in
+        // the wizard rather than the globally-cheapest rule.
         var (bannerPriceNok, bannerSizeId, customBannerWidthCm) =
-            await ResolveBannerProductionCostAsync(req.AspectRatio, ct);
+            await ResolveBannerProductionCostAsync(req.AspectRatio, req.MaterialId, ct);
         var totalNok = ManualPriceNok + bannerPriceNok;
         var now = DateTime.UtcNow;
 
@@ -317,11 +320,29 @@ public sealed class DesignRequestService : IDesignRequestService
     /// BANNERSH-255: uses <see cref="IPricingService.FindCheapestAsync"/> to locate the cheapest
     /// matching pricing rule across all materials. Returns 0 / null when no rule covers the
     /// derived dimensions so the manual flow degrades to design-fee-only.
+    ///
+    /// BANNERSH-281: optional <paramref name="materialId"/> pins the lookup to the material
+    /// the customer picked in the quality/size picker.  When the pinned material has no
+    /// matching rule we fall back to the cheapest rule across all materials rather than
+    /// failing — the cart side (OrderService) re-validates with the picked BannerSize so
+    /// the customer is never silently re-priced behind their back.
     /// </summary>
     private async Task<(decimal PriceNok, int? BannerSizeId, int? CustomWidthCm)> ResolveBannerProductionCostAsync(
-        string aspectRatio, CancellationToken ct)
+        string aspectRatio, int? materialId, CancellationToken ct)
     {
         var (targetWidthCm, targetHeightCm) = ParseDimensions(aspectRatio);
+
+        if (materialId is int mid)
+        {
+            var pinned = await _pricing.FindCheapestAsync(targetWidthCm, targetHeightCm, mid, ct);
+            if (pinned is not null)
+                return (decimal.Round(pinned.PriceNok, 2), pinned.Rule.Id, targetWidthCm);
+
+            _log.LogWarning(
+                "ResolveBannerProductionCostAsync: no BannerSize matches aspectRatio={Ratio} ({W}×{H} cm) " +
+                "for pinned materialId={MaterialId}. Falling back to the cheapest rule across all materials.",
+                aspectRatio, targetWidthCm, targetHeightCm, mid);
+        }
 
         var match = await _pricing.FindCheapestAsync(targetWidthCm, targetHeightCm, materialId: null, ct);
         if (match is not null)

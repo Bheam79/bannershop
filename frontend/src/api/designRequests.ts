@@ -270,6 +270,14 @@ export interface CreateManualRequestPayload {
   themeDescription: string
   aspectRatio: string // '16:9' | '18:9'
   uploadedPhotoBannerDesignId?: number | null
+  /**
+   * BANNERSH-281: material id from the wizard's quality/size picker. When supplied
+   * the backend pins the pricing-rule lookup to this material so the displayed
+   * banner price (the one we charge in the cart) matches the quality the customer
+   * actually picked. When omitted the backend falls back to the cheapest matching
+   * rule across all materials (legacy behaviour).
+   */
+  materialId?: number | null
 }
 
 /**

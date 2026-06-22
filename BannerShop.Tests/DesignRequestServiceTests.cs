@@ -771,4 +771,91 @@ public class DesignRequestServiceTests
         result.DesignPriceNok.Should().Be(495m);
         result.BannerPriceNok.Should().Be(0m); // no matching catalog entry → degrade
     }
+
+    // ── BANNERSH-281: pinned materialId honours the wizard quality selection ──
+
+    [Fact]
+    public async Task CreateManualRequestAsync_pinnedMaterialId_uses_that_materials_rule_not_cheapest()
+    {
+        // 274×154 has matches in BOTH the 680g (id 1) and the 400g (id 4) rules
+        // — the unpinned call picks the cheapest (id 1 = 573.50 in the test seed) but
+        // when the customer picked "God kvalitet" (400g, mat 1) the price should
+        // reflect THAT material's rule, not the globally-cheapest one.
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        DbHelper.SeedPricingParameters(db);
+        DbHelper.SeedCatalog(db);
+        var (svc, _, _, _) = MakeService(db);
+
+        var pinned = await svc.CreateManualRequestAsync(1, new CreateManualDesignRequestDto
+        {
+            TemplateId       = 1,
+            Language         = "nb",
+            PersonName       = "Ola",
+            TextContent      = "Hi",
+            ThemeDescription = "x",
+            AspectRatio      = "274x154",
+            MaterialId       = 1 // 400g indoor → should pick id=4 rule (180 NOK/m² × 274×180)
+        });
+
+        pinned.Success.Should().BeTrue();
+        var saved = db.DesignRequests.Single();
+        saved.BannerSizeId.Should().Be(4); // 400g × 180 rule, NOT id 1 (680g)
+        // 180 NOK/m² × (274/100 × 180/100) = 180 × 4.932 = 887.76
+        pinned.BannerPriceNok.Should().Be(887.76m);
+    }
+
+    [Fact]
+    public async Task CreateManualRequestAsync_noMaterialId_keeps_legacy_cheapestMatch_behaviour()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        DbHelper.SeedPricingParameters(db);
+        DbHelper.SeedCatalog(db);
+        var (svc, _, _, _) = MakeService(db);
+
+        var unpinned = await svc.CreateManualRequestAsync(1, new CreateManualDesignRequestDto
+        {
+            TemplateId       = 1,
+            Language         = "nb",
+            PersonName       = "Ola",
+            TextContent      = "Hi",
+            ThemeDescription = "x",
+            AspectRatio      = "274x154"
+            // MaterialId omitted — legacy "cheapest across all materials" path
+        });
+
+        unpinned.Success.Should().BeTrue();
+        var saved = db.DesignRequests.Single();
+        // 680g rule (id 1): 140 NOK/m² × 4.2196 = 590.74 — cheaper than 400g (887.76).
+        saved.BannerSizeId.Should().Be(1);
+        unpinned.BannerPriceNok.Should().Be(590.74m);
+    }
+
+    [Fact]
+    public async Task CreateManualRequestAsync_pinnedMaterialId_with_no_match_falls_back_to_cheapest()
+    {
+        // A bogus material id should not break the flow — degrade to the cheapest
+        // matching rule across all materials rather than failing the request.
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        DbHelper.SeedPricingParameters(db);
+        DbHelper.SeedCatalog(db);
+        var (svc, _, _, _) = MakeService(db);
+
+        var result = await svc.CreateManualRequestAsync(1, new CreateManualDesignRequestDto
+        {
+            TemplateId       = 1,
+            Language         = "nb",
+            PersonName       = "Ola",
+            TextContent      = "Hi",
+            ThemeDescription = "x",
+            AspectRatio      = "274x154",
+            MaterialId       = 9999 // does not exist
+        });
+
+        result.Success.Should().BeTrue();
+        result.BannerPriceNok.Should().Be(590.74m); // fell back to cheapest (mat 2, rule id 1)
+        db.DesignRequests.Single().BannerSizeId.Should().Be(1);
+    }
 }

@@ -230,6 +230,7 @@ const {
   getSizesLoaded: () => sizesLoaded.value,
   pickBannerSize,
   getSelectedDimensions: () => selectedDimensions.value,
+  getMaterialOptions: () => materialOptions.value,
   setTilpassState: (w, h, size, bannerPrice, eyeletPrice) => {
     tilpassDesignWidthCm.value = w
     tilpassDesignHeightCm.value = h

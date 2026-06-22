@@ -12,7 +12,7 @@ import { createManualRequest } from '@/api/designRequests'
 import { fetchEyeletPriceNok } from '@/api/shop'
 import { useAuthStore } from '@/stores/auth'
 import type { DesignRequestDetail } from '@/api/designRequests'
-import type { BannerSize } from '@/types'
+import type { BannerSize, Material } from '@/types'
 
 export const MANUAL_DESIGN_FEE_NOK = 495
 const MANUAL_SESSION_KEY = 'manual_banner_builder_state'
@@ -44,6 +44,14 @@ interface ManualModeOptions {
     materialGsm?: number,
   ) => { size: BannerSize; customWidthCm?: number } | null
   getSelectedDimensions: () => { width: number; height: number }
+  /**
+   * BANNERSH-281: the catalog-derived list of quality options (`high`/`good`),
+   * each mapped to a concrete material.  Used to translate the wizard's
+   * `selectedQuality` into a `materialId` we can pin the server-side pricing
+   * lookup to so the displayed banner price matches the quality the customer
+   * picked rather than the globally-cheapest rule.
+   */
+  getMaterialOptions: () => Array<{ material: Material }>
   /** Called to enter the tilpass step — mirrors AI approve() */
   setTilpassState: (
     widthCm: number,
@@ -232,6 +240,17 @@ export function useManualMode(options: ManualModeOptions) {
 
     manualSubmitting.value = true
     try {
+      // BANNERSH-281: derive the picked material from the wizard's quality option so the
+      // server pins the pricing-rule lookup to the right material instead of returning
+      // the cheapest rule across all materials (which would under-charge the customer on
+      // the tilpass page and produce a price mismatch with the actual cart).
+      const matOpts = options.getMaterialOptions()
+      const q = options.getSelectedQuality()
+      let materialId: number | undefined
+      if (q === 'high') materialId = matOpts[0]?.material.id
+      else if (q === 'good') materialId = matOpts[1]?.material.id
+      else materialId = matOpts.find((m) => m.material.weightGsm === options.getCustomMaterialGsm())?.material.id
+
       const resp = await createManualRequest({
         templateId: options.getTemplateId()!,
         language: options.getLanguage(),
@@ -241,6 +260,7 @@ export function useManualMode(options: ManualModeOptions) {
         themeDescription: options.getThemeDescription().trim(),
         aspectRatio: options.getAspectRatioForBackend(),
         uploadedPhotoBannerDesignId: options.getUploadedPhotoBannerDesignId() ?? undefined,
+        materialId,
       })
       manualDesignRequestId.value = resp.designRequestId
       manualBannerPriceNok.value = resp.bannerPriceNok

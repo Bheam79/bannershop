@@ -35,6 +35,14 @@ public class CreateManualDesignRequestDto
 
     /// <summary>Optional BannerDesign id for an uploaded portrait photo.</summary>
     public int? UploadedPhotoBannerDesignId { get; set; }
+
+    /// <summary>
+    /// Optional material id the customer picked in the quality/size picker.  When supplied,
+    /// the server pins the pricing-rule lookup to this material so the displayed banner
+    /// price matches the user's quality selection (BANNERSH-281).  When omitted, the server
+    /// falls back to the cheapest matching rule across all materials (legacy behaviour).
+    /// </summary>
+    public int? MaterialId { get; set; }
 }
 
 /// <summary>POST /api/design-requests/{id}/revision body.</summary>
