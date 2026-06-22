@@ -521,6 +521,119 @@ public class AdminOrdersControllerTests : IClassFixture<TestWebApplicationFactor
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 
+    // ── POST /api/admin/orders/{id}/cancel-payment ───────────────────────────
+
+    [Fact]
+    public async Task CancelPayment_WithAdminToken_OnPaidOrder_Returns200()
+    {
+        // Arrange: create a draft order, mock-pay it so it enters Paid state.
+        var customerClient = RegisterAndGetAuthenticatedClient();
+        var orderId = await CreateDraftAndGetId(customerClient);
+        await customerClient.PostAsJsonAsync($"/api/orders/{orderId}/mock-pay",
+            new { password = "test1234" });
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        // Act
+        var response = await adminClient.PostAsync($"/api/admin/orders/{orderId}/cancel-payment", null);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await response.ReadJsonAsync<JsonElement>();
+        doc.GetProperty("id").GetInt32().Should().Be(orderId);
+        doc.GetProperty("status").GetString().Should().Be("Cancelled");
+    }
+
+    [Fact]
+    public async Task CancelPayment_WithCustomerToken_Returns403()
+    {
+        var customerClient = RegisterAndGetAuthenticatedClient();
+
+        var response = await customerClient.PostAsync("/api/admin/orders/1/cancel-payment", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task CancelPayment_NonExistentOrder_Returns404()
+    {
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        var response = await adminClient.PostAsync("/api/admin/orders/99999980/cancel-payment", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task CancelPayment_OrderInWrongState_Returns422()
+    {
+        // Draft/PendingPayment is not Paid/InProduction/ReadyToShip — service returns FailTransition.
+        var customerClient = RegisterAndGetAuthenticatedClient();
+        var orderId = await CreateDraftAndGetId(customerClient);
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+        // Do NOT mock-pay — order stays in Draft/PendingPayment state.
+
+        var response = await adminClient.PostAsync($"/api/admin/orders/{orderId}/cancel-payment", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+    }
+
+    // ── POST /api/admin/orders/{id}/mark-paid ────────────────────────────────
+
+    [Fact]
+    public async Task MarkPaid_WithAdminToken_OnDraftOrder_Returns200()
+    {
+        // Arrange: create a draft order (PendingPayment state after CreateDraftAndGetId).
+        var customerClient = RegisterAndGetAuthenticatedClient();
+        var orderId = await CreateDraftAndGetId(customerClient);
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        // Act
+        var response = await adminClient.PostAsync($"/api/admin/orders/{orderId}/mark-paid", null);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await response.ReadJsonAsync<JsonElement>();
+        doc.GetProperty("id").GetInt32().Should().Be(orderId);
+        doc.GetProperty("status").GetString().Should().Be("Paid");
+    }
+
+    [Fact]
+    public async Task MarkPaid_WithCustomerToken_Returns403()
+    {
+        var customerClient = RegisterAndGetAuthenticatedClient();
+
+        var response = await customerClient.PostAsync("/api/admin/orders/1/mark-paid", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task MarkPaid_NonExistentOrder_Returns404()
+    {
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        var response = await adminClient.PostAsync("/api/admin/orders/99999979/mark-paid", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task MarkPaid_AlreadyPaidOrder_Returns422()
+    {
+        // Arrange: advance order to Paid first via mock-pay, then try mark-paid again.
+        var customerClient = RegisterAndGetAuthenticatedClient();
+        var orderId = await CreateDraftAndGetId(customerClient);
+        await customerClient.PostAsJsonAsync($"/api/orders/{orderId}/mock-pay",
+            new { password = "test1234" });
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        // Act: Paid is not Draft or PendingPayment → 422
+        var response = await adminClient.PostAsync($"/api/admin/orders/{orderId}/mark-paid", null);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /// <summary>Registers a fresh customer user and returns an authenticated HttpClient.</summary>
