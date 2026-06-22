@@ -417,6 +417,110 @@ public class AdminOrdersControllerTests : IClassFixture<TestWebApplicationFactor
         doc.GetProperty("orderState").GetString().Should().Be("Cancelled");
     }
 
+    // ── POST /api/admin/orders/{id}/capture ──────────────────────────────────
+
+    [Fact]
+    public async Task Capture_WithAdminToken_OnPaidOrder_Returns200()
+    {
+        // Arrange: create a draft order, mock-pay it so it enters Paid state.
+        var customerClient = RegisterAndGetAuthenticatedClient();
+        var orderId = await CreateDraftAndGetId(customerClient);
+        await customerClient.PostAsJsonAsync($"/api/orders/{orderId}/mock-pay",
+            new { password = "test1234" });
+
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        // Act
+        var response = await adminClient.PostAsync($"/api/admin/orders/{orderId}/capture", null);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await response.ReadJsonAsync<JsonElement>();
+        doc.GetProperty("id").GetInt32().Should().Be(orderId);
+    }
+
+    [Fact]
+    public async Task Capture_WithCustomerToken_Returns403()
+    {
+        var customerClient = RegisterAndGetAuthenticatedClient();
+
+        var response = await customerClient.PostAsync("/api/admin/orders/1/capture", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Capture_WithoutAuth_Returns401()
+    {
+        var response = await _factory.CreateClient().PostAsync("/api/admin/orders/1/capture", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Capture_NonExistentOrder_Returns404()
+    {
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        var response = await adminClient.PostAsync("/api/admin/orders/99999999/capture", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Capture_OrderInNonCapturableState_Returns422()
+    {
+        // Arrange: create a draft order, mock-pay it (→ Paid), then advance to Shipped
+        // (outside the Paid / InProduction / ReadyToShip capturable range).
+        var customerClient = RegisterAndGetAuthenticatedClient();
+        var orderId = await CreateDraftAndGetId(customerClient);
+        await customerClient.PostAsJsonAsync($"/api/orders/{orderId}/mock-pay",
+            new { password = "test1234" });
+
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+        // Paid → InProduction → Shipped (all via advance-state)
+        await adminClient.PostAsJsonAsync($"/api/admin/orders/{orderId}/advance-state",
+            new { toState = "InProduction" });
+        await adminClient.PostAsJsonAsync($"/api/admin/orders/{orderId}/advance-state",
+            new { toState = "Shipped" });
+
+        // Act: try to capture a Shipped order
+        var response = await adminClient.PostAsync($"/api/admin/orders/{orderId}/capture", null);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+    }
+
+    [Fact]
+    public async Task Capture_OrderWithNoPaymentIntent_Returns422()
+    {
+        // Arrange: insert an Order row directly (no StripePaymentIntentId) in Paid state.
+        // InMemory DB does not enforce FK constraints so UserId=0 is acceptable here.
+        var insertedOrderId = 0;
+        _factory.SeedDatabase(db =>
+        {
+            var order = new BannerShop.Core.Entities.Order
+            {
+                UserId = 0,
+                Status = BannerShop.Core.Enums.OrderStatus.Paid,
+                OrderState = BannerShop.Core.Enums.OrderState.Paid,
+                StripePaymentIntentId = null,
+                TotalNok = 500m,
+            };
+            db.Orders.Add(order);
+            db.SaveChanges();
+            insertedOrderId = order.Id;
+        });
+
+        var adminClient = _factory.CreateAuthenticatedClient(role: UserRole.Admin);
+
+        // Act
+        var response = await adminClient.PostAsync($"/api/admin/orders/{insertedOrderId}/capture", null);
+
+        // Assert: 422 because the order has no PI to capture (BANNERSH-269 fix)
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /// <summary>Registers a fresh customer user and returns an authenticated HttpClient.</summary>
