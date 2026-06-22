@@ -471,7 +471,51 @@ function returnToWizardIdle() {
   step.value = 2
 }
 
-/** Select a past design: composable call + restore form fields + step navigation */
+/**
+ * Map a stored `DesignRequest.aspectRatio` (either `'WxH'` like `'266x150'` or
+ * `'A:B'` like `'16:9'`) to the closest matching wizard {@link AspectRatioOption}
+ * preset so the past design's shape is recalled accurately when the customer
+ * re-opens it from the sidebar (BANNERSH-252).
+ */
+function aspectRatioToOption(raw: string | null | undefined): AspectRatioOption | null {
+  if (!raw) return null
+  let w = 0
+  let h = 0
+  const dims = /^(\d+)x(\d+)$/i.exec(raw)
+  if (dims && dims[1] && dims[2]) {
+    w = parseInt(dims[1], 10)
+    h = parseInt(dims[2], 10)
+  } else {
+    const ratio = /^(\d+):(\d+)$/.exec(raw)
+    if (ratio && ratio[1] && ratio[2]) {
+      w = parseInt(ratio[1], 10)
+      h = parseInt(ratio[2], 10)
+    }
+  }
+  if (w <= 0 || h <= 0) return null
+  const target = w / h
+  const candidates: { opt: AspectRatioOption; ratio: number }[] = [
+    { opt: '16:9', ratio: 16 / 9 },
+    { opt: '1:2',  ratio: 1 / 2 },
+    { opt: '1:1',  ratio: 1 },
+    { opt: '2:1',  ratio: 2 },
+    { opt: '3:1',  ratio: 3 },
+    { opt: '4:1',  ratio: 4 },
+  ]
+  let best = candidates[0]!
+  let bestDiff = Math.abs(target - best.ratio)
+  for (const c of candidates) {
+    const d = Math.abs(target - c.ratio)
+    if (d < bestDiff) { best = c; bestDiff = d }
+  }
+  return best.opt
+}
+
+/** Select a past design: composable call + restore form fields + step navigation.
+ *  BANNERSH-252: always reopens the wizard with values pre-filled — never
+ *  redirects to /account/design-requests/<id>. In Manual mode the wizard then
+ *  shows the synthetic "Ditt banner" placeholder + "Gå videre" CTA so the
+ *  customer can edit and re-order (a new DesignRequest is minted on submit). */
 async function handleSelectPastDesign(item: DesignRequestListItem) {
   resetPricing()
   const detail = await _selectPastDesign(item)
@@ -482,12 +526,20 @@ async function handleSelectPastDesign(item: DesignRequestListItem) {
     themeDescription.value = detail.themeDescription
     selectedTemplateId.value = detail.bannerTemplateId
     language.value = detail.language === 'en' ? 'en' : 'nb'
+    const restoredRatio = aspectRatioToOption(detail.aspectRatio)
+    if (restoredRatio) selectedAspectRatio.value = restoredRatio
     if (detail.aspectRatio === '18:9' || detail.aspectRatio?.startsWith('300x')) {
       selectedQuality.value = 'good'
     } else {
       selectedQuality.value = 'high'
     }
     step.value = 2
+    // Manual mode: refresh the canvas placeholder so the "Gå videre" CTA is
+    // visible regardless of the past design's status (Approved / Final / etc.)
+    // and the picker reflects the recalled aspect ratio.
+    if (isManual.value) {
+      generateManualPlaceholder()
+    }
   }
 }
 

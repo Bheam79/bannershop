@@ -7,7 +7,6 @@
  * composable has no hard reference to the parent component's template refs.
  */
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
 import {
   createAiRequest,
   getDesignRequest,
@@ -20,7 +19,6 @@ import {
   type AiPaywallData,
 } from '@/api/designRequests'
 import { generateRequestIntegrity } from '@/composables/useRequestIntegrity'
-import { useAuthStore } from '@/stores/auth'
 
 export type GenPhase =
   | 'idle'
@@ -55,9 +53,6 @@ export interface BannerGenerationOptions {
 }
 
 export function useBannerGeneration(options: BannerGenerationOptions) {
-  const router = useRouter()
-  const auth = useAuthStore()
-
   // ── Generation state ───────────────────────────────────────────────────────
   const genPhase = ref<GenPhase>('idle')
   const currentDesignRequest = ref<DesignRequestDetail | null>(null)
@@ -303,31 +298,47 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
     }
   }
 
-  // ── selectPastDesign (AI mode only) ────────────────────────────────────────
+  // ── selectPastDesign ───────────────────────────────────────────────────────
+  // BANNERSH-252: Always restore the design's values into the wizard form so
+  // the customer can edit and/or order again — never redirect to the account
+  // detail page (the click happened inside the banner-builder wizard; jumping
+  // out to an order-style page is confusing). The caller (handleSelectPastDesign)
+  // is responsible for repopulating template / language / aspect-ratio fields
+  // from the returned detail.
   async function selectPastDesign(item: DesignRequestListItem) {
-    if (options.isManual()) {
-      void router.push(`/account/design-requests/${item.id}`)
-      return
-    }
+    let detail: DesignRequestDetail
     try {
-      const detail = await getDesignRequest(item.id)
-      designRequestId.value = item.id
-      currentDesignRequest.value = detail
-      editExpanded.value = false
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-
-      if (detail.status === 'AwaitingApproval' || detail.status === 'Approved' || detail.status === 'Final') {
-        genPhase.value = 'ready'
-      } else if (detail.status === 'InProgress' || detail.status === 'Pending') {
-        startPolling(item.id)
-      } else {
-        genPhase.value = 'error'
-      }
-      return detail
+      detail = await getDesignRequest(item.id)
     } catch {
-      void router.push(`/account/design-requests/${item.id}`)
+      // Stay on the wizard with current state — surfacing the failure is the
+      // view's responsibility. We don't redirect because the most likely
+      // causes (401 / 404) would just produce another broken page.
       return null
     }
+
+    // Manual past-designs: only return the detail so the caller can restore
+    // form values. We don't set currentDesignRequest / designRequestId /
+    // genPhase because the wizard's Manual UI shows a synthetic "Ditt banner"
+    // placeholder + "Gå videre" CTA — clicking "Gå videre" mints a fresh
+    // DesignRequest via /design-requests/manual rather than re-using the
+    // stale past row.
+    if (options.isManual()) {
+      return detail
+    }
+
+    designRequestId.value = item.id
+    currentDesignRequest.value = detail
+    editExpanded.value = false
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+
+    if (detail.status === 'AwaitingApproval' || detail.status === 'Approved' || detail.status === 'Final') {
+      genPhase.value = 'ready'
+    } else if (detail.status === 'InProgress' || detail.status === 'Pending') {
+      startPolling(item.id)
+    } else {
+      genPhase.value = 'error'
+    }
+    return detail
   }
 
   // ── Return to wizard idle ──────────────────────────────────────────────────
