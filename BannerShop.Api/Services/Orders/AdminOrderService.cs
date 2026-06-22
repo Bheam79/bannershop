@@ -336,7 +336,7 @@ public class AdminOrderService : IAdminOrderService
         if (order is null) return OrderActionResult.Fail("Order not found.");
 
         if (string.IsNullOrWhiteSpace(order.StripePaymentIntentId))
-            return OrderActionResult.Fail("This order has no Stripe PaymentIntent to capture.");
+            return OrderActionResult.FailTransition("This order has no Stripe PaymentIntent to capture.");
 
         // Capture is valid on orders that have been authorised but not yet settled.
         // Allow InProduction / ReadyToShip too so admins can capture if they forgot.
@@ -358,7 +358,7 @@ public class AdminOrderService : IAdminOrderService
             _logger.LogError(ex,
                 "Admin capture of Stripe PI {Pi} for order {OrderId} failed.",
                 order.StripePaymentIntentId, orderId);
-            return OrderActionResult.Fail($"Stripe capture failed: {ex.Message}");
+            return OrderActionResult.FailTransition($"Stripe capture failed: {ex.Message}");
         }
 
         var full = await OrderQueries.LoadFullOrderAsync(_db, orderId, ct);
