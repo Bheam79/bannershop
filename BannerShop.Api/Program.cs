@@ -520,6 +520,18 @@ using (var scope = app.Services.CreateScope())
         db.Database.Migrate();
     }
 
+    // BANNERSH-257: seed Materials + BannerSizes only when the tables are empty
+    // (fresh install, Development or Production only).  This never overwrites
+    // admin-edited data, unlike HasData() which generated UpdateData statements
+    // in migrations and clobbered production on every `make up`.
+    // Skipped in Testing because the InMemory integration-test factory seeds its
+    // own catalog via DbHelper.SeedCatalog.
+    if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
+    {
+        var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<BannerShopDbContext>>();
+        await BannerShopStartupSeeder.SeedCatalogIfEmptyAsync(db, startupLogger);
+    }
+
     // Seed admin user (runs in all environments)
     await SeedAdminAsync(db, app.Configuration);
 }

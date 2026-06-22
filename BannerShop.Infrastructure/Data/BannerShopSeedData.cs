@@ -13,66 +13,12 @@ public static class BannerShopSeedData
 {
     public static void Apply(ModelBuilder modelBuilder)
     {
-        SeedMaterials(modelBuilder);
-        SeedBannerSizes(modelBuilder);
+        // BANNERSH-257: Materials and BannerSizes are NOT seeded via HasData() — doing so
+        // embeds UpdateData/DeleteData in every future migration and silently overwrites
+        // admin-configured data on every `make up`.  They are now bootstrapped at startup
+        // via BannerShopStartupSeeder (only runs when the tables are empty).
         SeedPricingParameters(modelBuilder);
         SeedBannerTemplates(modelBuilder);
-    }
-
-    private static void SeedMaterials(ModelBuilder modelBuilder)
-    {
-        modelBuilder.Entity<Material>().HasData(
-            new Material
-            {
-                Id = 1,
-                Name = "400g Frontlit Banner (160cm)",
-                WidthCm = 160,
-                MaxBannerWidthCm = 160,
-                WeightGsm = 400,
-                PricePerSqm = 180m,
-                AvailableFrom = null
-            },
-            new Material
-            {
-                Id = 2,
-                Name = "680g Heavy Duty Banner (180cm)",
-                WidthCm = 180,
-                MaxBannerWidthCm = 180,
-                WeightGsm = 680,
-                PricePerSqm = 140m,
-                AvailableFrom = new DateTime(2026, 8, 31, 0, 0, 0, DateTimeKind.Utc)
-            }
-        );
-    }
-
-    private static void SeedBannerSizes(ModelBuilder modelBuilder)
-    {
-        // BANNERSH-255: pricing rules are now range-based. Each row covers a
-        // (width range × height range) on a given material with a pricing formula
-        // (PricingHeightCm × PricingMultiplier) OR a fixed price.
-        //
-        // Defaults model:
-        //   – Material 1 (400g, 160 cm wide roll):
-        //       Banner widths 1–500 cm, three height tiers driven by banner gluing:
-        //         1–154 cm tall   → priced at 154 cm × 1 panel
-        //         154–300 cm tall → priced at 154 cm × 2 panels
-        //         300–450 cm tall → priced at 154 cm × 3 panels
-        //   – Material 2 (680g, 180 cm wide roll): same tiers at 180 cm pricing height.
-        //   – Fixed-price standard: 300 × 180 cm on Material 2 at 699 NOK.
-        modelBuilder.Entity<BannerSize>().HasData(
-            // Material 1 — 400g (160 cm roll)
-            new BannerSize { Id = 1, Name = "400g — 1 panel (h 1–154)",  IsActive = true, MaterialId = 1, SortOrder = 10, MinWidthCm = 1, MaxWidthCm = 500, MinHeightCm = 1,   MaxHeightCm = 154, PricingHeightCm = 154, PricingMultiplier = 1, FixedPrice = null },
-            new BannerSize { Id = 2, Name = "400g — 2 panel (h 154–300)", IsActive = true, MaterialId = 1, SortOrder = 20, MinWidthCm = 1, MaxWidthCm = 500, MinHeightCm = 154, MaxHeightCm = 300, PricingHeightCm = 154, PricingMultiplier = 2, FixedPrice = null },
-            new BannerSize { Id = 3, Name = "400g — 3 panel (h 300–450)", IsActive = true, MaterialId = 1, SortOrder = 30, MinWidthCm = 1, MaxWidthCm = 500, MinHeightCm = 300, MaxHeightCm = 450, PricingHeightCm = 154, PricingMultiplier = 3, FixedPrice = null },
-
-            // Material 2 — 680g (180 cm roll)
-            new BannerSize { Id = 4, Name = "680g — 1 panel (h 1–180)",   IsActive = true, MaterialId = 2, SortOrder = 40, MinWidthCm = 1,   MaxWidthCm = 500, MinHeightCm = 1,   MaxHeightCm = 180, PricingHeightCm = 180, PricingMultiplier = 1, FixedPrice = null },
-            new BannerSize { Id = 5, Name = "680g — 2 panel (h 180–360)", IsActive = true, MaterialId = 2, SortOrder = 50, MinWidthCm = 1,   MaxWidthCm = 500, MinHeightCm = 180, MaxHeightCm = 360, PricingHeightCm = 180, PricingMultiplier = 2, FixedPrice = null },
-            new BannerSize { Id = 6, Name = "680g — 3 panel (h 360–540)", IsActive = true, MaterialId = 2, SortOrder = 60, MinWidthCm = 1,   MaxWidthCm = 500, MinHeightCm = 360, MaxHeightCm = 540, PricingHeightCm = 180, PricingMultiplier = 3, FixedPrice = null },
-
-            // Fixed-price standard size (admin example)
-            new BannerSize { Id = 7, Name = "300 × 180 cm — Standard",    IsActive = true, MaterialId = 2, SortOrder = 70, MinWidthCm = 300, MaxWidthCm = 300, MinHeightCm = 180, MaxHeightCm = 180, PricingHeightCm = 180, PricingMultiplier = 1, FixedPrice = 699m }
-        );
     }
 
     private static void SeedPricingParameters(ModelBuilder modelBuilder)
