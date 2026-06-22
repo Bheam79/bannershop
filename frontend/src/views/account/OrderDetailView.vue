@@ -14,6 +14,12 @@ const order = ref<OrderDetailResponse | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
 
+// BANNERSH-253: AI credit-pack purchases (OrderType=CreditPack) are receipts for
+// a digital pack — they have no delivery, packing, banner preview or production
+// status. Render a dedicated minimal layout for them so the page doesn't lie
+// about being a "Banner 0 cm høy" order.
+const isCreditPack = computed(() => order.value?.orderType === 'CreditPack')
+
 // BANNERSH-185: customer "Betal nå" + "Slett" actions for unpaid orders.
 const isUnpaid = computed(() =>
   order.value?.status === 'Draft' || order.value?.status === 'PendingPayment'
@@ -21,6 +27,26 @@ const isUnpaid = computed(() =>
 const canDelete = computed(() => {
   const s = order.value?.status
   return s === 'Draft' || s === 'PendingPayment' || s === 'Cancelled'
+})
+
+// BANNERSH-253: parse credit count from the synthetic OrderItem.Notes string
+// ("AI generation pack — {count} credits"). Returns 0 when no match is found
+// so the receipt can still render a sensible "AI-pakke" label without the count.
+const creditPackCount = computed<number>(() => {
+  if (!isCreditPack.value) return 0
+  const notes = order.value?.items?.[0]?.notes ?? ''
+  const m = notes.match(/(\d+)\s+credits/i)
+  return m ? parseInt(m[1]!, 10) : 0
+})
+
+const orderTitle = computed<string>(() => {
+  if (isCreditPack.value) return `AI-pakke #${orderId}`
+  return `Ordre #${orderId}`
+})
+
+const breadcrumbCurrent = computed<string>(() => {
+  if (isCreditPack.value) return `AI-pakke #${orderId}`
+  return `Ordre #${orderId}`
 })
 
 const deleting = ref(false)
@@ -128,7 +154,7 @@ const packingLabel = computed(() => {
         Mine ordrer
       </RouterLink>
       <span class="breadcrumb-sep">›</span>
-      <span class="breadcrumb-current">Ordre #{{ orderId }}</span>
+      <span class="breadcrumb-current">{{ breadcrumbCurrent }}</span>
     </div>
 
     <!-- Loading -->
@@ -147,7 +173,7 @@ const packingLabel = computed(() => {
       <div class="panel">
         <div class="order-header-top">
           <div>
-            <h1 class="display order-title">Ordre #{{ order.id }}</h1>
+            <h1 class="display order-title">{{ orderTitle }}</h1>
             <p class="order-date">Bestilt {{ formatDate(order.createdAt) }}</p>
           </div>
           <span class="badge" :class="statusClass(order.status)">
@@ -181,7 +207,10 @@ const packingLabel = computed(() => {
           </button>
         </div>
 
-        <div class="meta-grid">
+        <!-- BANNERSH-253: meta grid — banner orders show delivery / packing /
+             ETA; credit packs only show purchase date + total since there's no
+             physical fulfilment. -->
+        <div v-if="!isCreditPack" class="meta-grid">
           <div class="meta-cell">
             <div class="meta-label">Leveringstype</div>
             <div class="meta-value">{{ deliveryLabel }}</div>
@@ -199,14 +228,72 @@ const packingLabel = computed(() => {
             <div class="meta-value meta-value--accent">{{ formatNok(order.totalNok) }}</div>
           </div>
         </div>
+        <div v-else class="meta-grid meta-grid--two">
+          <div class="meta-cell">
+            <div class="meta-label">Type</div>
+            <div class="meta-value">AI-kredittpakke</div>
+          </div>
+          <div class="meta-cell">
+            <div class="meta-label">Totalt inkl. MVA</div>
+            <div class="meta-value meta-value--accent">{{ formatNok(order.totalNok) }}</div>
+          </div>
+        </div>
       </div>
+
+      <!-- ── Credit pack receipt (BANNERSH-253) ────────────────────────────── -->
+      <!-- AI credit pack orders are receipts for a digital good; replace the
+           per-banner section with a single summary panel that explains what
+           the customer bought. Production status, shipping, banner-preview
+           sections below are all skipped via v-if="!isCreditPack". -->
+      <section v-if="isCreditPack">
+        <h2 class="section-title">
+          <i class="fa-solid fa-sparkles"></i>
+          AI-kredittpakke
+        </h2>
+        <div class="panel creditpack-panel">
+          <div class="creditpack-icon-wrap">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+          </div>
+          <div class="creditpack-body">
+            <div class="creditpack-title">
+              <template v-if="creditPackCount > 0">
+                {{ creditPackCount }} AI-genereringer
+              </template>
+              <template v-else>
+                AI-kredittpakke
+              </template>
+            </div>
+            <p class="creditpack-sub">
+              <template v-if="creditPackCount > 0">
+                {{ creditPackCount }} kreditt{{ creditPackCount === 1 ? '' : 'er' }} ble lagt til kontoen din og kan brukes til
+                å generere AI-bannere når som helst.
+              </template>
+              <template v-else>
+                Kreditter ble lagt til kontoen din og kan brukes til å generere AI-bannere når som helst.
+              </template>
+            </p>
+            <div class="creditpack-actions">
+              <RouterLink to="/banner-builder/ai" class="btn btn-primary btn-sm">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                Lag AI-banner
+              </RouterLink>
+              <RouterLink to="/account/buy-credits" class="btn btn-ghost btn-sm">
+                <i class="fa-solid fa-plus"></i>
+                Kjøp flere kreditter
+              </RouterLink>
+            </div>
+          </div>
+          <div class="creditpack-price">{{ formatNok(order.totalNok) }}</div>
+        </div>
+      </section>
 
       <!-- ── Per-banner sections (BANNERSH-249) ──────────────────────────── -->
       <!-- One section per OrderItem so multi-banner orders clearly show which
            design file belongs to which banner. AI / Manual / CustomUpload all
            render the same shape — manual just shows an extra "Designhonorar"
-           line in the price breakdown. -->
-      <section v-if="order.items.length > 0">
+           line in the price breakdown. Skipped for CreditPack orders
+           (BANNERSH-253) — they're receipts for a digital pack, not banners. -->
+      <section v-if="!isCreditPack && order.items.length > 0">
         <h2 class="section-title">
           <i class="fa-solid fa-image"></i>
           {{ order.items.length === 1 ? 'Ditt banner' : 'Dine bannere' }}
@@ -289,8 +376,10 @@ const packingLabel = computed(() => {
       </section>
 
       <!-- ── Production tracking (per item) ─────────────────────────────── -->
+      <!-- Skipped for CreditPack orders (BANNERSH-253) — credit packs aren't
+           printed, so a production stepper would be misleading. -->
       <section
-        v-if="order.status !== 'Cancelled' && order.status !== 'PendingPayment' && order.status !== 'Draft'"
+        v-if="!isCreditPack && order.status !== 'Cancelled' && order.status !== 'PendingPayment' && order.status !== 'Draft'"
       >
         <h2 class="section-title">
           <i class="fa-solid fa-gears"></i>
@@ -380,7 +469,7 @@ const packingLabel = computed(() => {
       </section>
 
       <!-- ── Shipping tracking ──────────────────────────────────────────── -->
-      <section v-if="isShipped && order.shipmentTracking">
+      <section v-if="!isCreditPack && isShipped && order.shipmentTracking">
         <h2 class="section-title">
           <i class="fa-solid fa-truck"></i>
           Fraktstatus
@@ -427,10 +516,13 @@ const packingLabel = computed(() => {
       </section>
 
       <!-- ── Order items + price breakdown ─────────────────────────────── -->
+      <!-- BANNERSH-253: CreditPack orders use a stripped-down variant — no
+           shipping/express rows, and the single line item is rendered as the
+           credit-pack label rather than "Banner 0 cm høy". -->
       <section>
         <h2 class="section-title">
           <i class="fa-solid fa-list"></i>
-          Varer
+          {{ isCreditPack ? 'Kvittering' : 'Varer' }}
         </h2>
         <div class="panel panel--no-pad">
           <ul class="item-list">
@@ -440,19 +532,33 @@ const packingLabel = computed(() => {
               class="item-row"
             >
               <div>
-                <div class="item-name">{{ itemLabel(item) }}</div>
-                <div class="item-sub">{{ item.quantity }} stk × {{ formatNok(item.unitPriceNok) }}</div>
+                <div class="item-name">
+                  <template v-if="isCreditPack">
+                    <template v-if="creditPackCount > 0">
+                      AI-kredittpakke ({{ creditPackCount }} kreditter)
+                    </template>
+                    <template v-else>
+                      AI-kredittpakke
+                    </template>
+                  </template>
+                  <template v-else>
+                    {{ itemLabel(item) }}
+                  </template>
+                </div>
+                <div v-if="!isCreditPack" class="item-sub">
+                  {{ item.quantity }} stk × {{ formatNok(item.unitPriceNok) }}
+                </div>
               </div>
               <div class="item-price">{{ formatNok(item.lineTotalNok) }}</div>
             </li>
           </ul>
 
           <dl class="price-breakdown">
-            <div class="price-row">
+            <div v-if="!isCreditPack" class="price-row">
               <dt class="price-label">Frakt</dt>
               <dd class="price-value">{{ formatNok(order.shippingCostNok) }}</dd>
             </div>
-            <div v-if="order.expressFeeNok > 0" class="price-row">
+            <div v-if="!isCreditPack && order.expressFeeNok > 0" class="price-row">
               <dt class="price-label">Ekspressgebyr</dt>
               <dd class="price-value">{{ formatNok(order.expressFeeNok) }}</dd>
             </div>
@@ -469,7 +575,7 @@ const packingLabel = computed(() => {
       </section>
 
       <!-- ── Shipping address ───────────────────────────────────────────── -->
-      <section v-if="order.shippingAddress">
+      <section v-if="!isCreditPack && order.shippingAddress">
         <h2 class="section-title">
           <i class="fa-solid fa-location-dot"></i>
           Leveringsadresse
@@ -578,6 +684,8 @@ const packingLabel = computed(() => {
   gap: 1rem;
 }
 @media (max-width: 640px) { .meta-grid { grid-template-columns: 1fr 1fr; } }
+/* BANNERSH-253: two-column variant for credit-pack receipts. */
+.meta-grid--two { grid-template-columns: 1fr 1fr; }
 .meta-cell { }
 .meta-label {
   font-size: 0.7rem;
@@ -901,6 +1009,69 @@ const packingLabel = computed(() => {
 .badge-design-ai      { background: rgba(160,110,220,.15); color: #c9a8f5; border: 1px solid rgba(160,110,220,.3); }
 .badge-design-manual  { background: rgba(231,185,78,.15);  color: #e7d08a; border: 1px solid rgba(231,185,78,.3); }
 .badge-design-upload  { background: rgba(78,201,132,.18);  color: #4ec984; border: 1px solid rgba(78,201,132,.35); }
+
+/* ── Credit pack receipt (BANNERSH-253) ─────────────────────── */
+.creditpack-panel {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 1.25rem;
+  align-items: center;
+}
+@media (max-width: 640px) {
+  .creditpack-panel {
+    grid-template-columns: auto 1fr;
+  }
+  .creditpack-price {
+    grid-column: 1 / -1;
+    text-align: right;
+  }
+}
+.creditpack-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 14px;
+  background: rgba(231,185,78,.15);
+  border: 1px solid rgba(231,185,78,.3);
+  color: #e7d08a;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+.creditpack-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.creditpack-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.creditpack-sub {
+  font-size: 0.875rem;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+}
+.creditpack-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+.btn-sm {
+  font-size: 0.8125rem;
+  padding: 6px 12px;
+}
+.creditpack-price {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--accent);
+  flex-shrink: 0;
+}
 
 /* ── Back link ──────────────────────────────────────────────── */
 .back-link {
