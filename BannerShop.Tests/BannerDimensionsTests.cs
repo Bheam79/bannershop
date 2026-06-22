@@ -9,7 +9,7 @@ namespace BannerShop.Tests;
 ///
 /// Two invariants must hold across every case:
 ///  1. Rotation 90°/270° swaps the effective W/H of the source.
-///  2. Computed width is always rounded to the nearest 10 cm.
+///  2. Computed width is always rounded to the nearest 1 cm.
 /// </summary>
 public class BannerDimensionsTests
 {
@@ -41,18 +41,19 @@ public class BannerDimensionsTests
     // ── ComputeWidthCm ───────────────────────────────────────────────────────
 
     [Theory]
-    // 16:9 landscape at 150 cm → 266.6 cm → rounded to 270
-    [InlineData(1920, 1080, 0, 150, 270)]
-    // 16:9 portrait (rotated 90°) at 150 cm → 84.4 cm → rounded to 80
-    [InlineData(1920, 1080, 90, 150, 80)]
+    // 16:9 landscape at 150 cm → 266.67 cm → rounded to 267
+    [InlineData(1920, 1080, 0, 150, 267)]
+    // 16:9 portrait (rotated 90°) at 150 cm → 84.375 cm → rounded to 84
+    [InlineData(1920, 1080, 90, 150, 84)]
     // 16:9 landscape at 180 cm → 320 cm exactly
     [InlineData(1920, 1080, 0, 180, 320)]
-    // Square at any height keeps height
+    // Square at any height keeps height (1:1 ratio at 154 → 154, not 150)
     [InlineData(1000, 1000, 0, 150, 150)]
     [InlineData(1000, 1000, 90, 150, 150)]
+    [InlineData(1000, 1000, 0, 154, 154)]
     // 18:9 ultrawide at 150 → 300 cm
     [InlineData(2160, 1080, 0, 150, 300)]
-    public void ComputeWidthCm_RoundsToNearest10cm(int wpx, int hpx, int rot, int heightCm, int expected)
+    public void ComputeWidthCm_RoundsToNearest1cm(int wpx, int hpx, int rot, int heightCm, int expected)
     {
         var w = BannerDimensions.ComputeWidthCm(wpx, hpx, rot, heightCm);
         w.Should().Be(expected);

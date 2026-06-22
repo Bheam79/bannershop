@@ -29,14 +29,14 @@ public static class BannerDimensions
 
     /// <summary>
     /// Computes the printed width in cm from the rotation-effective aspect ratio and the
-    /// user-selected printed height in cm. The result is rounded to the nearest 10 cm and
+    /// user-selected printed height in cm. The result is rounded to the nearest 1 cm and
     /// clamped to [MinWidthCm, MaxWidthCm].
     /// </summary>
     public static int ComputeWidthCm(int widthPx, int heightPx, int rotationDegrees, int selectedHeightCm)
     {
         var aspect = EffectiveAspectRatio(widthPx, heightPx, rotationDegrees);
         var rawCm = selectedHeightCm * aspect;
-        var rounded = (int)Math.Round(rawCm / 10.0, MidpointRounding.AwayFromZero) * 10;
+        var rounded = (int)Math.Round(rawCm, MidpointRounding.AwayFromZero);
         return Math.Clamp(rounded, MinWidthCm, MaxWidthCm);
     }
 

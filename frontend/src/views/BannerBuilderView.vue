@@ -3,8 +3,8 @@ import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
-import { fetchMaterials, fetchPrice, fetchEyeletPriceNok } from '@/api/shop'
-import type { Material, CartItem, EyeletOption } from '@/types'
+import { fetchMaterials, fetchSizes, fetchPrice, fetchEyeletPriceNok } from '@/api/shop'
+import type { BannerSize, Material, CartItem, EyeletOption } from '@/types'
 import { countEyelets } from '@/types'
 import UploadZone from '@/components/banner-builder/UploadZone.vue'
 import EyeletPreview from '@/components/shop/EyeletPreview.vue'
@@ -88,13 +88,33 @@ const isCustomMode = computed(() => sizeMode.value === 'custom')
 
 const materials = ref<Material[]>([])
 
+/** Pricing-rules catalog — loaded on mount so `defaultHeightForMaterial` is catalog-driven. */
+const sizes = ref<BannerSize[]>([])
+
 function isComingSoon(m: Material): boolean {
   if (!m.availableFrom) return false
   return new Date(m.availableFrom) > new Date()
 }
 
-/** Suggested default banner height per material (cm). 154 for 160 cm rolls, 180 for 180 cm rolls. */
+/**
+ * Default banner height for the given material (cm).
+ *
+ * Derives from the pricing catalog: the maximum `pricingHeightCm` among all
+ * active single-panel (pricingMultiplier = 1, no fixedPrice) rules for this
+ * material. This matches the max height at which no panel-gluing surcharge
+ * applies, and aligns with the same values shown in the AI-banner quality picker.
+ *
+ * Falls back to width-based heuristics (154 / 180) when the catalog isn't
+ * loaded yet or has no matching rule.
+ */
 function defaultHeightForMaterial(m: Material): number {
+  const rules = sizes.value.filter(
+    (s) => s.isActive && s.materialId === m.id && s.pricingMultiplier === 1 && s.fixedPrice == null,
+  )
+  if (rules.length > 0) {
+    return Math.max(...rules.map((r) => r.pricingHeightCm))
+  }
+  // Fallback: heuristic based on roll width
   return m.widthCm >= 180 ? 180 : 154
 }
 
@@ -108,8 +128,8 @@ function computeWidthFromHeight(
   const rot = ((rotation % 360) + 360) % 360
   const aspect = rot === 90 || rot === 270 ? heightPx / widthPx : widthPx / heightPx
   const raw = selectedHeightCm * aspect
-  const rounded = Math.round(raw / 10) * 10
-  return Math.max(50, Math.min(1000, rounded))
+  // Round to nearest 1 cm (matches BannerDimensions.ComputeWidthCm on the server)
+  return Math.max(50, Math.min(1000, Math.round(raw)))
 }
 
 function previewWidthForMaterial(m: Material): number {
@@ -356,6 +376,15 @@ onMounted(async () => {
 
   try {
     eyeletPriceNok.value = await fetchEyeletPriceNok()
+  } catch { /* non-fatal */ }
+
+  try {
+    sizes.value = await fetchSizes()
+    // Re-apply material size once the catalog is loaded so the correct catalog-derived
+    // height (and its computed width) is sent to the server.
+    if (sizeMode.value !== 'custom' && design.value) {
+      await applyMaterialSize(sizeMode.value as number)
+    }
   } catch { /* non-fatal */ }
 
   const designIdParam = (route.query.designId as string | undefined)?.trim()
