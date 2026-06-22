@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
 import AiCreditBadge from '@/components/layout/AiCreditBadge.vue'
+import { fetchPrice } from '@/api/shop'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -32,19 +33,30 @@ function scrollToAndCloseMenu(id: string) {
   scrollTo(id)
 }
 
+function dismissCampaign() {
+  sessionStorage.setItem(SESSION_KEY, '1')
+  campaignDismissed.value = true
+}
+
+/* ── Standard size for "from price" calculations (BANNERSH-256) ─ */
+const STANDARD_WIDTH_CM = 267
+const STANDARD_HEIGHT_CM = 150
+/** Resolved from the pricing API on mount — matches the calculator exactly. */
+const fromPrice = ref<number | null>(null)
+
 onMounted(() => {
   campaignDismissed.value = sessionStorage.getItem(SESSION_KEY) === '1'
   document.addEventListener('click', handleOutsideClick, true)
+
+  // BANNERSH-256: fetch the "from price" for the standard 267×150 cm banner
+  fetchPrice(STANDARD_WIDTH_CM, STANDARD_HEIGHT_CM)
+    .then(r => { fromPrice.value = Math.round(r.priceNok) })
+    .catch(() => { /* leave null — UI gracefully hides the price */ })
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleOutsideClick, true)
 })
-
-function dismissCampaign() {
-  sessionStorage.setItem(SESSION_KEY, '1')
-  campaignDismissed.value = true
-}
 
 /* ── Category data ──────────────────────────────────────────── */
 interface Cat {
@@ -52,7 +64,6 @@ interface Cat {
   icon: string
   name: string
   occ: string
-  price: number
   img: string
   big: string
   sub: string
@@ -63,31 +74,31 @@ interface Cat {
 
 const CATS: Cat[] = [
   {
-    id: 'bursdag', icon: 'fa-cake-candles', name: 'Bursdag', occ: 'Bursdagsbanner', price: 810,
+    id: 'bursdag', icon: 'fa-cake-candles', name: 'Bursdag', occ: 'Bursdagsbanner',
     img: '/banners/banner-emma-princess.png',
     big: 'Gratulerer med dagen!', sub: 'Emma fyller 6 år',
     templateCategory: 'Birthday',
   },
   {
-    id: 'konfirmasjon', icon: 'fa-graduation-cap', name: 'Konfirmasjon', occ: 'Konfirmasjonsbanner', price: 810,
+    id: 'konfirmasjon', icon: 'fa-graduation-cap', name: 'Konfirmasjon', occ: 'Konfirmasjonsbanner',
     img: '/banners/banner-konfirmasjon.png',
     big: 'Konfirmant 2026', sub: 'Gratulerer, Jonas!',
     templateCategory: 'Confirmation',
   },
   {
-    id: 'dap', icon: 'fa-leaf', name: 'Dåp', occ: 'Dåpsbanner', price: 810,
+    id: 'dap', icon: 'fa-leaf', name: 'Dåp', occ: 'Dåpsbanner',
     img: '/banners/banner-dap.png',
     big: 'Velkommen til verden', sub: 'Lille Markus',
     templateCategory: 'Baptism',
   },
   {
-    id: 'bryllup', icon: 'fa-ring', name: 'Bryllup', occ: 'Bryllupsbanner', price: 810,
+    id: 'bryllup', icon: 'fa-ring', name: 'Bryllup', occ: 'Bryllupsbanner',
     img: '/banners/banner-bryllup.png',
     big: 'Maria & Johan', sub: 'For alltid · 12.07.2026',
     templateCategory: 'Wedding',
   },
   {
-    id: 'sommerfest', icon: 'fa-sun', name: 'Sommerfest', occ: 'Sommerfestbanner', price: 810,
+    id: 'sommerfest', icon: 'fa-sun', name: 'Sommerfest', occ: 'Sommerfestbanner',
     img: '/banners/banner-sommerfest.png',
     big: 'Sommerfest 2026', sub: 'Velkommen alle sammen',
     templateCategory: 'Other',
@@ -329,7 +340,7 @@ async function handleLogout() {
             <div class="cat-body">
               <div>
                 <h3 class="display" style="font-size:21px;letter-spacing:-.01em;color:var(--text)">{{ cat.name }}</h3>
-                <div style="font-size:13px;color:var(--faint);margin-top:3px">fra <b style="color:var(--text);font-weight:600">{{ cat.price }} kr</b></div>
+                <div style="font-size:13px;color:var(--faint);margin-top:3px">fra <b style="color:var(--text);font-weight:600">{{ fromPrice !== null ? fromPrice + ' kr' : '…' }}</b></div>
               </div>
               <span class="cat-arrow">→</span>
             </div>
@@ -367,7 +378,7 @@ async function handleLogout() {
                 <span class="pv-grommet" style="bottom:10px;left:10px"></span>
                 <span class="pv-grommet" style="bottom:10px;right:10px"></span>
               </div>
-              <span class="dim-tag">300 × 150 cm · mest populær</span>
+              <span class="dim-tag">267 × 150 cm · mest populær</span>
             </div>
             <ul class="feat-list">
               <li><i class="fa-solid fa-check" style="color:var(--accent)"></i> UV-bestandig trykk i fullfarge</li>
@@ -386,10 +397,11 @@ async function handleLogout() {
             <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
               <span style="font-size:14px;color:var(--faint)">fra</span>
               <span class="display" style="font-weight:800;font-size:40px;color:var(--text);white-space:nowrap">
-                {{ selectedCat.price }} <span style="font-size:22px;color:var(--muted);font-weight:600">kr</span>
+                <template v-if="fromPrice !== null">{{ fromPrice }} <span style="font-size:22px;color:var(--muted);font-weight:600">kr</span></template>
+                <span v-else style="font-size:24px;color:var(--muted)">…</span>
               </span>
             </div>
-            <div style="font-size:13.5px;color:var(--faint);margin-bottom:20px">Standardstørrelse 300 × 150 cm. Pris inkl. trykk &amp; ferdigstilling.</div>
+            <div style="font-size:13.5px;color:var(--faint);margin-bottom:20px">Standardstørrelse 267 × 150 cm. Pris inkl. trykk &amp; ferdigstilling.</div>
             <div style="height:1px;background:var(--line-soft);margin:4px 0 18px"></div>
             <ul style="display:grid;gap:9px;margin-bottom:22px">
               <li style="list-style:none;display:flex;align-items:center;gap:10px;font-size:14.5px;color:var(--muted)"><i class="fa-solid fa-check" style="color:var(--accent)"></i> Ferdig oppsett – bare bytt navn &amp; dato</li>
@@ -751,7 +763,7 @@ async function handleLogout() {
   position: relative;
   width: 86%;
   max-width: 440px;
-  aspect-ratio: 300/150;
+  aspect-ratio: 267/150;
   border-radius: 8px;
   box-shadow: 0 22px 44px -18px rgba(0,0,0,.7);
   overflow: hidden;
