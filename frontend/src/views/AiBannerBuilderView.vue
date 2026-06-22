@@ -147,6 +147,7 @@ const {
   sizes, sizesLoaded, selectedQuality, customWidth, customHeight, customMaterialGsm,
   option1State, option2State, customState,
   aiImageNaturalRatio, aiImageAspectRatio, currentAspectRatioString,
+  materialOptions,
   highOptionWidthCm, goodOptionWidthCm,
   highOptionHeightCm, goodOptionHeightCm, // BANNERSH-259: catalog-derived heights
   selectedDimensions,
@@ -600,8 +601,26 @@ async function loadTilpassPricing(bannerDesignId: number) {
   tilpassError.value = null
   try {
     const design = await getBannerDesign(bannerDesignId)
-    // BANNERSH-255: ask the server for the cheapest matching pricing rule.
-    const priceResp = await fetchPrice(design.computedWidthCm, design.selectedHeightCm)
+
+    // BANNERSH-281: pin to the material that matches the user's quality selection so
+    // the server returns the rule for the right material (e.g. 680g "Høykvalitet")
+    // rather than the cheapest rule across ALL materials (which could be a cheaper
+    // 400g rule and produce a visibly lower — and wrong — banner price on the page).
+    let tilpassMaterialId: number | undefined
+    if (selectedQuality.value === 'high') {
+      tilpassMaterialId = materialOptions.value[0]?.material.id
+    } else if (selectedQuality.value === 'good') {
+      tilpassMaterialId = materialOptions.value[1]?.material.id
+    } else {
+      // custom quality: find the material that matches the chosen gsm
+      tilpassMaterialId = materialOptions.value.find(
+        (m) => m.material.weightGsm === customMaterialGsm.value,
+      )?.material.id
+    }
+
+    // BANNERSH-255: ask the server for the cheapest matching pricing rule,
+    // pinned to the correct material so the displayed price matches the picker.
+    const priceResp = await fetchPrice(design.computedWidthCm, design.selectedHeightCm, tilpassMaterialId)
     // Load the matched size for display (sortOrder, name, material).
     const allSizes: BannerSize[] = await fetchSizes()
     const pricingSize = allSizes.find((s: BannerSize) => s.id === priceResp.sizeId) ?? null
