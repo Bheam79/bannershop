@@ -37,6 +37,7 @@ import PastBannersGallery from '@/components/banner-builder/PastBannersGallery.v
 import PaywallModal from '@/components/banner-builder/PaywallModal.vue'
 import BannerQualitySizePicker from '@/components/banner-builder/BannerQualitySizePicker.vue'
 import BannerBuilderStep1 from '@/components/banner-builder/BannerBuilderStep1.vue'
+import BannerStep2PersonalizeForm from '@/components/banner-builder/BannerStep2PersonalizeForm.vue'
 import BannerTilpassPanel from '@/components/banner-builder/BannerTilpassPanel.vue'
 
 // ── Router / stores ───────────────────────────────────────────────────────────
@@ -946,139 +947,40 @@ onBeforeUnmount(() => {
          STEP 2: Personalize
     ════════════════════════════════════════════════════════════════════════ -->
     <div v-else-if="step === 2">
-      <!-- BANNERSH-105: selected template summary so the user can see which
-           celebration they're customising for (especially when arriving from a
-           front-page category card that skipped step 1). -->
-      <div v-if="selectedTemplate" class="selected-template-card">
-        <div class="selected-template-ico">
-          <i :class="['fa-solid', categoryIconClass[selectedTemplate.category] ?? 'fa-star']"></i>
-        </div>
-        <div style="flex:1;min-width:0">
-          <div class="selected-template-eyebrow">Du tilpasser</div>
-          <div class="selected-template-name">{{ templateName }}</div>
-        </div>
-        <button
-          type="button"
-          class="selected-template-change"
-          @click="step = 1"
-          aria-label="Bytt feiringsmal"
-        >
-          <i class="fa-solid fa-pen-to-square" style="font-size:11px"></i>
-          Bytt mal
-        </button>
-      </div>
-
-      <div class="bb-panel" style="display:grid;gap:20px">
-        <div>
-          <label for="personName" class="field-label">Navn <span style="color:var(--accent)">*</span></label>
-          <input id="personName" v-model="personName" type="text" maxlength="200" class="dark-input" placeholder="f.eks. Ole Petter" />
-        </div>
-        <div v-if="selectedTemplate?.category === 'Birthday'">
-          <label for="personAge" class="field-label">Alder <span style="color:var(--faint);font-weight:400">(valgfritt)</span></label>
-          <input id="personAge" v-model.number="personAge" type="number" min="0" max="130" class="dark-input" style="width:120px" placeholder="f.eks. 50" />
-        </div>
-        <div>
-          <label for="textContent" class="field-label">Tekst på banneret <span style="color:var(--accent)">*</span></label>
-          <textarea id="textContent" v-model="textContent" rows="3" maxlength="500" class="dark-input" style="resize:none" :placeholder="textContentPlaceholder" />
-          <p style="margin-top:5px;font-size:13px;color:var(--faint)">{{ textContent.length }} / 500 tegn</p>
-        </div>
-        <div>
-          <label for="themeDescription" class="field-label">Tema / stil <span style="color:var(--accent)">*</span></label>
-          <input id="themeDescription" v-model="themeDescription" type="text" maxlength="500" class="dark-input" :placeholder="themeDescriptionPlaceholder" />
-        </div>
-
-        <!-- Portrait photo upload (moved here from step 1) -->
-        <!-- BANNERSH-189: in manual mode the photo is REQUIRED (designer needs the
-             reference); in AI mode it's optional (only the person-centred templates
-             use it, and the AI degrades gracefully without it). -->
-        <div>
-          <div class="field-label" style="margin-bottom:4px">
-            Portrettfoto
-            <span v-if="isManual" style="color:var(--accent)">*</span>
-            <span v-else style="font-size:13px;font-weight:400;color:var(--faint)">(valgfritt)</span>
-          </div>
-          <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
-            <template v-if="isManual">
-              Vi trenger et bilde av personen som feires — designeren bruker det som referanse.
-            </template>
-            <template v-else>
-              Last opp et bilde av personen som feires — AI-en vil inkorporere det i banneret.
-            </template>
-          </p>
-
-          <div v-if="photoPreviewUrl" style="display:flex;align-items:flex-start;gap:18px">
-            <img :src="photoPreviewUrl" alt="Opplastet portrettfoto" style="width:100px;height:100px;object-fit:cover;border-radius:12px;border:1px solid var(--line-soft)" />
-            <div style="display:flex;flex-direction:column;gap:10px;margin-top:6px">
-              <span style="font-size:14px;color:#4ade80;font-weight:600;display:flex;align-items:center;gap:7px">
-                <i class="fa-solid fa-circle-check"></i> Foto lastet opp
-              </span>
-              <button type="button" style="font-size:13.5px;color:var(--accent);font-weight:600;background:none;border:none;cursor:pointer;padding:0;text-align:left" @click="removePhoto">
-                <i class="fa-solid fa-trash-can" style="font-size:12px"></i> Fjern foto
-              </button>
-            </div>
-          </div>
-
-          <div v-else>
-            <div
-              role="button"
-              tabindex="0"
-              class="upload-zone"
-              :class="{ 'upload-zone-drag': photoDragging, 'upload-zone-busy': photoUploading }"
-              @click="openPhotoPicker"
-              @keydown.enter.prevent="openPhotoPicker"
-              @keydown.space.prevent="openPhotoPicker"
-              @dragover="onPhotoDragOver"
-              @dragleave="onPhotoDragLeave"
-              @drop="onPhotoDrop"
-            >
-              <input ref="photoFileInput" type="file" style="display:none" accept="image/jpeg,image/png,image/webp" @change="onPhotoFileChange" />
-              <i class="fa-solid fa-user-circle" style="font-size:36px;color:var(--faint);margin-bottom:10px"></i>
-              <p style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px">Slipp bilde her, eller klikk for å velge</p>
-              <p style="font-size:13px;color:var(--faint)">JPEG, PNG, WEBP – maks 10 MB</p>
-              <div v-if="photoUploading" class="upload-overlay">
-                <div style="width:66%;max-width:260px">
-                  <div style="font-size:14px;font-weight:600;color:var(--text);text-align:center;margin-bottom:10px">Laster opp… {{ photoUploadProgress }}%</div>
-                  <div style="width:100%;height:6px;background:var(--line);border-radius:999px;overflow:hidden">
-                    <div style="height:100%;background:var(--accent);border-radius:999px;transition:width .2s" :style="{ width: `${photoUploadProgress}%` }" />
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div v-if="photoUploadError" class="error-box" style="margin-top:10px">
-              <i class="fa-solid fa-circle-exclamation"></i> {{ photoUploadError }}
-            </div>
-          </div>
-        </div>
-
-        <!-- BANNERSH-170: Aspect-ratio selection — one row of buttons below image upload -->
-        <div>
-          <div class="field-label" style="margin-bottom:10px">
-            Bildeforhold
-            <span style="font-size:11px;font-weight:400;color:var(--faint);text-transform:none;letter-spacing:0;margin-left:4px">— velg formen på banneret</span>
-          </div>
-          <div class="ratio-row">
-            <button
-              v-for="opt in ratioOptions"
-              :key="opt.value"
-              type="button"
-              class="ratio-btn"
-              :class="{ 'ratio-btn-active': selectedAspectRatio === opt.value }"
-              @click="selectedAspectRatio = opt.value"
-            >
-              <!-- small rectangle icon visualising the aspect ratio -->
-              <div class="ratio-icon-wrap">
-                <div class="ratio-icon" :style="{ width: opt.iconW + 'px', height: opt.iconH + 'px' }" />
-              </div>
-              <span class="ratio-label">{{ opt.label }}</span>
-              <span class="ratio-sub">{{ opt.sub }}</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- BANNERSH-162: quality / size selection is rendered BELOW the
-             generated banner preview (further down in this template) instead of
-             here, and is hidden until a banner has been generated. -->
-      </div>
+      <!-- BANNERSH-265: extracted into BannerStep2PersonalizeForm component -->
+      <BannerStep2PersonalizeForm
+        :selected-template="selectedTemplate"
+        :templates="templates"
+        :selected-template-id="selectedTemplateId"
+        :language="language"
+        :person-name="personName"
+        :text-content="textContent"
+        :theme-description="themeDescription"
+        :person-age="personAge"
+        :selected-aspect-ratio="selectedAspectRatio"
+        :ratio-options="ratioOptions"
+        :category-icon-class="categoryIconClass"
+        :text-content-placeholder="textContentPlaceholder"
+        :theme-description-placeholder="themeDescriptionPlaceholder"
+        :is-manual="isManual"
+        :photo-preview-url="photoPreviewUrl"
+        :photo-uploading="photoUploading"
+        :photo-dragging="photoDragging"
+        :photo-upload-progress="photoUploadProgress"
+        :photo-upload-error="photoUploadError"
+        @update:person-name="personName = $event"
+        @update:text-content="textContent = $event"
+        @update:theme-description="themeDescription = $event"
+        @update:person-age="personAge = $event"
+        @update:selected-template-id="selectedTemplateId = $event"
+        @update:selected-aspect-ratio="selectedAspectRatio = $event"
+        @change-template="step = 1"
+        @on-photo-file-change="onPhotoFileChange"
+        @on-photo-drag-over="onPhotoDragOver"
+        @on-photo-drag-leave="onPhotoDragLeave"
+        @on-photo-drop="onPhotoDrop"
+        @remove-photo="removePhoto"
+      />
 
       <!-- ── Inline preview + generate area (BANNERSH-146) ─────────────── -->
       <div style="margin-top:20px">
