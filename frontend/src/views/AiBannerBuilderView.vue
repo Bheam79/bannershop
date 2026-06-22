@@ -39,7 +39,7 @@ import BannerQualitySizePicker from '@/components/banner-builder/BannerQualitySi
 import BannerBuilderStep1 from '@/components/banner-builder/BannerBuilderStep1.vue'
 import BannerStep2PersonalizeForm from '@/components/banner-builder/BannerStep2PersonalizeForm.vue'
 import BannerGenerationInlineArea from '@/components/banner-builder/BannerGenerationInlineArea.vue'
-import BannerTilpassPanel from '@/components/banner-builder/BannerTilpassPanel.vue'
+import BannerBuilderStep3 from '@/components/banner-builder/BannerBuilderStep3.vue'
 
 // ── Router / stores ───────────────────────────────────────────────────────────
 const router = useRouter()
@@ -175,7 +175,7 @@ const aspectRatioForBackend = computed(() => {
 // ── Composable: Banner generation ─────────────────────────────────────────────
 const {
   genPhase, currentDesignRequest, designRequestId, requiresAuthHint, generateApiError,
-  approveError, approving, regenerating, regenerateError, editExpanded,
+  approveError, approving, regenerating, regenerateError,
   reordering, reorderError,
   activatingGenerationId, activateGenerationError,
   startPolling, cleanup: cleanupGeneration,
@@ -267,10 +267,6 @@ const completedGenerations = computed<BannerGenerationHistoryItem[]>(() =>
 )
 const hasGenerationHistory = computed(() => completedGenerations.value.length > 1)
 
-function formatGenTime(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })
-}
 const templateName = computed(() => {
   const t = selectedTemplate.value
   if (!t) return ''
@@ -1047,497 +1043,92 @@ onBeforeUnmount(() => {
     <!-- ═══════════════════════════════════════════════════════════════════
          STEP 3: Fullfør — eyelet picker + add to cart (BANNERSH-146)
          Only reached via approve() which always sets genPhase = 'tilpass'.
+         BANNERSH-267: extracted into BannerBuilderStep3 component.
     ════════════════════════════════════════════════════════════════════════ -->
-    <div v-else-if="step === 3">
-
-      <!-- ── Phase: idle (summary + generate button) ────────────────────── -->
-      <div v-if="genPhase === 'idle'" style="display:grid;grid-template-columns:1.2fr .8fr;gap:24px" class="pay-grid">
-        <!-- Left: Generate -->
-        <div style="display:grid;gap:20px">
-          <div v-if="generateApiError" class="error-box">
-            <i class="fa-solid fa-circle-exclamation"></i> {{ generateApiError }}
-          </div>
-
-          <div class="bb-panel" style="display:flex;flex-direction:column;gap:14px">
-            <h2 class="display" style="font-size:18px;color:var(--text);display:flex;align-items:center;gap:10px">
-              <i class="fa-solid fa-wand-magic-sparkles" style="color:var(--accent)"></i>
-              Klar til å generere
-            </h2>
-            <p style="font-size:14px;color:var(--muted)">
-              <template v-if="canGenerateForFree === true">
-                AI-en lager et unikt banner basert på informasjonen din. Første generering er <strong style="color:var(--text)">gratis</strong>.
-              </template>
-              <template v-else-if="hasCreditsAvailable">
-                AI-en lager et unikt banner basert på informasjonen din. Bruker <strong style="color:var(--text)">1 av {{ creditsRemaining }} kreditter</strong>.
-              </template>
-              <template v-else-if="isOutOfGenerations">
-                Du har brukt opp den gratis genereringen. Kjøp en kredittpakke for å lage flere banner.
-              </template>
-              <template v-else>
-                AI-en lager et unikt banner basert på informasjonen din. Første generering er <strong style="color:var(--text)">gratis</strong>.
-              </template>
-            </p>
-            <button
-              type="button"
-              class="btn btn-primary"
-              style="width:100%;justify-content:center;padding:15px;font-size:16px;border-radius:13px"
-              @click="generateBanner"
-            >
-              <i v-if="isOutOfGenerations" class="fa-solid fa-bag-shopping"></i>
-              <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
-              {{ generateButtonLabel }}
-            </button>
-            <p style="font-size:13px;color:var(--faint);text-align:center;display:flex;align-items:center;justify-content:center;gap:6px">
-              <i class="fa-solid fa-shield-halved"></i>
-              {{ generateButtonSubtitle }}
-            </p>
-          </div>
-        </div>
-
-        <!-- Right: Summary -->
-        <aside>
-          <div class="bb-panel" style="position:sticky;top:20px;display:grid;gap:16px">
-            <h2 class="display" style="font-size:17px;color:var(--text)">Oppsummering</h2>
-            <dl style="display:grid;gap:12px">
-              <div>
-                <dt class="field-label" style="margin-bottom:3px">Mal</dt>
-                <dd style="color:var(--text);font-weight:600;display:flex;align-items:center;gap:8px">
-                  <i :class="['fa-solid', categoryIconClass[selectedTemplate?.category ?? ''] ?? 'fa-star']" style="color:var(--accent)"></i>
-                  {{ templateName }}
-                </dd>
-              </div>
-              <div>
-                <dt class="field-label" style="margin-bottom:3px">Navn</dt>
-                <dd style="color:var(--text)">{{ personName }}<span v-if="personAge">, {{ personAge }} år</span></dd>
-              </div>
-              <div>
-                <dt class="field-label" style="margin-bottom:3px">Bannertekst</dt>
-                <dd style="color:var(--muted);font-style:italic">{{ textContent }}</dd>
-              </div>
-              <div>
-                <dt class="field-label" style="margin-bottom:3px">Tema</dt>
-                <dd style="color:var(--text)">{{ themeDescription }}</dd>
-              </div>
-              <div>
-                <dt class="field-label" style="margin-bottom:3px">Størrelse</dt>
-                <dd style="color:var(--text)">
-                  <span v-if="selectedQuality === 'high'">Høykvalitet — ca. {{ highOptionWidthCm }} × {{ highOptionHeightCm }} cm</span>
-                  <span v-else-if="selectedQuality === 'good'">God kvalitet — ca. {{ goodOptionWidthCm }} × {{ goodOptionHeightCm }} cm</span>
-                  <span v-else>Egendefinert — {{ customWidth ?? '?' }} × {{ customHeight ?? '?' }} cm</span>
-                </dd>
-              </div>
-              <div v-if="uploadedPhotoBannerDesignId">
-                <dt class="field-label" style="margin-bottom:3px">Portrettfoto</dt>
-                <dd style="color:var(--text);display:flex;align-items:center;gap:8px">
-                  <img v-if="photoPreviewUrl" :src="photoPreviewUrl" style="width:38px;height:38px;object-fit:cover;border-radius:8px;border:1px solid var(--line-soft)" alt="Portrettfoto" />
-                  <span><i class="fa-solid fa-circle-check" style="color:#4ade80"></i> Lastet opp</span>
-                </dd>
-              </div>
-              <div>
-                <dt class="field-label" style="margin-bottom:3px">Språk</dt>
-                <dd style="color:var(--text)">{{ language === 'nb' ? '🇳🇴 Norsk' : '🇬🇧 English' }}</dd>
-              </div>
-            </dl>
-          </div>
-        </aside>
-      </div>
-
-      <!-- ── Phase: submitting ──────────────────────────────────────────── -->
-      <div v-else-if="genPhase === 'submitting'" style="text-align:center;padding:4rem 0">
-        <i class="fa-solid fa-circle-notch fa-spin" style="font-size:36px;color:var(--accent);margin-bottom:18px;display:block"></i>
-        <p style="color:var(--muted);font-size:16px">Sender forespørsel…</p>
-      </div>
-
-      <!-- ── Phase: generating (polling) ────────────────────────────────── -->
-      <div v-else-if="genPhase === 'generating'" style="text-align:center;padding:5rem 0">
-        <div style="display:inline-flex;flex-direction:column;align-items:center;gap:24px">
-          <div style="position:relative;width:72px;height:72px">
-            <div style="position:absolute;inset:0;border-radius:50%;border:4px solid var(--surface-2)"></div>
-            <div style="position:absolute;inset:0;border-radius:50%;border:4px solid transparent;border-top-color:var(--accent);animation:spin 1s linear infinite"></div>
-          </div>
-          <div>
-            <h2 class="display" style="font-size:26px;color:var(--text);margin-bottom:8px">Genererer banner…</h2>
-            <p style="color:var(--muted);max-width:28em">AI-en jobber med designet ditt. Dette tar vanligvis 20–60 sekunder.</p>
-          </div>
-          <div style="display:grid;gap:10px;width:240px;text-align:left">
-            <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:var(--muted)">
-              <span style="width:18px;height:18px;border-radius:50%;background:var(--accent);display:grid;place-items:center;flex-shrink:0">
-                <i class="fa-solid fa-check" style="font-size:9px;color:var(--accent-ink)"></i>
-              </span>
-              Forespørsel mottatt
-            </div>
-            <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:var(--text)">
-              <span style="width:18px;height:18px;border-radius:50%;border:2px solid var(--accent);background:rgba(255,106,61,.15);animation:pulse 1.4s ease-in-out infinite;flex-shrink:0"></span>
-              Lager AI-design…
-            </div>
-            <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:var(--faint)">
-              <span style="width:18px;height:18px;border-radius:50%;background:var(--surface-2);border:1px solid var(--line);flex-shrink:0"></span>
-              Klart til godkjenning
-            </div>
-          </div>
-          <!-- Generation progress bar -->
-          <div style="width:240px">
-            <div style="width:100%;height:5px;background:var(--surface-2);border-radius:999px;overflow:hidden">
-              <div
-                style="height:100%;background:var(--accent);border-radius:999px;transition:width .4s ease"
-                :style="{ width: `${genProgress}%` }"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Phase: anon_pending (anonymous user, can't poll) ───────────── -->
-      <div v-else-if="genPhase === 'anon_pending'" style="text-align:center;padding:4rem 1rem">
-        <i class="fa-solid fa-circle-check" style="font-size:52px;color:#4ade80;margin-bottom:18px;display:block"></i>
-        <h2 class="display" style="font-size:26px;color:var(--text);margin-bottom:10px">Banneret genereres!</h2>
-        <p style="color:var(--muted);max-width:34em;margin:0 auto 24px">
-          AI-en jobber med designet ditt. Opprett en konto for å se og godkjenne resultatet — og for å bestille det ferdige banneret.
-        </p>
-        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-          <RouterLink :to="`/register?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" class="btn btn-primary" style="padding:12px 24px">
-            <i class="fa-solid fa-user-plus"></i> Opprett konto
-          </RouterLink>
-          <RouterLink :to="`/login?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" class="btn btn-ghost" style="padding:12px 24px">
-            Logg inn
-          </RouterLink>
-        </div>
-        <p v-if="designRequestId" style="margin-top:20px;font-size:13px;color:var(--faint)">
-          Design-ID: {{ designRequestId }} — lagret lokalt, tilgjengelig etter innlogging.
-        </p>
-      </div>
-
-      <!-- ── Phase: ready (preview + edit-and-regenerate) ──────────────── -->
-      <div v-else-if="genPhase === 'ready' && currentDesignRequest" style="display:grid;gap:24px">
-        <div style="text-align:center">
-          <h2 class="display" style="font-size:28px;color:var(--text);margin-bottom:8px">
-            <i class="fa-solid fa-party-horn" style="color:var(--accent);margin-right:8px"></i>
-            Banneret ditt er klart!
-          </h2>
-          <p style="color:var(--muted)">Se over designet og godkjenn, eller juster og generer en ny versjon.</p>
-        </div>
-
-        <!-- Generation history thumbnails — shown when there are ≥2 completed AI generations -->
-        <div
-          v-if="!isManual && hasGenerationHistory"
-          style="display:flex;gap:8px;overflow-x:auto;padding:10px 12px;background:rgba(0,0,0,.04);border-radius:10px"
-        >
-          <button
-            v-for="gen in completedGenerations"
-            :key="gen.id"
-            type="button"
-            class="gen-thumb"
-            :class="{ 'gen-thumb--active': gen.isActive }"
-            :disabled="activatingGenerationId === gen.id || gen.isActive"
-            :title="`Versjon ${formatGenTime(gen.completedAt)}`"
-            @click="selectGeneration(gen)"
-          >
-            <span class="gen-thumb__img-wrap">
-              <img v-if="gen.previewUrl" :src="gen.previewUrl" />
-              <span v-else class="gen-thumb__placeholder">?</span>
-              <span v-if="activatingGenerationId === gen.id" class="gen-thumb__spinner">
-                <i class="fa-solid fa-circle-notch fa-spin"></i>
-              </span>
-              <span v-else-if="gen.isActive" class="gen-thumb__check">
-                <i class="fa-solid fa-check"></i>
-              </span>
-            </span>
-            <span class="gen-thumb__time">{{ formatGenTime(gen.completedAt) }}</span>
-          </button>
-        </div>
-        <p
-          v-if="activateGenerationError && !isManual"
-          style="color:#ef4444;font-size:13px;margin:0"
-        >{{ activateGenerationError }}</p>
-
-        <!-- Preview -->
-        <div class="bb-panel" style="padding:0;overflow:hidden;border-radius:0">
-          <img
-            v-if="currentDesignRequest.previewUrl"
-            :src="currentDesignRequest.previewUrl"
-            :alt="isManual ? 'Ditt banner — forhåndsvisning' : `AI-generert banner for ${currentDesignRequest.personName}`"
-            style="width:100%;height:auto;object-fit:contain;display:block"
-            @load="onPreviewImageLoaded"
-          />
-          <div v-else style="display:flex;align-items:center;justify-content:center;height:240px;color:var(--faint)">
-            Forhåndsvisning ikke tilgjengelig
-          </div>
-        </div>
-
-        <!-- Approved / Final status + reorder / copy actions (BANNERSH-130) -->
-        <div
-          v-if="currentDesignRequest.status === 'Approved' || currentDesignRequest.status === 'Final'"
-          style="display:grid;gap:14px"
-        >
-          <div style="display:flex;align-items:center;gap:10px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.25);border-radius:12px;padding:14px 18px;color:#4ade80;font-size:14px">
-            <i class="fa-solid fa-circle-check"></i>
-            Banneret er godkjent og sendt til produksjon.
-          </div>
-          <!-- Reorder + copy actions -->
-          <div style="display:flex;gap:14px;flex-wrap:wrap">
-            <button
-              v-if="currentDesignRequest.finalBannerDesignId"
-              type="button"
-              class="btn"
-              style="flex:1;justify-content:center;padding:14px;font-size:15px;border-radius:12px;background:#3a9d7e;color:#fff;min-width:200px"
-              :disabled="reordering"
-              @click="reorderCurrentDesign"
-            >
-              <i v-if="reordering" class="fa-solid fa-circle-notch fa-spin"></i>
-              <i v-else class="fa-solid fa-cart-shopping"></i>
-              {{ reordering ? 'Legger i handlekurv…' : currentDesignRequest.status === 'Final' ? 'Bestill på nytt' : 'Bestill' }}
-            </button>
-            <button
-              type="button"
-              class="btn btn-ghost"
-              style="flex:1;justify-content:center;padding:14px;font-size:15px;border-radius:12px;min-width:200px"
-              @click="returnToWizardIdle"
-            >
-              <i class="fa-solid fa-copy"></i>
-              Kopier og lag ny versjon
-            </button>
-          </div>
-          <div v-if="reorderError" class="error-box">
-            <i class="fa-solid fa-circle-exclamation"></i> {{ reorderError }}
-          </div>
-        </div>
-
-        <!-- Action buttons (AwaitingApproval) -->
-        <!-- BANNERSH-133: button flow re-ordered.
-             Row 1: Back (left) + Generer ny versjon (right) — both secondary actions.
-             Row 2: Green "Godkjenn og tilpass" (full width) — the primary call-to-action
-             that proceeds to the eyelet (malje) picker step. -->
-        <div v-if="currentDesignRequest.status === 'AwaitingApproval'" style="display:grid;gap:14px">
-          <div style="display:flex;gap:14px;flex-wrap:wrap">
-            <button
-              type="button"
-              class="btn btn-ghost"
-              style="flex:1;justify-content:center;padding:14px;font-size:15px;border-radius:12px;min-width:220px"
-              @click="returnToWizardIdle"
-            >
-              <i class="fa-solid fa-arrow-left"></i>
-              Tilbake
-            </button>
-            <button
-              type="button"
-              class="btn btn-ghost"
-              style="flex:1;justify-content:center;padding:14px;font-size:15px;border-radius:12px;min-width:220px"
-              :disabled="regenerating"
-              @click="regenerate"
-            >
-              <i v-if="regenerating" class="fa-solid fa-circle-notch fa-spin"></i>
-              <i v-else class="fa-solid fa-rotate"></i>
-              <template v-if="canGenerateForFree === true">Generer ny versjon (gratis)</template>
-              <template v-else-if="hasCreditsAvailable">Generer ny versjon (1 kreditt)</template>
-              <template v-else>Generer ny versjon (krever kreditter)</template>
-            </button>
-          </div>
-          <button
-            type="button"
-            class="btn"
-            style="width:100%;justify-content:center;padding:14px;font-size:16px;border-radius:12px;background:#3a9d7e;color:#fff"
-            :disabled="approving"
-            @click="approve"
-          >
-            <i v-if="approving" class="fa-solid fa-circle-notch fa-spin"></i>
-            <i v-else class="fa-solid fa-circle-check"></i>
-            Godkjenn og tilpass
-          </button>
-        </div>
-
-        <!-- Credits badge inline -->
-        <div
-          v-if="auth.isLoggedIn && creditsRemaining !== null && currentDesignRequest.status === 'AwaitingApproval'"
-          style="font-size:13px;color:var(--faint);text-align:center"
-        >
-          <i class="fa-solid fa-wand-magic-sparkles" style="color:var(--accent);margin-right:5px"></i>
-          <template v-if="canGenerateForFree === true">1 gratis generering tilgjengelig</template>
-          <template v-else>{{ creditsRemaining }} AI forslag igjen</template>
-        </div>
-
-        <!-- Errors -->
-        <div v-if="approveError" class="error-box">
-          <i class="fa-solid fa-circle-exclamation"></i> {{ approveError }}
-        </div>
-        <div v-if="regenerateError" class="error-box">
-          <i class="fa-solid fa-circle-exclamation"></i> {{ regenerateError }}
-        </div>
-
-        <!-- ── Edit-and-regenerate panel ─────────────────────────────────── -->
-        <div v-if="currentDesignRequest.status === 'AwaitingApproval'" class="bb-panel" style="display:grid;gap:0">
-          <button
-            type="button"
-            style="display:flex;align-items:center;gap:10px;background:none;border:none;cursor:pointer;padding:4px 0;font-family:var(--font-ui);font-size:14.5px;font-weight:700;color:var(--muted);text-align:left"
-            @click="editExpanded = !editExpanded"
-          >
-            <i :class="['fa-solid', editExpanded ? 'fa-chevron-down' : 'fa-chevron-right']" style="font-size:12px;color:var(--faint)"></i>
-            <i class="fa-solid fa-pen-to-square" style="color:var(--accent);font-size:13px"></i>
-            Rediger og generer ny versjon
-          </button>
-
-          <div v-if="editExpanded" style="display:grid;gap:16px;margin-top:18px;padding-top:18px;border-top:1px solid var(--line-soft)">
-            <p style="font-size:13px;color:var(--faint)">
-              Endre feltene under og klikk <em>Generer ny versjon</em> — tekst og tema oppdateres på nytt design.
-            </p>
-
-            <!-- Template selection inline -->
-            <div>
-              <div class="field-label" style="margin-bottom:10px">Feiringsmal</div>
-              <div class="tpl-grid tpl-grid-sm">
-                <button
-                  v-for="t in templates"
-                  :key="t.id"
-                  type="button"
-                  class="tpl-card"
-                  :class="{ 'tpl-card-sel': selectedTemplateId === t.id }"
-                  @click="selectedTemplateId = t.id"
-                >
-                  <span class="tpl-ico" style="width:34px;height:34px;font-size:15px">
-                    <i :class="['fa-solid', categoryIconClass[t.category] ?? 'fa-star']"></i>
-                  </span>
-                  <span style="font-size:13px;font-weight:600;color:var(--text);text-align:center;line-height:1.3">
-                    {{ language === 'en' ? t.nameEn : t.nameNb }}
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Person name -->
-            <div>
-              <label for="editPersonName" class="field-label">Navn</label>
-              <input id="editPersonName" v-model="personName" type="text" maxlength="200" class="dark-input" />
-            </div>
-
-            <!-- Banner text -->
-            <div>
-              <label for="editTextContent" class="field-label">Tekst på banneret <span style="color:var(--accent)">*</span></label>
-              <textarea id="editTextContent" v-model="textContent" rows="3" maxlength="500" class="dark-input" style="resize:none" />
-              <p style="margin-top:4px;font-size:13px;color:var(--faint)">{{ textContent.length }} / 500 tegn</p>
-            </div>
-
-            <!-- Theme -->
-            <div>
-              <label for="editThemeDescription" class="field-label">Tema / stil <span style="color:var(--accent)">*</span></label>
-              <input id="editThemeDescription" v-model="themeDescription" type="text" maxlength="500" class="dark-input" />
-            </div>
-
-            <!-- Photo (re-upload) -->
-            <div>
-              <div class="field-label" style="margin-bottom:8px">Portrettfoto</div>
-              <div v-if="photoPreviewUrl" style="display:flex;align-items:center;gap:12px">
-                <img :src="photoPreviewUrl" style="width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line-soft)" alt="Portrettfoto" />
-                <button type="button" style="font-size:13px;color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600;padding:0" @click="removePhoto">
-                  <i class="fa-solid fa-trash-can"></i> Fjern
-                </button>
-              </div>
-              <div v-else>
-                <div
-                  role="button"
-                  tabindex="0"
-                  class="upload-zone"
-                  style="padding:1.5rem"
-                  :class="{ 'upload-zone-drag': photoDragging, 'upload-zone-busy': photoUploading }"
-                  @click="openPhotoPicker"
-                  @keydown.enter.prevent="openPhotoPicker"
-                  @dragover="onPhotoDragOver"
-                  @dragleave="onPhotoDragLeave"
-                  @drop="onPhotoDrop"
-                >
-                  <input ref="photoFileInput" type="file" style="display:none" accept="image/jpeg,image/png,image/webp" @change="onPhotoFileChange" />
-                  <i class="fa-solid fa-user-circle" style="font-size:24px;color:var(--faint);margin-bottom:8px"></i>
-                  <p style="font-size:13px;color:var(--text)">Klikk for å laste opp portrettfoto</p>
-                  <div v-if="photoUploading" class="upload-overlay">
-                    <span style="font-size:13px;color:var(--text)">{{ photoUploadProgress }}%</span>
-                  </div>
-                </div>
-                <div v-if="photoUploadError" class="error-box" style="margin-top:8px">
-                  <i class="fa-solid fa-circle-exclamation"></i> {{ photoUploadError }}
-                </div>
-              </div>
-            </div>
-
-            <!-- Regenerate CTA -->
-            <button
-              type="button"
-              class="btn btn-primary"
-              style="width:100%;justify-content:center;padding:13px;font-size:15px;border-radius:12px"
-              :disabled="regenerating || !step2Valid"
-              @click="regenerate"
-            >
-              <i v-if="regenerating" class="fa-solid fa-circle-notch fa-spin"></i>
-              <i v-else class="fa-solid fa-rotate"></i>
-              {{ regenerating ? 'Genererer…' : 'Generer ny versjon' }}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Phase: tilpass (eyelet picker + add-to-cart) ───────────────── -->
-      <!-- BANNERSH-133: post-approval step where the customer picks an eyelet
-           option and sees the running total before sending the banner to the
-           cart.
-           BANNERSH-264: extracted into BannerTilpassPanel component. -->
-      <BannerTilpassPanel
-        v-if="genPhase === 'tilpass' && currentDesignRequest"
-        :isManual="isManual"
-        :tilpassLoading="tilpassLoading"
-        :tilpassError="tilpassError"
-        :tilpassBannerSize="tilpassBannerSize"
-        :tilpassDesignWidthCm="tilpassDesignWidthCm"
-        :tilpassDesignHeightCm="tilpassDesignHeightCm"
-        :tilpassBannerPriceNok="tilpassBannerPriceNok"
-        :tilpassEyeletPriceNok="tilpassEyeletPriceNok"
-        v-model:tilpassEyeletOption="tilpassEyeletOption"
-        :tilpassEyeletCount="tilpassEyeletCount"
-        :tilpassEyeletFeeNok="tilpassEyeletFeeNok"
-        :tilpassTotalNok="tilpassTotalNok"
-        :manualDesignPriceNok="manualDesignPriceNok"
-        :currentDesignRequestPreviewUrl="currentDesignRequest?.previewUrl ?? null"
-        @addToCart="addTilpassToCartAndCheckout"
-        @back="backFromTilpass"
-      />
-
-      <!-- ── Phase: error ────────────────────────────────────────────────── -->
-      <div v-else-if="genPhase === 'error'" style="text-align:center;padding:4rem 0">
-        <i class="fa-solid fa-triangle-exclamation" style="font-size:52px;color:var(--accent);margin-bottom:18px;display:block"></i>
-        <h2 class="display" style="font-size:26px;color:var(--text);margin-bottom:10px">Noe gikk galt</h2>
-        <template v-if="currentDesignRequest?.lastError === 'moderation_block'">
-          <p style="color:var(--muted);margin-bottom:24px;max-width:34em;margin-left:auto;margin-right:auto">
-            Beklager, vår AI kan ikke lage plakater med opphavsrettsbeskyttede karakterer og innhold.<br><br>
-            I stedet for f.eks. «spiderman», prøv «Superhelt i edderkopp drakt som svinger seg mellom skyskrapere».<br><br>
-            Eventuelt velg manuell design hvis du ønsker dette — så skal vi se hva vi kan få til!
-          </p>
-          <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-            <button type="button" class="btn btn-primary" @click="genPhase = 'idle'; generateApiError = null">
-              <i class="fa-solid fa-rotate"></i> Prøv igjen med annet tema
-            </button>
-            <button type="button" class="btn btn-ghost" @click="switchToManualMode">
-              <i class="fa-solid fa-palette"></i> Manuell design
-            </button>
-          </div>
-        </template>
-        <template v-else>
-          <p style="color:var(--muted);margin-bottom:24px;max-width:30em;margin-left:auto;margin-right:auto">
-            {{ currentDesignRequest?.lastError ?? 'AI-genereringen feilet. Prøv igjen eller kontakt support.' }}
-          </p>
-          <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-            <button type="button" class="btn btn-primary" @click="genPhase = 'idle'; generateApiError = null">
-              <i class="fa-solid fa-rotate"></i> Prøv igjen
-            </button>
-            <RouterLink to="/account" class="btn btn-ghost">
-              <i class="fa-solid fa-house"></i> Min konto
-            </RouterLink>
-          </div>
-        </template>
-      </div>
-
-      <!-- Back button (only in idle phase) -->
-      <div v-if="genPhase === 'idle'" style="margin-top:24px">
-        <button type="button" class="btn btn-ghost" @click="step = 2">
-          <i class="fa-solid fa-arrow-left" style="font-size:12px"></i> Tilbake
-        </button>
-      </div>
-    </div>
+    <BannerBuilderStep3
+      v-else-if="step === 3"
+      :gen-phase="genPhase"
+      :is-manual="isManual"
+      :current-design-request="currentDesignRequest"
+      :design-request-id="designRequestId"
+      :generate-api-error="generateApiError"
+      :approve-error="approveError"
+      :regenerate-error="regenerateError"
+      :reorder-error="reorderError"
+      :activate-generation-error="activateGenerationError"
+      :approving="approving"
+      :regenerating="regenerating"
+      :reordering="reordering"
+      :step2-valid="step2Valid"
+      :can-generate-for-free="canGenerateForFree"
+      :has-credits-available="hasCreditsAvailable"
+      :is-out-of-generations="isOutOfGenerations"
+      :credits-remaining="creditsRemaining"
+      :is-logged-in="auth.isLoggedIn"
+      :generate-button-label="generateButtonLabel"
+      :generate-button-subtitle="generateButtonSubtitle"
+      :has-generation-history="hasGenerationHistory"
+      :completed-generations="completedGenerations"
+      :activating-generation-id="activatingGenerationId"
+      :gen-progress="genProgress"
+      :selected-template="selectedTemplate"
+      :template-name="templateName"
+      :person-name="personName"
+      :person-age="personAge"
+      :text-content="textContent"
+      :theme-description="themeDescription"
+      :selected-quality="selectedQuality"
+      :high-option-width-cm="highOptionWidthCm"
+      :high-option-height-cm="highOptionHeightCm"
+      :good-option-width-cm="goodOptionWidthCm"
+      :good-option-height-cm="goodOptionHeightCm"
+      :custom-width="customWidth"
+      :custom-height="customHeight"
+      :uploaded-photo-banner-design-id="uploadedPhotoBannerDesignId"
+      :photo-preview-url="photoPreviewUrl"
+      :language="language"
+      :category-icon-class="categoryIconClass"
+      :templates="templates"
+      :selected-template-id="selectedTemplateId"
+      :photo-dragging="photoDragging"
+      :photo-uploading="photoUploading"
+      :photo-upload-progress="photoUploadProgress"
+      :photo-upload-error="photoUploadError"
+      :tilpass-loading="tilpassLoading"
+      :tilpass-error="tilpassError"
+      :tilpass-banner-size="tilpassBannerSize"
+      :tilpass-design-width-cm="tilpassDesignWidthCm"
+      :tilpass-design-height-cm="tilpassDesignHeightCm"
+      :tilpass-banner-price-nok="tilpassBannerPriceNok"
+      :tilpass-eyelet-price-nok="tilpassEyeletPriceNok"
+      :tilpass-eyelet-option="tilpassEyeletOption"
+      :tilpass-eyelet-count="tilpassEyeletCount"
+      :tilpass-eyelet-fee-nok="tilpassEyeletFeeNok"
+      :tilpass-total-nok="tilpassTotalNok"
+      :manual-design-price-nok="manualDesignPriceNok"
+      @preview-image-loaded="onPreviewImageLoaded"
+      @generate="generateBanner"
+      @regenerate="regenerate"
+      @proceed="isManual ? manualGoVidere() : approve()"
+      @reorder-current-design="reorderCurrentDesign"
+      @select-generation="selectGeneration"
+      @return-to-wizard-idle="returnToWizardIdle"
+      @switch-to-manual-mode="switchToManualMode"
+      @back="step = 2"
+      @reset-to-idle="genPhase = 'idle'; generateApiError = null"
+      @add-to-cart="addTilpassToCartAndCheckout"
+      @back-from-tilpass="backFromTilpass"
+      @update:tilpass-eyelet-option="tilpassEyeletOption = $event"
+      @update:selected-template-id="selectedTemplateId = $event"
+      @update:person-name="personName = $event"
+      @update:text-content="textContent = $event"
+      @update:theme-description="themeDescription = $event"
+      @on-photo-file-change="onPhotoFileChange"
+      @on-photo-drag-over="onPhotoDragOver"
+      @on-photo-drag-leave="onPhotoDragLeave"
+      @on-photo-drop="onPhotoDrop"
+      @remove-photo="removePhoto"
+    />
 
       </div><!-- end wizard main content -->
     </div><!-- end wizard-with-sidebar -->
@@ -1858,10 +1449,6 @@ onBeforeUnmount(() => {
   0%, 100% { opacity: 1; }
   50% { opacity: .4; }
 }
-
-/* ── Responsive grid ─────────────────────────────────────────── */
-.pay-grid { grid-template-columns: 1.2fr .8fr; }
-@media (max-width: 768px) { .pay-grid { grid-template-columns: 1fr !important; } }
 
 /* ── Two-column layout: sidebar + wizard (BANNERSH-145) ──────── */
 .wizard-with-sidebar {
