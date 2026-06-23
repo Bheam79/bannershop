@@ -117,6 +117,75 @@ public class SizesControllerTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    // ── BANNERSH-281: materialId pin prevents wrong-material price (regression guard) ──
+    //
+    // Root cause: calling GET /api/sizes/price without materialId returns the
+    // globally-cheapest rule across ALL materials, not the one the customer chose.
+    // These tests ensure:
+    //   (a) the response always carries the materialId that was actually used, and
+    //   (b) pinning materialId forces the API to return THAT material's price even
+    //       when a cheaper material exists for the same dimensions.
+    //
+    // If anyone breaks the materialId filter in FindCheapestAsync or the controller,
+    // test (b) will fail: it will return mat2's price (590.74) instead of mat1's (887.76).
+
+    [Fact]
+    public async Task GetPrice_WithoutMaterialId_ReturnsCheaperMaterialAndSurfacesMaterialId()
+    {
+        EnsureCatalogSeeded();
+        var client = _factory.CreateClient();
+
+        // 274×154 is covered by BOTH mat2 (680g, id=2, 140 NOK/m²) and mat1 (400g, id=1, 180 NOK/m²).
+        // Without a materialId pin the endpoint must return the cheaper match (mat2).
+        // The response must include materialId so the caller knows which material was used.
+        var response = await client.GetAsync("/api/sizes/price?widthCm=274&heightCm=154");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync(), _json);
+
+        // mat2 (680g): 140 × (274/100) × (154/100) = 590.74 — cheaper than mat1 (887.76)
+        doc.GetProperty("materialId").GetInt32().Should().Be(2, "cheapest rule belongs to mat2 (680g)");
+        doc.GetProperty("priceNok").GetDecimal().Should().Be(590.74m);
+    }
+
+    [Fact]
+    public async Task GetPrice_WithMaterialId_PinsToThatMaterialIgnoringCheaperAlternative()
+    {
+        EnsureCatalogSeeded();
+        var client = _factory.CreateClient();
+
+        // Same dimensions as above, but the customer chose materialId=1 (400g, 180 NOK/m²).
+        // The API must return mat1's price (887.76) even though mat2 is cheaper (590.74).
+        // This is the scenario that caused the BANNERSH-281 bug: omitting materialId here
+        // would silently return 590.74 (wrong material) instead of 887.76 (customer's choice).
+        var response = await client.GetAsync("/api/sizes/price?widthCm=274&heightCm=154&materialId=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync(), _json);
+
+        doc.GetProperty("materialId").GetInt32().Should().Be(1, "response must reflect the pinned material, not the globally cheapest");
+        doc.GetProperty("sizeId").GetInt32().Should().Be(4, "rule id=4 is the 400g×180 rule for mat1");
+        // 180 NOK/m² × (274/100) × (180/100) = 887.76
+        doc.GetProperty("priceNok").GetDecimal().Should().Be(887.76m);
+    }
+
+    [Fact]
+    public async Task GetPrice_WithMaterialId_ForCheaperMaterial_ReturnsThatMaterialsPrice()
+    {
+        EnsureCatalogSeeded();
+        var client = _factory.CreateClient();
+
+        // Explicitly pin to mat2 (680g) — should return the same result as the unpinned call.
+        var response = await client.GetAsync("/api/sizes/price?widthCm=274&heightCm=154&materialId=2");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync(), _json);
+
+        doc.GetProperty("materialId").GetInt32().Should().Be(2);
+        doc.GetProperty("sizeId").GetInt32().Should().Be(1, "rule id=1 is the 680g×154 rule for mat2");
+        doc.GetProperty("priceNok").GetDecimal().Should().Be(590.74m);
+    }
+
     // ── Availability flag (BANNERSH-259) ─────────────────────────────────────
     //
     // The picker composable (useBannerPricing) reads `availableFrom` from the

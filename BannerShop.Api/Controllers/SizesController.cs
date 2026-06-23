@@ -82,7 +82,8 @@ public class SizesController : ControllerBase
             WidthCm = widthCm,
             HeightCm = heightCm,
             MaterialId = match.Rule.MaterialId,
-            PriceNok = match.PriceNok
+            // Round to 2 decimal places — consistent with ResolveBannerProductionCostAsync.
+            PriceNok = decimal.Round(match.PriceNok, 2)
         });
     }
 

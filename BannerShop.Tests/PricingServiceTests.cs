@@ -231,4 +231,69 @@ public class PricingServiceTests
         match.Should().NotBeNull();
         match!.Rule.MaterialId.Should().Be(matB.Id); // cheaper material wins
     }
+
+    // ── BANNERSH-281 regression guard: materialId pin prevents wrong-material price ──
+    //
+    // When two materials share overlapping ranges and the caller specifies a materialId,
+    // FindCheapestAsync MUST return a rule for THAT material — even if a cheaper rule
+    // from a different material also matches. This test would fail if someone removes
+    // the materialId filter from the LINQ query in FindCheapestAsync.
+
+    [Fact]
+    public async Task FindCheapest_WithMaterialPin_DoesNotPickCheaperMaterialsRule()
+    {
+        var (service, db) = CreateSeeded();
+
+        // matExpensive has pricePerSqm 200; matCheap has 100.
+        // Both cover the same banner dimensions.
+        // When we pin to matExpensive, the result must be from matExpensive — not from matCheap.
+        var matExpensive = DbHelper.MakeMaterial(id: 30, pricePerSqm: 200m);
+        var matCheap     = DbHelper.MakeMaterial(id: 31, pricePerSqm: 100m);
+        db.Materials.AddRange(matExpensive, matCheap);
+
+        db.BannerSizes.AddRange(
+            DbHelper.MakeSizeRule(30, matExpensive, 1, 500, 1, 200, pricingHeight: 150, multiplier: 1),
+            DbHelper.MakeSizeRule(31, matCheap,     1, 500, 1, 200, pricingHeight: 150, multiplier: 1)
+        );
+        db.SaveChanges();
+
+        // Unpinned: should pick matCheap (100 NOK/m² < 200 NOK/m²).
+        var unpinned = await service.FindCheapestAsync(widthCm: 300, heightCm: 150, materialId: null);
+        unpinned.Should().NotBeNull();
+        unpinned!.Rule.MaterialId.Should().Be(matCheap.Id, "without a pin the cheaper material wins");
+
+        // Pinned to matExpensive: must NOT fall back to the cheaper matCheap rule.
+        var pinned = await service.FindCheapestAsync(widthCm: 300, heightCm: 150, materialId: matExpensive.Id);
+        pinned.Should().NotBeNull();
+        pinned!.Rule.MaterialId.Should().Be(matExpensive.Id, "materialId pin must restrict to the requested material");
+        pinned.PriceNok.Should().BeGreaterThan(unpinned.PriceNok,
+            "pinned result is from the more expensive material, so its price must be higher");
+    }
+
+    [Fact]
+    public async Task FindCheapest_WithSeededCatalog_PinToExpensiveMaterialReturnsHigherPrice()
+    {
+        // Tests against the actual seeded catalog (matches production seed / BannerShopStartupSeeder).
+        // mat2 (id=2, 680g, 140 NOK/m²) is cheaper than mat1 (id=1, 400g, 180 NOK/m²).
+        // 274×154 is covered by both mats; without a pin the cheaper mat2 wins.
+        var db = DbHelper.CreateInMemory();
+        DbHelper.SeedPricingParameters(db);
+        DbHelper.SeedCatalog(db);
+        var service = new PricingService(db);
+
+        var unpinned = await service.FindCheapestAsync(widthCm: 274, heightCm: 154, materialId: null);
+        unpinned.Should().NotBeNull();
+        unpinned!.Rule.MaterialId.Should().Be(2, "mat2 (680g, 140 NOK/m²) is cheaper for 274×154");
+        // 140 × (274/100) × (154/100) = 140 × 4.2196 = 590.744 (unrounded — callers round at presentation)
+        unpinned.PriceNok.Should().Be(590.744m);
+
+        // Pin to mat1 (400g, 180 NOK/m²): must NOT return mat2's cheaper price.
+        var pinned = await service.FindCheapestAsync(widthCm: 274, heightCm: 154, materialId: 1);
+        pinned.Should().NotBeNull();
+        pinned!.Rule.MaterialId.Should().Be(1, "materialId=1 pin must restrict to mat1 (400g), not the globally cheaper mat2");
+        // 180 × (274/100) × (180/100) = 180 × 4.932 = 887.76
+        pinned.PriceNok.Should().Be(887.76m, "180 × (274/100) × (180/100) = 887.76 for mat1's rule");
+        pinned.PriceNok.Should().BeGreaterThan(unpinned.PriceNok,
+            "pinned price must be higher because 400g is more expensive than 680g for these dims");
+    }
 }
