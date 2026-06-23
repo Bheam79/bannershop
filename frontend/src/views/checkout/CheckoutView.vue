@@ -371,25 +371,32 @@ function eyeletCountFor(item: import('@/types').CartItem): number {
                   <span style="color:var(--faint)">banner</span>
                 </div>
 
-                <!-- Eyelet sub-line: only when a paid option was picked -->
+                <!-- Eyelet add-on: shown as a left-aligned sub-line so the price
+                     isn't double-counted (the big right-hand total already includes it). -->
                 <div
                   v-if="item.eyeletOption !== 'None' && item.eyeletFeeNok > 0"
-                  class="item-eyelet-row"
+                  class="item-addon-row"
                 >
-                  <span class="item-eyelet-label">
-                    + Maljer
-                    <span class="item-eyelet-badge">
-                      {{ eyeletShortLabel(item.eyeletOption) }}<template v-if="eyeletCountFor(item) > 0">, {{ eyeletCountFor(item) }} stk</template>
-                    </span>
+                  + Maljer
+                  <span class="item-eyelet-badge">
+                    {{ eyeletShortLabel(item.eyeletOption) }}<template v-if="eyeletCountFor(item) > 0">, {{ eyeletCountFor(item) }} stk</template>
                   </span>
-                  <span class="item-eyelet-price">
-                    +{{ formatNok(item.eyeletFeeNok * item.quantity) }}
-                  </span>
+                  <span class="item-addon-price">+{{ formatNok(item.eyeletFeeNok * item.quantity) }}</span>
+                </div>
+
+                <!-- Manual designer fee sub-line (BANNERSH-249/BANNERSH-282) -->
+                <div
+                  v-if="item.manualDesignFeeNok && item.manualDesignFeeNok > 0"
+                  class="item-addon-row"
+                >
+                  + Designhonorar
+                  <span class="item-addon-price">+{{ formatNok(item.manualDesignFeeNok) }}</span>
                 </div>
               </div>
 
+              <!-- Right-aligned total for this line (banner + eyelets + design fee) -->
               <div class="item-price">
-                {{ formatNok((item.unitPriceNok + item.eyeletFeeNok) * item.quantity) }}
+                {{ formatNok((item.unitPriceNok + item.eyeletFeeNok) * item.quantity + (item.manualDesignFeeNok ?? 0)) }}
               </div>
               <button
                 type="button"
@@ -844,21 +851,17 @@ function eyeletCountFor(item: import('@/types').CartItem): number {
   font-size: 18px;
 }
 
-/* ── Eyelet sub-line ─────────────────────────────────────────── */
-.item-eyelet-row {
+/* ── Add-on sub-lines (eyelets, manual design fee) ──────────── */
+/* Left-aligned, small — the right-hand item-price already includes these
+   amounts, so this is purely a breakdown for the customer's reference.      */
+.item-addon-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-top: 0.25rem;
-  font-size: 0.8125rem;
-  color: var(--muted);
-}
-.item-eyelet-label {
-  display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   flex-wrap: wrap;
+  margin-top: 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
 }
 .item-eyelet-badge {
   display: inline-flex;
@@ -873,9 +876,9 @@ function eyeletCountFor(item: import('@/types').CartItem): number {
   border-radius: 99px;
   white-space: nowrap;
 }
-.item-eyelet-price {
+.item-addon-price {
   font-weight: 600;
-  color: var(--text);
+  color: var(--muted);
   white-space: nowrap;
 }
 .item-remove {
