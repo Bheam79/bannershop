@@ -192,6 +192,12 @@ const router = createRouter({
       component: () => import('@/views/admin/AdminSettingsView.vue'),
       meta: { requiresAdmin: true },
     },
+    {
+      path: '/admin/traffic',
+      name: 'admin-traffic',
+      component: () => import('@/views/admin/TrafficStatsView.vue'),
+      meta: { requiresAdmin: true },
+    },
 
     // ── Info / legal (BANNERSH-222) ──────────────────────────────────────────
     {

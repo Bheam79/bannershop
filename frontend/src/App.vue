@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import NavBar from '@/components/layout/NavBar.vue'
 import AdminNavBar from '@/components/layout/AdminNavBar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAiCreditsStore } from '@/stores/aiCredits'
+import { setupAnalyticsTracker } from '@/composables/useAnalyticsTracker'
 
 const route = useRoute()
+const router = useRouter()
 const isAdmin = computed(() => route.path.startsWith('/admin'))
+
+// BANNERSH-285: wire visitor-traffic tracking (fire-and-forget on every navigation)
+setupAnalyticsTracker(router)
 const isHome  = computed(() => route.path === '/')
 // BANNERSH-178: when a user is logged in, the same NavBar (with "Lag ditt banner"
 // / "Mine design" / AI credits / hamburger) should appear on every non-admin

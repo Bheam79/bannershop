@@ -199,6 +199,14 @@ onMounted(async () => {
         <h2 class="font-semibold text-gray-100">Innstillinger</h2>
         <p class="text-sm text-gray-400 mt-1">Konfigurer API-nøkler og systeminnstillinger</p>
       </RouterLink>
+      <RouterLink
+        to="/admin/traffic"
+        class="block bg-gray-800 rounded-xl border border-gray-700 p-6 hover:border-blue-500 hover:bg-gray-700 transition"
+      >
+        <div class="text-3xl mb-3">📊</div>
+        <h2 class="font-semibold text-gray-100">Trafikk</h2>
+        <p class="text-sm text-gray-400 mt-1">Besøkende, sesjoner og trafikkilder</p>
+      </RouterLink>
     </div>
   </div>
 </template>

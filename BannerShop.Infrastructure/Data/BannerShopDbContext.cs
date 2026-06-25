@@ -25,6 +25,7 @@ public class BannerShopDbContext : DbContext
     public DbSet<IpAiUsage> IpAiUsages => Set<IpAiUsage>();
     public DbSet<AiCreditTransaction> AiCreditTransactions => Set<AiCreditTransaction>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
+    public DbSet<PageView> PageViews => Set<PageView>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

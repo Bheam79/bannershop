@@ -13,6 +13,7 @@ const auth = useAuthStore()
       <RouterLink to="/admin/sizes" class="text-gray-300 hover:text-white text-sm">Størrelser</RouterLink>
       <RouterLink to="/admin/materials" class="text-gray-300 hover:text-white text-sm">Materialer</RouterLink>
       <RouterLink to="/admin/pricing" class="text-gray-300 hover:text-white text-sm">Prissetting</RouterLink>
+      <RouterLink to="/admin/traffic" class="text-gray-300 hover:text-white text-sm">📊 Trafikk</RouterLink>
       <div class="ml-auto flex items-center gap-4">
         <RouterLink to="/" class="text-gray-400 hover:text-white text-sm">← Butikk</RouterLink>
         <span class="text-gray-400 text-sm">{{ auth.user?.name }}</span>
