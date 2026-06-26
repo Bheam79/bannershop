@@ -359,13 +359,24 @@ public class AdminDesignRequestListItemDto
     public int BannerTemplateId { get; set; }
     public string PersonName { get; set; } = string.Empty;
     public int? PersonAge { get; set; }
+    public string ThemeDescription { get; set; } = string.Empty;
     // Customer info
     public int UserId { get; set; }
     public string CustomerName { get; set; } = string.Empty;
     public string CustomerEmail { get; set; } = string.Empty;
+    /// <summary>
+    /// IP address for anonymous requests (null for authenticated users).
+    /// Used by admins to identify and track anonymous abuse patterns.
+    /// </summary>
+    public string? IpAddress { get; set; }
     public int RevisionCount { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    /// <summary>
+    /// Low-res preview URL of the generated AI image (or designer preview for Manual).
+    /// Null if generation has not completed yet.
+    /// </summary>
+    public string? PreviewUrl { get; set; }
 }
 
 /// <summary>Full admin detail — all fields including upload paths and revision history.</summary>

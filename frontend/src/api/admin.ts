@@ -12,12 +12,17 @@ export interface AdminDesignRequestListItem {
   bannerTemplateId: number
   personName: string
   personAge: number | null
+  themeDescription: string
   userId: number
   customerName: string
   customerEmail: string
+  /** IP address for anonymous requests; null for authenticated users. */
+  ipAddress: string | null
   revisionCount: number
   createdAt: string
   updatedAt: string
+  /** Low-res preview URL of the AI-generated or designer image, or null if not yet generated. */
+  previewUrl: string | null
 }
 
 export interface AdminDesignRequestFilter {

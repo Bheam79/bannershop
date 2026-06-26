@@ -77,11 +77,39 @@ public sealed class AdminDesignRequestService : IAdminDesignRequestService
         var pageSize = Math.Clamp(filter.PageSize, 1, 100);
         var page = Math.Max(filter.Page, 1);
 
-        var items = await q
+        var rows = await q
             .OrderByDescending(r => r.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(r => new AdminDesignRequestListItemDto
+            .Select(r => new
+            {
+                r.Id,
+                r.Mode,
+                r.Status,
+                r.AspectRatio,
+                r.PriceNok,
+                r.BannerTemplateId,
+                r.PersonName,
+                r.PersonAge,
+                r.ThemeDescription,
+                r.UserId,
+                r.IpAddress,
+                r.RevisionCount,
+                r.CreatedAt,
+                r.UpdatedAt,
+                r.AiPreviewPath,
+                r.DesignerPreviewPath,
+                r.FinalCroppedStoragePath,
+                r.AiResultStoragePath,
+                UserName  = r.User != null ? r.User.Name  : null,
+                UserEmail = r.User != null ? r.User.Email : null,
+            })
+            .ToListAsync(ct);
+
+        var items = rows.Select(r =>
+        {
+            var previewPath = r.AiPreviewPath ?? r.DesignerPreviewPath ?? r.FinalCroppedStoragePath ?? r.AiResultStoragePath;
+            return new AdminDesignRequestListItemDto
             {
                 Id = r.Id,
                 Mode = r.Mode.ToString(),
@@ -91,14 +119,17 @@ public sealed class AdminDesignRequestService : IAdminDesignRequestService
                 BannerTemplateId = r.BannerTemplateId,
                 PersonName = r.PersonName,
                 PersonAge = r.PersonAge,
+                ThemeDescription = r.ThemeDescription,
                 UserId = r.UserId ?? 0,
-                CustomerName = r.User != null ? r.User.Name : (r.IpAddress != null ? $"anon ({r.IpAddress})" : "anon"),
-                CustomerEmail = r.User != null ? r.User.Email : string.Empty,
+                IpAddress = r.UserId is null ? r.IpAddress : null,
+                CustomerName = r.UserName ?? (r.IpAddress != null ? $"anon ({r.IpAddress})" : "anon"),
+                CustomerEmail = r.UserEmail ?? string.Empty,
                 RevisionCount = r.RevisionCount,
                 CreatedAt = r.CreatedAt,
-                UpdatedAt = r.UpdatedAt
-            })
-            .ToListAsync(ct);
+                UpdatedAt = r.UpdatedAt,
+                PreviewUrl = string.IsNullOrEmpty(previewPath) ? null : _storage.PublicUrlFor(previewPath),
+            };
+        }).ToList();
 
         return new PagedResult<AdminDesignRequestListItemDto>
         {

@@ -198,6 +198,12 @@ const router = createRouter({
       component: () => import('@/views/admin/TrafficStatsView.vue'),
       meta: { requiresAdmin: true },
     },
+    {
+      path: '/admin/ai-generations',
+      name: 'admin-ai-generations',
+      component: () => import('@/views/admin/AdminAiGenerationsView.vue'),
+      meta: { requiresAdmin: true },
+    },
 
     // ── Info / legal (BANNERSH-222) ──────────────────────────────────────────
     {
