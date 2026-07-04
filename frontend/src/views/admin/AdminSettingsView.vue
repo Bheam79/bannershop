@@ -165,6 +165,12 @@ onMounted(load)
           <a href="https://platform.openai.com/api-keys" target="_blank" class="text-blue-400 hover:underline">
             platform.openai.com/api-keys
           </a>. Brukes for AI-banner-generering. Starter med <code class="bg-gray-800 px-1 rounded">sk-</code>.
+          For å sjekke gjenværende OpenAI-kvote/forbruk (dette er IKKE noe BannerShop lagrer selv — det styres
+          helt av OpenAI), se
+          <a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" class="text-blue-400 hover:underline">
+            platform.openai.com/settings/organization/billing/overview
+          </a>. Hvis genereringer feiler med "OpenAI billing quota exhausted" i loggen (<code class="bg-gray-800 px-1 rounded">journalctl --user -u bannershop</code>),
+          er kvoten brukt opp der og må fylles på/heves.
         </li>
         <li>
           <strong class="text-gray-300">openai_image_model</strong>: La stå tom for å bruke standard (<code class="bg-gray-800 px-1 rounded">gpt-image-2</code>).

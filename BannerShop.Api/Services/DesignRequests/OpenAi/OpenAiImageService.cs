@@ -290,6 +290,19 @@ public sealed class OpenAiImageService : IAiImageService
             // Detect moderation_block (400) so the pipeline stores a distinguishable
             // sentinel in LastError that the frontend surfaces as a Norwegian-language
             // user-friendly explanation instead of a raw JSON dump.
+            //
+            // BANNERSH-287: the sentinel used to be the bare literal "moderation_block"
+            // with NO further detail — the frontend then always displayed a hardcoded
+            // "this looks like a copyrighted character" explanation regardless of the
+            // actual moderation category OpenAI reported. That is misleading: OpenAI's
+            // "moderation_block" code covers many unrelated categories too (most
+            // relevantly for this app: portrait edits being flagged for depicting a
+            // real, identifiable person), so an operator confident they didn't request
+            // copyrighted content had no way to see the real reason. We now append
+            // OpenAI's own `error.message` to the sentinel (moderation_block: <reason>)
+            // so it survives into DesignRequest.LastError and is visible verbatim in
+            // the admin design-request detail page, while the customer-facing copy
+            // stays generic (see BannerBuilderStep3.vue / BannerGenerationInlineArea.vue).
             if ((int)resp.StatusCode == 400)
             {
                 try
@@ -300,7 +313,36 @@ public sealed class OpenAiImageService : IAiImageService
                         code.GetString() is string codeStr &&
                         codeStr.StartsWith("moderation_block", StringComparison.OrdinalIgnoreCase))
                     {
-                        throw new InvalidOperationException("moderation_block");
+                        var reason = err.TryGetProperty("message", out var msgEl) ? msgEl.GetString() : null;
+                        _log.LogWarning("OpenAI moderation_block. Reason={Reason}", reason ?? "(no message in response)");
+                        throw new InvalidOperationException(
+                            string.IsNullOrWhiteSpace(reason) ? "moderation_block" : $"moderation_block: {reason}");
+                    }
+                }
+                catch (InvalidOperationException) { throw; }
+                catch (JsonException) { /* JSON parse failed — fall through to generic error */ }
+            }
+
+            // BANNERSH-287: detect billing/quota exhaustion (429 "insufficient_quota")
+            // so it doesn't just look like "nothing works" with a raw JSON dump in
+            // LastError. Logged loudly here (with the direct link an operator needs)
+            // AND surfaced as a distinguishable sentinel the frontend/admin panel can
+            // translate into a friendly message pointing at the OpenAI usage page.
+            if ((int)resp.StatusCode == 429)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    if (doc.RootElement.TryGetProperty("error", out var err) &&
+                        err.TryGetProperty("code", out var code) &&
+                        code.GetString() is string codeStr &&
+                        codeStr.Equals("insufficient_quota", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _log.LogError(
+                            "OpenAI billing quota exhausted (429 insufficient_quota). Check remaining quota/usage " +
+                            "at https://platform.openai.com/settings/organization/billing/overview and top up " +
+                            "or raise the limit — no code change will fix this.");
+                        throw new InvalidOperationException("openai_quota_exceeded");
                     }
                 }
                 catch (InvalidOperationException) { throw; }

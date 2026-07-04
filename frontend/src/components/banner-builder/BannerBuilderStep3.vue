@@ -621,11 +621,13 @@ function handleReturnToWizardIdle() {
   <div v-else-if="genPhase === 'error'" style="text-align:center;padding:4rem 0">
     <i class="fa-solid fa-triangle-exclamation" style="font-size:52px;color:var(--accent);margin-bottom:18px;display:block"></i>
     <h2 class="display" style="font-size:26px;color:var(--text);margin-bottom:10px">Noe gikk galt</h2>
-    <template v-if="currentDesignRequest?.lastError === 'moderation_block'">
+    <template v-if="currentDesignRequest?.lastError?.startsWith('moderation_block')">
       <p style="color:var(--muted);margin-bottom:24px;max-width:34em;margin-left:auto;margin-right:auto">
-        Beklager, vår AI kan ikke lage plakater med opphavsrettsbeskyttede karakterer og innhold.<br><br>
-        I stedet for f.eks. «spiderman», prøv «Superhelt i edderkopp drakt som svinger seg mellom skyskrapere».<br><br>
-        Eventuelt velg manuell design hvis du ønsker dette — så skal vi se hva vi kan få til!
+        Beklager, vår AI kunne ikke lage dette banneret — det ble stoppet av innholdsfilteret. Dette skjer oftest
+        med opphavsrettsbeskyttede figurer (f.eks. «spiderman» — prøv heller «Superhelt i edderkopp drakt som
+        svinger seg mellom skyskrapere»), men kan også skje pga. det opplastede bildet av personen.<br><br>
+        Prøv en annen temabeskrivelse eller et annet bilde, eller velg manuell design hvis du ønsker dette — så
+        skal vi se hva vi kan få til!
       </p>
       <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
         <button type="button" class="btn btn-primary" @click="emit('resetToIdle')">
@@ -637,7 +639,10 @@ function handleReturnToWizardIdle() {
       </div>
     </template>
     <template v-else>
-      <p style="color:var(--muted);margin-bottom:24px;max-width:30em;margin-left:auto;margin-right:auto">
+      <p v-if="currentDesignRequest?.lastError === 'openai_quota_exceeded'" style="color:var(--muted);margin-bottom:24px;max-width:30em;margin-left:auto;margin-right:auto">
+        AI-genereringen er midlertidig utilgjengelig. Vi jobber med å løse dette — prøv igjen om litt, eller kontakt support.
+      </p>
+      <p v-else style="color:var(--muted);margin-bottom:24px;max-width:30em;margin-left:auto;margin-right:auto">
         {{ currentDesignRequest?.lastError ?? 'AI-genereringen feilet. Prøv igjen eller kontakt support.' }}
       </p>
       <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">

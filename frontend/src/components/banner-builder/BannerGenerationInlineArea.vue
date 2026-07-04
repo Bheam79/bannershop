@@ -223,16 +223,21 @@ function formatGenTime(iso: string | null | undefined): string {
     <div v-else-if="genPhase === 'error'" class="preview-generating preview-error-frame">
       <i class="fa-solid fa-triangle-exclamation" style="font-size:36px;color:var(--accent);margin-bottom:8px"></i>
       <div class="display" style="font-size:18px;color:var(--text);margin-bottom:6px">Noe gikk galt</div>
-      <template v-if="currentDesignRequest?.lastError === 'moderation_block'">
+      <template v-if="currentDesignRequest?.lastError?.startsWith('moderation_block')">
         <p style="font-size:13.5px;color:var(--muted);text-align:center;max-width:28em">
-          Beklager, vår AI kan ikke lage plakater med opphavsrettsbeskyttede karakterer og innhold.<br><br>
-          I stedet for f.eks. «spiderman», prøv «Superhelt i edderkopp drakt som svinger seg mellom skyskrapere».<br><br>
-          Eventuelt velg manuell design hvis du ønsker dette — så skal vi se hva vi kan få til!
+          Beklager, vår AI kunne ikke lage dette banneret — det ble stoppet av innholdsfilteret. Dette skjer oftest
+          med opphavsrettsbeskyttede figurer (f.eks. «spiderman» — prøv heller «Superhelt i edderkopp drakt som
+          svinger seg mellom skyskrapere»), men kan også skje pga. det opplastede bildet av personen.<br><br>
+          Prøv en annen temabeskrivelse eller et annet bilde, eller velg manuell design hvis du ønsker dette — så
+          skal vi se hva vi kan få til!
         </p>
         <button type="button" class="btn btn-ghost" style="margin-top:4px" @click="emit('switchToManualMode')">
           <i class="fa-solid fa-palette"></i> Velg manuell design
         </button>
       </template>
+      <p v-else-if="currentDesignRequest?.lastError === 'openai_quota_exceeded'" style="font-size:13.5px;color:var(--muted);text-align:center;max-width:26em">
+        AI-genereringen er midlertidig utilgjengelig. Vi jobber med å løse dette — prøv igjen om litt, eller kontakt support.
+      </p>
       <p v-else style="font-size:13.5px;color:var(--muted);text-align:center;max-width:26em">
         {{ currentDesignRequest?.lastError ?? 'AI-genereringen feilet. Prøv igjen.' }}
       </p>
