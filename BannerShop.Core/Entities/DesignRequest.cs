@@ -158,6 +158,15 @@ public class DesignRequest
     /// </summary>
     public int? CurrentGenerationId { get; set; }
 
+    /// <summary>
+    /// How the current in-flight generation attempt was charged (BANNERSH-288). Set
+    /// whenever a generation is kicked off (initial <c>CreateAiRequestAsync</c> or
+    /// <c>RegenerateAsync</c>) and reset to <see cref="AiChargeKind.None"/> once the
+    /// pipeline either succeeds or reverses the charge after an OpenAI moderation
+    /// block, so a moderated attempt doesn't cost the customer anything.
+    /// </summary>
+    public AiChargeKind LastChargeKind { get; set; } = AiChargeKind.None;
+
     // Navigation
     public User? User { get; set; }
     public BannerTemplate BannerTemplate { get; set; } = null!;

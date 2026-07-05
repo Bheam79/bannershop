@@ -27,4 +27,11 @@ public enum CreditReason
 
     /// <summary>5 credits granted automatically when a new user account is created (signup bonus).</summary>
     SignupBonus,
+
+    /// <summary>
+    /// A previously-charged generation attempt (credit / free authenticated / free
+    /// anonymous) was reversed because OpenAI's moderation blocked the request
+    /// (BANNERSH-288) — the customer never received a usable result.
+    /// </summary>
+    Refunded,
 }

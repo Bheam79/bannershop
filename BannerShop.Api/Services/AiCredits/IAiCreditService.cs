@@ -37,6 +37,17 @@ public interface IAiCreditService
 
     /// <summary>Returns balance + free-generation status for the /api/ai-credits/me endpoint.</summary>
     Task<AiCreditBalanceDto> GetBalanceWithDetailsAsync(int userId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Reverses whatever was charged for a generation attempt that OpenAI's moderation
+    /// blocked (BANNERSH-288), so a moderated request never costs the customer anything:
+    /// <see cref="AiChargeKind.Consumed"/> grants back 1 credit, <see cref="AiChargeKind.FreeAuthenticated"/>
+    /// resets <c>User.HasUsedFreeAiGeneration</c> so the free try can be used again, and
+    /// <see cref="AiChargeKind.FreeAnonymous"/> removes the IP's usage record so the
+    /// rolling-window eligibility check isn't affected. A no-op for <see cref="AiChargeKind.None"/>.
+    /// Idempotent when <paramref name="referenceId"/> is provided.
+    /// </summary>
+    Task RefundGenerationChargeAsync(int? userId, string? ipAddress, AiChargeKind chargeKind, string? referenceId = null, CancellationToken ct = default);
 }
 
 /// <summary>Response DTO for GET /api/ai-credits/me.</summary>

@@ -1,3 +1,4 @@
+using BannerShop.Api.Services.AiCredits;
 using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
@@ -28,6 +29,7 @@ public sealed class AiGenerationPipeline
     private readonly IUpscalingService _upscaler;
     private readonly IImageProcessingService _images;
     private readonly BannerFileStorage _storage;
+    private readonly IAiCreditService _credits;
     private readonly ILogger<AiGenerationPipeline> _log;
 
     public AiGenerationPipeline(
@@ -38,6 +40,7 @@ public sealed class AiGenerationPipeline
         IUpscalingService upscaler,
         IImageProcessingService images,
         BannerFileStorage storage,
+        IAiCreditService credits,
         ILogger<AiGenerationPipeline> log)
     {
         _db = db;
@@ -47,6 +50,7 @@ public sealed class AiGenerationPipeline
         _upscaler = upscaler;
         _images = images;
         _storage = storage;
+        _credits = credits;
         _log = log;
     }
 
@@ -232,6 +236,8 @@ public sealed class AiGenerationPipeline
             request.CurrentGenerationId = generation.Id;
             request.Status = DesignRequestStatus.AwaitingApproval;
             request.LastError = null;
+            // Generation succeeded — the charge stands; nothing left to reverse.
+            request.LastChargeKind = AiChargeKind.None;
             request.UpdatedAt = DateTime.UtcNow;
 
             // Advance the linked Order state: Paid → CustomerApproval (BANNERSH-109).
@@ -261,6 +267,27 @@ public sealed class AiGenerationPipeline
             request.Status = DesignRequestStatus.Failed;
             request.LastError = ex.Message;
             request.UpdatedAt = DateTime.UtcNow;
+
+            // BANNERSH-288: OpenAI's moderation blocked this attempt through no fault
+            // of ours — refund whatever the customer was charged for it (a credit,
+            // their one free authenticated try, or their anonymous free try) rather
+            // than silently keeping the charge for a generation they never got.
+            if (ex.Message.StartsWith("moderation_block", StringComparison.OrdinalIgnoreCase)
+                && request.LastChargeKind != AiChargeKind.None)
+            {
+                try
+                {
+                    var refundReferenceId = $"moderation-refund-gen-{generation.Id}";
+                    await _credits.RefundGenerationChargeAsync(
+                        request.UserId, request.IpAddress, request.LastChargeKind, refundReferenceId, ct);
+                    request.LastChargeKind = AiChargeKind.None;
+                }
+                catch (Exception refundEx)
+                {
+                    _log.LogError(refundEx, "Pipeline: failed to refund moderation-blocked charge for DesignRequest {Id}", designRequestId);
+                }
+            }
+
             try { await _db.SaveChangesAsync(ct); }
             catch (Exception saveEx) { _log.LogError(saveEx, "Pipeline: failed to persist Failed status for {Id}", designRequestId); }
         }

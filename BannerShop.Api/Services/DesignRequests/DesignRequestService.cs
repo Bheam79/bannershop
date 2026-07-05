@@ -99,6 +99,7 @@ public sealed class DesignRequestService : IDesignRequestService
                 template: template,
                 uploadedPhotoPath: null,   // no portrait upload for anonymous
                 regenerationsRemaining: 0,
+                chargeKind: AiChargeKind.FreeAnonymous,
                 req: req,
                 ct);
 
@@ -114,6 +115,7 @@ public sealed class DesignRequestService : IDesignRequestService
         if (user is null)
             return CreateAiResult.Fail("User not found.", 404);
 
+        AiChargeKind chargeKind;
         if (!user.HasUsedFreeAiGeneration)
         {
             // First-ever generation for this user — free, no credit consumed.
@@ -126,6 +128,7 @@ public sealed class DesignRequestService : IDesignRequestService
                 CreatedAt = DateTime.UtcNow
             });
             await _db.SaveChangesAsync(ct);
+            chargeKind = AiChargeKind.FreeAuthenticated;
         }
         else
         {
@@ -135,6 +138,7 @@ public sealed class DesignRequestService : IDesignRequestService
                 var paywall = await BuildPaywallAsync("insufficient_credits", ct);
                 return CreateAiResult.PaywallResult(paywall, 0);
             }
+            chargeKind = AiChargeKind.Consumed;
         }
 
         var authRequest = await PersistAndEnqueueAsync(
@@ -143,6 +147,7 @@ public sealed class DesignRequestService : IDesignRequestService
             template: template,
             uploadedPhotoPath: uploadedPhotoPath,
             regenerationsRemaining: 1,
+            chargeKind: chargeKind,
             req: req,
             ct);
 
@@ -168,6 +173,7 @@ public sealed class DesignRequestService : IDesignRequestService
         BannerTemplate template,
         string? uploadedPhotoPath,
         int regenerationsRemaining,
+        AiChargeKind chargeKind,
         CreateAiDesignRequestDto req,
         CancellationToken ct)
     {
@@ -190,6 +196,9 @@ public sealed class DesignRequestService : IDesignRequestService
             Status = DesignRequestStatus.InProgress,
             PriceNok = 0m,                          // free-first: no upfront price
             RegenerationsRemaining = regenerationsRemaining,
+            // BANNERSH-288: remember how this attempt was charged so the pipeline can
+            // reverse it if OpenAI's moderation blocks the generation.
+            LastChargeKind = chargeKind,
             CreatedAt = now,
             UpdatedAt = now
         };
@@ -616,6 +625,8 @@ public sealed class DesignRequestService : IDesignRequestService
                 AspectRatio  = r.AspectRatio,
                 Status       = DesignRequestStatus.InProgress,
                 PriceNok     = 0,   // free-first AI — no Stripe charge upfront
+                // BANNERSH-288: regenerate always spends a paid credit (see TryConsumeAsync above).
+                LastChargeKind = AiChargeKind.Consumed,
                 CreatedAt    = DateTime.UtcNow,
                 UpdatedAt    = DateTime.UtcNow,
             };
@@ -626,6 +637,8 @@ public sealed class DesignRequestService : IDesignRequestService
         else
         {
             target = r;
+            // BANNERSH-288: regenerate always spends a paid credit (see TryConsumeAsync above).
+            target.LastChargeKind = AiChargeKind.Consumed;
 
             // Apply mutable input overrides.
             if (!string.IsNullOrWhiteSpace(req.TextContent))

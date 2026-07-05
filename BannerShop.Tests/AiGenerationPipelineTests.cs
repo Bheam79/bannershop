@@ -1,3 +1,4 @@
+using BannerShop.Api.Services.AiCredits;
 using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Api.Services.DesignRequests;
 using BannerShop.Core.Entities;
@@ -162,7 +163,8 @@ public class AiGenerationPipelineTests : IDisposable
         IAiImageService ai,
         IImageProcessingService images,
         IUpscalingService? upscaler = null,
-        IPromptRefinementService? refiner = null)
+        IPromptRefinementService? refiner = null,
+        IAiCreditService? credits = null)
         => new AiGenerationPipeline(
             db,
             new BannerPromptService(),
@@ -171,6 +173,7 @@ public class AiGenerationPipelineTests : IDisposable
             upscaler ?? MakeNoopUpscaleMock().Object,
             images,
             _storage,
+            credits ?? new AiCreditService(db, NullLogger<AiCreditService>.Instance),
             NullLogger<AiGenerationPipeline>.Instance);
 
     // ───────────────────────────── tests ─────────────────────────────
@@ -309,6 +312,46 @@ public class AiGenerationPipelineTests : IDisposable
             It.IsAny<string>(), It.IsAny<string>(),
             It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    // 5b. BANNERSH-288: a moderation_block failure refunds whatever the customer
+    // was charged for the attempt rather than silently keeping the charge.
+    [Theory]
+    [InlineData(AiChargeKind.Consumed)]
+    [InlineData(AiChargeKind.FreeAuthenticated)]
+    public async Task ModerationBlock_refunds_the_charge_for_this_attempt(AiChargeKind chargeKind)
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var user = await db.Users.FindAsync(1);
+        user!.AiCreditsRemaining = 3;
+        user.HasUsedFreeAiGeneration = chargeKind == AiChargeKind.Consumed;
+        await db.SaveChangesAsync();
+
+        var req = MakeRequest();
+        req.LastChargeKind = chargeKind;
+        db.DesignRequests.Add(req);
+        await db.SaveChangesAsync();
+
+        var ai = new Mock<IAiImageService>();
+        ai.Setup(s => s.GenerateAsync(It.IsAny<AiImageRequest>(), It.IsAny<CancellationToken>()))
+          .ThrowsAsync(new InvalidOperationException("moderation_block: uploaded photo depicts a real, identifiable person"));
+
+        var images = MakeImagesMock();
+        var pipeline = MakePipeline(db, ai.Object, images.Object);
+
+        await pipeline.RunAsync(req.Id, CancellationToken.None);
+
+        var savedRequest = await db.DesignRequests.FindAsync(req.Id);
+        savedRequest!.Status.Should().Be(DesignRequestStatus.Failed);
+        savedRequest.LastError.Should().StartWith("moderation_block");
+        savedRequest.LastChargeKind.Should().Be(AiChargeKind.None, "the charge was reversed once refunded");
+
+        var savedUser = await db.Users.FindAsync(1);
+        if (chargeKind == AiChargeKind.Consumed)
+            savedUser!.AiCreditsRemaining.Should().Be(4, "1 credit was refunded");
+        else
+            savedUser!.HasUsedFreeAiGeneration.Should().BeFalse("the free generation was refunded, not spent");
     }
 
     // 6. Crop applied only for 18:9, skipped for other ratios

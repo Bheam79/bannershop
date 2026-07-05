@@ -150,4 +150,75 @@ public sealed class AiCreditService : IAiCreditService
 
         return new AiCreditBalanceDto(user.AiCreditsRemaining, user.HasUsedFreeAiGeneration);
     }
+
+    /// <inheritdoc />
+    public async Task RefundGenerationChargeAsync(int? userId, string? ipAddress, AiChargeKind chargeKind, string? referenceId = null, CancellationToken ct = default)
+    {
+        if (chargeKind == AiChargeKind.None)
+            return;
+
+        // Idempotency guard shared by every branch below (GrantAsync already does its
+        // own check for the Consumed branch, but the other two write transactions
+        // directly so they need the same guard).
+        if (!string.IsNullOrEmpty(referenceId)
+            && chargeKind != AiChargeKind.Consumed
+            && await _db.AiCreditTransactions.AsNoTracking().AnyAsync(t => t.ReferenceId == referenceId, ct))
+        {
+            _log.LogDebug("RefundGenerationChargeAsync: duplicate referenceId {Ref} — skipping.", referenceId);
+            return;
+        }
+
+        switch (chargeKind)
+        {
+            case AiChargeKind.Consumed:
+                if (userId is int uid)
+                    await GrantAsync(uid, 1, CreditReason.Refunded, referenceId, ct);
+                break;
+
+            case AiChargeKind.FreeAuthenticated:
+                if (userId is int freeUid)
+                {
+                    var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == freeUid, ct);
+                    if (user is null)
+                    {
+                        _log.LogWarning("RefundGenerationChargeAsync: user {UserId} not found.", freeUid);
+                        break;
+                    }
+                    user.HasUsedFreeAiGeneration = false;
+                    _db.AiCreditTransactions.Add(new AiCreditTransaction
+                    {
+                        UserId = freeUid,
+                        Amount = 0,
+                        Reason = CreditReason.Refunded,
+                        ReferenceId = referenceId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                    await _db.SaveChangesAsync(ct);
+                    _log.LogInformation("Refunded free AI generation to user {UserId} after moderation block.", freeUid);
+                }
+                break;
+
+            case AiChargeKind.FreeAnonymous:
+                if (!string.IsNullOrEmpty(ipAddress))
+                {
+                    var usage = await _db.IpAiUsages
+                        .Where(u => u.IpAddress == ipAddress)
+                        .OrderByDescending(u => u.CreatedAt)
+                        .FirstOrDefaultAsync(ct);
+                    if (usage is not null)
+                        _db.IpAiUsages.Remove(usage);
+                    _db.AiCreditTransactions.Add(new AiCreditTransaction
+                    {
+                        IpAddress = ipAddress,
+                        Amount = 0,
+                        Reason = CreditReason.Refunded,
+                        ReferenceId = referenceId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                    await _db.SaveChangesAsync(ct);
+                    _log.LogInformation("Refunded free anonymous AI generation for IP {Ip} after moderation block.", ipAddress);
+                }
+                break;
+        }
+    }
 }
