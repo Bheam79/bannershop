@@ -6,6 +6,7 @@ using BannerShop.Core.Enums;
 using BannerShop.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace BannerShop.Api.Controllers;
@@ -68,8 +69,11 @@ public class BannerBuilderController : ControllerBase
     }
 
     // ── POST /api/banner-builder/upload ───────────────────────────────────────
+    // Anonymous + does real PDF/image processing, so rate-limit per IP (same
+    // pattern as auth-* / analytics-track) against a scripted upload flood.
     [HttpPost("upload")]
     [AllowAnonymous]
+    [EnableRateLimiting("banner-upload")]
     [RequestSizeLimit(75 * 1024 * 1024)] // a little above the 50 MB validation cap
     [RequestFormLimits(MultipartBodyLengthLimit = 75L * 1024 * 1024)]
     public async Task<IActionResult> Upload(IFormFile? file, CancellationToken ct)
@@ -349,16 +353,11 @@ public class BannerBuilderController : ControllerBase
         return User.IsInRole(nameof(UserRole.Admin));    // admin override
     }
 
-    private string? GetClientIpAddress()
-    {
-        var forwarded = Request.Headers["X-Forwarded-For"].ToString();
-        if (!string.IsNullOrWhiteSpace(forwarded))
-        {
-            var first = forwarded.Split(',')[0].Trim();
-            if (!string.IsNullOrEmpty(first)) return first;
-        }
-        return HttpContext.Connection.RemoteIpAddress?.ToString();
-    }
+    // Don't hand-parse X-Forwarded-For — it's fully attacker-controlled
+    // on any request reaching Kestrel directly. RemoteIpAddress is already correct
+    // here because Program.cs's UseForwardedHeaders only rewrites it for requests
+    // whose immediate TCP peer is the trusted loopback reverse proxy.
+    private string? GetClientIpAddress() => HttpContext.Connection.RemoteIpAddress?.ToString();
 
     private static async Task<bool> VerifyMagicBytesAsync(IFormFile file, string ext, CancellationToken ct)
     {

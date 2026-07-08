@@ -4,6 +4,7 @@ using BannerShop.Core.Entities;
 using BannerShop.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace BannerShop.Api.Controllers;
 
@@ -26,7 +27,10 @@ public class AnalyticsController : ControllerBase
     }
 
     // ── POST /api/analytics/track ────────────────────────────────────────────
+    // Anonymous + unauthenticated, so rate-limit per IP to stop a scripted
+    // flood from writing unbounded PageView rows (same pattern as auth-*).
     [HttpPost("track")]
+    [EnableRateLimiting("analytics-track")]
     public async Task<IActionResult> Track([FromBody] TrackPageViewRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.SessionId) || string.IsNullOrWhiteSpace(req.Path))

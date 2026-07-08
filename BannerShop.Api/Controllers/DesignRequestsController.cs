@@ -99,17 +99,11 @@ public class DesignRequestsController : ControllerBase
         };
     }
 
-    private string? GetClientIpAddress()
-    {
-        // Prefer the standard X-Forwarded-For (first hop) when behind a proxy.
-        var forwarded = Request.Headers["X-Forwarded-For"].ToString();
-        if (!string.IsNullOrWhiteSpace(forwarded))
-        {
-            var first = forwarded.Split(',')[0].Trim();
-            if (!string.IsNullOrEmpty(first)) return first;
-        }
-        return HttpContext.Connection.RemoteIpAddress?.ToString();
-    }
+    // Don't hand-parse X-Forwarded-For — it's fully attacker-controlled
+    // on any request reaching Kestrel directly. RemoteIpAddress is already correct
+    // here because Program.cs's UseForwardedHeaders only rewrites it for requests
+    // whose immediate TCP peer is the trusted loopback reverse proxy.
+    private string? GetClientIpAddress() => HttpContext.Connection.RemoteIpAddress?.ToString();
 
     // ── GET /api/design-requests ─────────────────────────────────────────────
     /// <summary>

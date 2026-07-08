@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
@@ -18,6 +19,7 @@ using BannerShop.Core.Entities;
 using BannerShop.Core.Enums;
 using BannerShop.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -271,6 +273,17 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("auth-register",        ctx => SlidingAuthPartition(ctx, "Register",         5, 60));
     options.AddPolicy("auth-refresh",         ctx => SlidingAuthPartition(ctx, "Refresh",         20, 60));
     options.AddPolicy("auth-change-password", ctx => SlidingAuthPartition(ctx, "ChangePassword",   5, 60));
+
+    // Anonymous page-view tracking (BANNERSH-285) — generous limit since one
+    // visitor legitimately fires this on every SPA route change, but caps a
+    // scripted flood from writing unbounded PageView rows.
+    options.AddPolicy("analytics-track",      ctx => SlidingAuthPartition(ctx, "AnalyticsTrack", 120, 60));
+
+    // Anonymous banner-builder upload — accepts up to 75 MB and runs CPU-bound
+    // PDF rasterization / image processing per request, so an unthrottled
+    // scripted flood is a much cheaper DoS/disk-fill vector than the JSON
+    // endpoints above.
+    options.AddPolicy("banner-upload",        ctx => SlidingAuthPartition(ctx, "BannerUpload", 20, 60));
 });
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -447,6 +460,26 @@ var app = builder.Build();
 }
 
 // ─── Middleware pipeline ──────────────────────────────────────────────────────
+// Recover the real client IP from a same-host reverse proxy (nginx/
+// Caddy terminating TLS on :443 → :17080, per the Stripe-webhook setup notes) so
+// HttpContext.Connection.RemoteIpAddress is correct downstream — for the sliding-
+// window rate limiter partitions AND for DesignRequestsController/BannerBuilder
+// Controller's GetClientIpAddress(), which used to hand-parse the raw
+// X-Forwarded-For header directly. That header is fully attacker-controlled on any
+// request that reaches Kestrel directly, which let an anonymous caller spoof a
+// fresh "IP" per request and bypass the one-free-AI-generation-per-IP quota
+// (AiCreditService.IsAnonymousEligibleAsync) for unlimited free OpenAI spend.
+// Only loopback is trusted as a proxy — a request whose *immediate* TCP peer isn't
+// 127.0.0.1/::1 has its X-Forwarded-For header ignored entirely, so a public
+// attacker's forged header is never honored.
+var forwardedHeaderOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+};
+forwardedHeaderOptions.KnownProxies.Add(IPAddress.Loopback);
+forwardedHeaderOptions.KnownProxies.Add(IPAddress.IPv6Loopback);
+app.UseForwardedHeaders(forwardedHeaderOptions);
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();

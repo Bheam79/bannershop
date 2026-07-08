@@ -61,6 +61,10 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["RateLimiting:Refresh:WindowSeconds"]      = "60",
                 ["RateLimiting:ChangePassword:PermitLimit"] = "1000",
                 ["RateLimiting:ChangePassword:WindowSeconds"] = "60",
+                ["RateLimiting:AnalyticsTrack:PermitLimit"]    = "1000",
+                ["RateLimiting:AnalyticsTrack:WindowSeconds"]  = "60",
+                ["RateLimiting:BannerUpload:PermitLimit"]      = "1000",
+                ["RateLimiting:BannerUpload:WindowSeconds"]    = "60",
             });
         });
 
