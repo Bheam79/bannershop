@@ -1,28 +1,48 @@
 using BannerShop.Core.Entities;
 using BannerShop.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace BannerShop.Api.Services.SystemSettings;
 
 /// <summary>
 /// Database-backed implementation of <see cref="ISystemSettingsService"/>.
-/// Each call goes to the database; the caller (e.g. <c>OpenAiImageService</c>)
-/// is responsible for any caching it needs.
+/// <see cref="GetValueAsync"/> is cached for <see cref="CacheTtl"/> (per-key,
+/// including cache misses) since these values change at most a few times a
+/// year but are read on every Stripe/OpenAI call and on every anonymous
+/// page load (GET /api/config/stripe). <see cref="SetValueAsync"/> evicts the
+/// entry it just wrote so admin edits take effect immediately for that key.
+/// <see cref="GetAllAsync"/> deliberately bypasses the cache — it only backs
+/// the /admin/settings editor, which must always show the current DB state.
 /// </summary>
 public sealed class SystemSettingsService : ISystemSettingsService
 {
-    private readonly BannerShopDbContext _db;
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
 
-    public SystemSettingsService(BannerShopDbContext db) => _db = db;
+    private readonly BannerShopDbContext _db;
+    private readonly IMemoryCache _cache;
+
+    public SystemSettingsService(BannerShopDbContext db, IMemoryCache cache)
+    {
+        _db = db;
+        _cache = cache;
+    }
 
     public async Task<string?> GetValueAsync(string key, CancellationToken ct = default)
     {
+        var cacheKey = CacheKey(key);
+        if (_cache.TryGetValue<string?>(cacheKey, out var cached))
+            return cached;
+
         var row = await _db.SystemSettings
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Key == key, ct);
 
         var val = row?.Value;
-        return string.IsNullOrWhiteSpace(val) ? null : val;
+        var result = string.IsNullOrWhiteSpace(val) ? null : val;
+
+        _cache.Set(cacheKey, result, CacheTtl);
+        return result;
     }
 
     public async Task SetValueAsync(string key, string value, CancellationToken ct = default)
@@ -38,7 +58,10 @@ public sealed class SystemSettingsService : ISystemSettingsService
             row.Value = value;
         }
         await _db.SaveChangesAsync(ct);
+        _cache.Remove(CacheKey(key));
     }
+
+    private static string CacheKey(string key) => $"system_settings:{key}";
 
     public async Task<IReadOnlyList<SystemSettingDto>> GetAllAsync(CancellationToken ct = default)
     {

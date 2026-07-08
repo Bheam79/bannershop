@@ -2,6 +2,7 @@ using BannerShop.Api.Services.SystemSettings;
 using BannerShop.Core.Entities;
 using BannerShop.Tests.Helpers;
 using FluentAssertions;
+using Microsoft.Extensions.Caching.Memory;
 using Xunit;
 
 namespace BannerShop.Tests;
@@ -12,9 +13,15 @@ namespace BannerShop.Tests;
 public class SystemSettingsServiceTests
 {
     private static SystemSettingsService CreateService(out BannerShop.Infrastructure.Data.BannerShopDbContext db)
+        => CreateService(out db, out _);
+
+    private static SystemSettingsService CreateService(
+        out BannerShop.Infrastructure.Data.BannerShopDbContext db,
+        out IMemoryCache cache)
     {
         db = DbHelper.CreateInMemory();
-        return new SystemSettingsService(db);
+        cache = new MemoryCache(new MemoryCacheOptions());
+        return new SystemSettingsService(db, cache);
     }
 
     // ── GetValueAsync ─────────────────────────────────────────────────────────
@@ -65,6 +72,41 @@ public class SystemSettingsServiceTests
         result.Should().BeNull();
     }
 
+    [Fact]
+    public async Task GetValueAsync_CachesResult_DoesNotReflectDirectDbMutationWithinTtl()
+    {
+        var svc = CreateService(out var db);
+        db.SystemSettings.Add(new SystemSetting { Key = "cached_key", Value = "v1" });
+        await db.SaveChangesAsync();
+
+        var first = await svc.GetValueAsync("cached_key");
+        first.Should().Be("v1");
+
+        // Mutate the row directly (bypassing SetValueAsync, which invalidates the cache)
+        // to prove the second read is served from cache rather than re-querying the DB.
+        var row = db.SystemSettings.First(s => s.Key == "cached_key");
+        row.Value = "v2";
+        await db.SaveChangesAsync();
+
+        var second = await svc.GetValueAsync("cached_key");
+        second.Should().Be("v1");
+    }
+
+    [Fact]
+    public async Task GetValueAsync_CachesMissingKey_DoesNotReflectLaterInsertWithinTtl()
+    {
+        var svc = CreateService(out var db);
+
+        var first = await svc.GetValueAsync("not_yet_set");
+        first.Should().BeNull();
+
+        db.SystemSettings.Add(new SystemSetting { Key = "not_yet_set", Value = "now_set" });
+        await db.SaveChangesAsync();
+
+        var second = await svc.GetValueAsync("not_yet_set");
+        second.Should().BeNull("the earlier cache miss should itself have been cached");
+    }
+
     // ── SetValueAsync ─────────────────────────────────────────────────────────
 
     [Fact]
@@ -90,6 +132,20 @@ public class SystemSettingsServiceTests
 
         var row = db.SystemSettings.FirstOrDefault(s => s.Key == "update_key");
         row!.Value.Should().Be("new");
+    }
+
+    [Fact]
+    public async Task SetValueAsync_InvalidatesCacheForThatKey()
+    {
+        var svc = CreateService(out var db);
+        db.SystemSettings.Add(new SystemSetting { Key = "k", Value = "old" });
+        await db.SaveChangesAsync();
+        (await svc.GetValueAsync("k")).Should().Be("old"); // warm the cache
+
+        await svc.SetValueAsync("k", "new");
+
+        var result = await svc.GetValueAsync("k");
+        result.Should().Be("new");
     }
 
     // ── GetAllAsync ───────────────────────────────────────────────────────────
@@ -131,5 +187,21 @@ public class SystemSettingsServiceTests
         var result = await svc.GetAllAsync();
 
         result.Should().ContainSingle(s => s.Label == "mykey");
+    }
+
+    [Fact]
+    public async Task GetAllAsync_BypassesCache_ReflectsLatestDbState()
+    {
+        var svc = CreateService(out var db);
+        db.SystemSettings.Add(new SystemSetting { Key = "k", Value = "v1" });
+        await db.SaveChangesAsync();
+        await svc.GetValueAsync("k"); // warm the per-key cache
+
+        var row = db.SystemSettings.First(s => s.Key == "k");
+        row.Value = "v2";
+        await db.SaveChangesAsync();
+
+        var result = await svc.GetAllAsync();
+        result.Should().ContainSingle(s => s.Key == "k" && s.Value == "v2");
     }
 }
