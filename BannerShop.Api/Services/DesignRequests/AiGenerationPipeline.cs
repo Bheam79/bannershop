@@ -168,14 +168,14 @@ public sealed class AiGenerationPipeline
 
             // BANNERSH-155: log the FINAL prompt actually sent to the image model
             // (post-refinement, or the base prompt if refinement was a no-op /
-            // fell back). This is what gpt-image-2 sees.
+            // fell back). This is what FLUX.2 Pro sees.
             _log.LogInformation(
                 "Pipeline: DesignRequest {Id} final prompt: {FinalPrompt}",
                 designRequestId, prompt);
 
             // 3. Generate
             // BANNERSH-98: explicitly log the IAiImageService implementation type
-            // so operators can confirm at a glance whether the real OpenAI-backed
+            // so operators can confirm at a glance whether the real fal.ai-backed
             // service or a fallback (Mock/Placeholder) is wired in.
             _log.LogInformation(
                 "Pipeline: generating image for DesignRequest {Id} (generation {GenId}) using {AiServiceType}",
@@ -268,7 +268,7 @@ public sealed class AiGenerationPipeline
             request.LastError = ex.Message;
             request.UpdatedAt = DateTime.UtcNow;
 
-            // BANNERSH-288: OpenAI's moderation blocked this attempt through no fault
+            // BANNERSH-288: The image provider's moderation blocked this attempt through no fault
             // of ours — refund whatever the customer was charged for it (a credit,
             // their one free authenticated try, or their anonymous free try) rather
             // than silently keeping the charge for a generation they never got.

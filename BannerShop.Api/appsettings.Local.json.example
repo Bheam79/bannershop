@@ -1,13 +1,16 @@
 {
-  "_comment": "Copy this file to appsettings.Local.json and fill in your real local overrides. The .Local.json file is git-ignored. BANNERSH-161: API keys (OpenAI + Stripe) now live in the database (system_settings) and are set via /admin/settings — do NOT put them here.",
+  "_comment": "Copy this file to appsettings.Local.json and fill in your real local overrides. The .Local.json file is git-ignored. API keys (fal.ai, OpenAI and Stripe) live in system_settings and are set via /admin/settings — do NOT put them here.",
 
   "ConnectionStrings": {
     "DefaultConnection": "Server=127.0.0.1;Port=3306;Database=bannershop;User=bannershop;Password=bannershop_dev;"
   },
 
   "OpenAi": {
-    "ImageModel": "gpt-image-2",
-    "ImageQuality": "high"
+    "ChatModel": "gpt-4o-mini"
+  },
+
+  "Fal": {
+    "ModelId": "fal-ai/flux-2-pro"
   },
 
   "Replicate": {

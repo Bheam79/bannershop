@@ -74,7 +74,7 @@ import InfoPageLayout from './InfoPageLayout.vue'
     <h2>6. AI-designtjeneste</h2>
     <p>
       Når du benytter AI-designtjenesten, genereres bildeinnhold ved
-      hjelp av en tredjepartsleverandør (OpenAI). Det genererte designet
+      hjelp av tredjepartsleverandører (fal.ai og OpenAI). Det genererte designet
       er ment for personlig bruk knyttet til banneret du bestiller.
       Beatgrid garanterer ikke at AI-generert innhold er fritt for
       feil, og anbefaler at du gjennomgår designet nøye før bestilling.

@@ -161,27 +161,17 @@ onMounted(load)
       <h2 class="text-gray-200 font-semibold mb-2">Hjelp</h2>
       <ul class="space-y-1.5 list-disc list-inside">
         <li>
+          <strong class="text-gray-300">fal_api_key</strong>: Nøkkel fra
+          <a href="https://fal.ai/dashboard/keys" target="_blank" class="text-blue-400 hover:underline">
+            fal.ai/dashboard/keys
+          </a>. Brukes til bildegenerering med <code class="bg-gray-800 px-1 rounded">fal-ai/flux-2-pro</code>.
+        </li>
+        <li>
           <strong class="text-gray-300">openai_api_key</strong>: Nøkkel fra
           <a href="https://platform.openai.com/api-keys" target="_blank" class="text-blue-400 hover:underline">
             platform.openai.com/api-keys
-          </a>. Brukes for AI-banner-generering. Starter med <code class="bg-gray-800 px-1 rounded">sk-</code>.
-          For å sjekke gjenværende OpenAI-kvote/forbruk (dette er IKKE noe BannerShop lagrer selv — det styres
-          helt av OpenAI), se
-          <a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" class="text-blue-400 hover:underline">
-            platform.openai.com/settings/organization/billing/overview
-          </a>. Hvis genereringer feiler med "OpenAI billing quota exhausted" i loggen (<code class="bg-gray-800 px-1 rounded">journalctl --user -u bannershop</code>),
-          er kvoten brukt opp der og må fylles på/heves.
-        </li>
-        <li>
-          <strong class="text-gray-300">openai_image_model</strong>: La stå tom for å bruke standard (<code class="bg-gray-800 px-1 rounded">gpt-image-2</code>).
-        </li>
-        <li>
-          <strong class="text-gray-300">openai_image_quality</strong>: Bildekvalitet sendt til OpenAI.
-          Gyldige verdier: <code class="bg-gray-800 px-1 rounded">low</code>,
-          <code class="bg-gray-800 px-1 rounded">medium</code>,
-          <code class="bg-gray-800 px-1 rounded">high</code>,
-          <code class="bg-gray-800 px-1 rounded">auto</code>.
-          La stå tom for å bruke standardverdien fra appsettings (<code class="bg-gray-800 px-1 rounded">high</code>).
+          </a>. Brukes kun til å forbedre tekstprompten før bildegenerering.
+          Starter med <code class="bg-gray-800 px-1 rounded">sk-</code>.
         </li>
         <li>
           <strong class="text-gray-300">stripe_secret_key</strong>: Hemmelig nøkkel fra

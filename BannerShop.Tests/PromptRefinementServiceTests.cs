@@ -140,9 +140,9 @@ public class PromptRefinementServiceTests
         body.Should().Contain("Birthday");
         body.Should().Contain("minecraft");
         body.Should().Contain("Gratulerer med 7!");
-        // System prompt must instruct the model about gpt-image-2 / image edits.
-        body.Should().Contain("gpt-image-2");
-        body.Should().Contain("/v1/images/edits");
+        // System prompt must target the image provider actually used downstream.
+        body.Should().Contain("FLUX.2 Pro");
+        body.Should().Contain("fal-ai/flux-2-pro/edit");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

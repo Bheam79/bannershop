@@ -639,7 +639,7 @@ function handleReturnToWizardIdle() {
       </div>
     </template>
     <template v-else>
-      <p v-if="currentDesignRequest?.lastError === 'openai_quota_exceeded'" style="color:var(--muted);margin-bottom:24px;max-width:30em;margin-left:auto;margin-right:auto">
+      <p v-if="['openai_quota_exceeded', 'fal_quota_exceeded'].includes(currentDesignRequest?.lastError ?? '')" style="color:var(--muted);margin-bottom:24px;max-width:30em;margin-left:auto;margin-right:auto">
         AI-genereringen er midlertidig utilgjengelig. Vi jobber med å løse dette — prøv igjen om litt, eller kontakt support.
       </p>
       <p v-else style="color:var(--muted);margin-bottom:24px;max-width:30em;margin-left:auto;margin-right:auto">

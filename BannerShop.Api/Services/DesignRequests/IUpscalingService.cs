@@ -4,8 +4,8 @@ namespace BannerShop.Api.Services.DesignRequests;
 /// Upscales an image to a higher resolution. Kept as a thin abstraction so a Replicate /
 /// Real-ESRGAN backend can be added later without changing pipeline code.
 ///
-/// Per BANNERSH-18, v1 ships with <see cref="NoopUpscalingService"/> because
-/// gpt-image-2 natively outputs 4K — no upscaling step is required.
+/// The customer pipeline currently ships with <see cref="NoopUpscalingService"/>
+/// and keeps the image provider's native output.
 /// </summary>
 public interface IUpscalingService
 {

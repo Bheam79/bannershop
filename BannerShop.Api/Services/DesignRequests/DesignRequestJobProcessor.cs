@@ -6,7 +6,7 @@ namespace BannerShop.Api.Services.DesignRequests;
 /// Long-running hosted service that drains the design-request job queue and
 /// invokes <see cref="AiGenerationPipeline"/> for each id.
 ///
-/// Single-threaded by design (gpt-image-2 is rate-limited and the v1 volume is
+/// Single-threaded by design (the image provider is rate-limited and the v1 volume is
 /// tiny). Parallelism can be added by spinning up multiple readers once the
 /// channel pattern is in place.
 /// </summary>

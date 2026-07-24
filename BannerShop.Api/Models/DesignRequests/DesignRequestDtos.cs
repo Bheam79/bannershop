@@ -98,7 +98,7 @@ public class CreateAiDesignRequestDto
     /// <summary>
     /// Optional ID of a previously-uploaded portrait. Wired in via the existing
     /// BannerDesign upload endpoint (BANNERSH-15) — the rasterised image acts as
-    /// the reference for gpt-image-2's edit endpoint.
+    /// the reference for FLUX.2 Pro's edit endpoint.
     /// </summary>
     public int? UploadedPhotoBannerDesignId { get; set; }
 }

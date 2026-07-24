@@ -9,7 +9,7 @@ namespace BannerShop.Api.Services.SystemSettings;
 /// Database-backed implementation of <see cref="ISystemSettingsService"/>.
 /// <see cref="GetValueAsync"/> is cached for <see cref="CacheTtl"/> (per-key,
 /// including cache misses) since these values change at most a few times a
-/// year but are read on every Stripe/OpenAI call and on every anonymous
+/// year but are read on every Stripe/OpenAI/fal.ai call and on every anonymous
 /// page load (GET /api/config/stripe). <see cref="SetValueAsync"/> evicts the
 /// entry it just wrote so admin edits take effect immediately for that key.
 /// <see cref="GetAllAsync"/> deliberately bypasses the cache — it only backs

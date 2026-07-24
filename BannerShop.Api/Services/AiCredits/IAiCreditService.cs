@@ -39,7 +39,7 @@ public interface IAiCreditService
     Task<AiCreditBalanceDto> GetBalanceWithDetailsAsync(int userId, CancellationToken ct = default);
 
     /// <summary>
-    /// Reverses whatever was charged for a generation attempt that OpenAI's moderation
+    /// Reverses whatever was charged for a generation attempt that the image provider's moderation
     /// blocked (BANNERSH-288), so a moderated request never costs the customer anything:
     /// <see cref="AiChargeKind.Consumed"/> grants back 1 credit, <see cref="AiChargeKind.FreeAuthenticated"/>
     /// resets <c>User.HasUsedFreeAiGeneration</c> so the free try can be used again, and

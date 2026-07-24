@@ -197,7 +197,7 @@ public sealed class DesignRequestService : IDesignRequestService
             PriceNok = 0m,                          // free-first: no upfront price
             RegenerationsRemaining = regenerationsRemaining,
             // BANNERSH-288: remember how this attempt was charged so the pipeline can
-            // reverse it if OpenAI's moderation blocks the generation.
+            // reverse it if the image provider's moderation blocks the generation.
             LastChargeKind = chargeKind,
             CreatedAt = now,
             UpdatedAt = now

@@ -13,9 +13,8 @@ public record AiImageRequest(
 public record AiImageResult(string AbsolutePath, int WidthPx, int HeightPx);
 
 /// <summary>
-/// Provider-agnostic AI image generator. Lives behind an interface so we can
-/// swap OpenAI for Azure OpenAI / Stability AI / etc. without touching callers.
-/// See BANNERSH-18 for the locked-in v1 provider (OpenAI direct, gpt-image-2).
+/// Provider-agnostic AI image generator. Lives behind an interface so the
+/// current fal.ai integration can be changed without touching callers.
 /// </summary>
 public interface IAiImageService
 {

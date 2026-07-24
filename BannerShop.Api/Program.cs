@@ -8,6 +8,7 @@ using BannerShop.Api.Services.AiCredits;
 using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Core;
 using BannerShop.Api.Services.DesignRequests;
+using BannerShop.Api.Services.DesignRequests.Fal;
 using BannerShop.Api.Services.DesignRequests.OpenAi;
 using BannerShop.Api.Services.DesignRequests.Replicate;
 using BannerShop.Api.Services.Email;
@@ -141,12 +142,11 @@ builder.Services.AddScoped<ISystemSettingsService, SystemSettingsService>();
 
 // ─── AI Design Requests (95 kr) ──────────────────────────────────────────────
 builder.Services.Configure<OpenAiOptions>(builder.Configuration.GetSection(OpenAiOptions.SectionName));
+builder.Services.Configure<FalOptions>(builder.Configuration.GetSection(FalOptions.SectionName));
 
-// BANNERSH-98: Always register OpenAiImageService — it resolves the API key at
-// call time (DB setting → appsettings fallback) so the admin can enter / update
-// the key via the settings panel without restarting the service.  When no key is
-// configured it returns a solid-colour placeholder (same as MockAiImageService).
-builder.Services.AddHttpClient<IAiImageService, OpenAiImageService>();
+// BANNERSH-289: FLUX.2 [pro] on fal.ai generates banner images. The fal key is
+// resolved from system_settings on each call so admin edits require no restart.
+builder.Services.AddHttpClient<IAiImageService, FalAiImageService>();
 // Prompt refinement: always register the OpenAI-backed refiner. It already falls
 // back to the base prompt on any HTTP error (including 401 from a missing key),
 // so it is safe to call even when the key is not configured.
@@ -344,8 +344,8 @@ builder.Services.AddSwaggerGen(c =>
 // ─── Build ────────────────────────────────────────────────────────────────────
 var app = builder.Build();
 
-// ─── BANNERSH-98 / BANNERSH-127 / BANNERSH-161: loud secret-key state log ───
-// Keys (OpenAI + Stripe) are read EXCLUSIVELY from the database since
+// ─── BANNERSH-98 / BANNERSH-127 / BANNERSH-161 / BANNERSH-289: key state log ─
+// Keys (fal.ai + OpenAI prompt refinement + Stripe) are read from the database.
 // BANNERSH-161. At boot we dump the resolved working directory, the present
 // appsettings files (so operators can see what config IS being loaded for
 // non-secret tuning knobs), and the masked state of every key row in
@@ -377,6 +377,7 @@ var app = builder.Build();
         .ToArray();
 
     var openAiCfg = app.Configuration.GetSection("OpenAi");
+    var falCfg = app.Configuration.GetSection("Fal");
 
     startupLog.LogInformation(
         "Boot config: Environment={Env} ContentRoot={ContentRoot} CWD={Cwd}",
@@ -384,14 +385,18 @@ var app = builder.Build();
     startupLog.LogInformation(
         "Boot config: appsettings files: {Files}", string.Join(" | ", fileStates));
     startupLog.LogInformation(
-        "Boot config: OpenAi ImageModel={Model} ImageQuality={Quality} BaseUrl={BaseUrl} " +
+        "Boot config: OpenAi ChatModel={Model} BaseUrl={BaseUrl} " +
         "(API key is read from db:openai_api_key, NOT appsettings)",
-        openAiCfg["ImageModel"] ?? "(default)",
-        openAiCfg["ImageQuality"] ?? "(default)",
+        openAiCfg["ChatModel"] ?? "(default)",
         openAiCfg["BaseUrl"] ?? "(default)");
+    startupLog.LogInformation(
+        "Boot config: Fal ModelId={Model} BaseUrl={BaseUrl} " +
+        "(API key is read from db:fal_api_key, NOT appsettings)",
+        falCfg["ModelId"] ?? "(default)",
+        falCfg["BaseUrl"] ?? "(default)");
 
     // BANNERSH-161: probe the DB system_settings rows for every secret key
-    // (OpenAI + Stripe). These are the ONLY source the services consult — if
+    // (fal.ai + OpenAI + Stripe). These are the ONLY source the services consult — if
     // any is "<unset>", the corresponding feature will return a placeholder /
     // 500 until the admin enters it via the settings panel.
     try
@@ -400,20 +405,18 @@ var app = builder.Build();
         var settings = scope.ServiceProvider
             .GetRequiredService<BannerShop.Api.Services.SystemSettings.ISystemSettingsService>();
         var dbOpenAiKey = await settings.GetValueAsync("openai_api_key");
-        var dbModel = await settings.GetValueAsync("openai_image_model");
-        var dbQuality = await settings.GetValueAsync("openai_image_quality");
+        var dbFalKey = await settings.GetValueAsync("fal_api_key");
         var dbStripeSecret = await settings.GetValueAsync("stripe_secret_key");
         var dbStripePub = await settings.GetValueAsync("stripe_publishable_key");
         var dbStripeWh = await settings.GetValueAsync("stripe_webhook_secret");
         startupLog.LogInformation(
-            "Boot config: DB system_settings 'openai_api_key'={DbKeyState} " +
-            "'openai_image_model'={DbModelState} 'openai_image_quality'={DbQualityState} " +
+            "Boot config: DB system_settings 'fal_api_key'={FalKeyState} " +
+            "'openai_api_key'={DbKeyState} " +
             "'stripe_secret_key'={DbStripeSecret} 'stripe_publishable_key'={DbStripePub} " +
             "'stripe_webhook_secret'={DbStripeWh} " +
             "(BANNERSH-161: ALL keys are DB-only; set blanks via /admin/settings)",
+            DescribeKeyState(dbFalKey),
             DescribeKeyState(dbOpenAiKey),
-            string.IsNullOrWhiteSpace(dbModel) ? "<unset>" : $"\"{dbModel}\"",
-            string.IsNullOrWhiteSpace(dbQuality) ? "<unset>" : $"\"{dbQuality}\"",
             DescribeKeyState(dbStripeSecret),
             DescribeKeyState(dbStripePub),
             DescribeKeyState(dbStripeWh));
@@ -425,7 +428,7 @@ var app = builder.Build();
     }
 
     // Verify the IAiImageService implementation that DI resolves — the type
-    // name confirms whether real OpenAI or a fallback is wired in. Wrapped so
+    // name confirms whether fal.ai or a fallback is wired in. Wrapped so
     // a DI-resolution issue can't take down the boot.
     try
     {

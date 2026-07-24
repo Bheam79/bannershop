@@ -1,7 +1,7 @@
 namespace BannerShop.Api.Services.DesignRequests;
 
 /// <summary>
-/// v1 upscaling implementation: a noop, because gpt-image-2 natively returns 4K output.
+/// Customer-facing upscaling is a noop; provider output is persisted at its native size.
 /// Returns the input path unchanged. Replaced by a real provider (Replicate / Real-ESRGAN)
 /// if a future task requires upscaling smaller source images.
 /// </summary>

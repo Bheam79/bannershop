@@ -235,7 +235,7 @@ function formatGenTime(iso: string | null | undefined): string {
           <i class="fa-solid fa-palette"></i> Velg manuell design
         </button>
       </template>
-      <p v-else-if="currentDesignRequest?.lastError === 'openai_quota_exceeded'" style="font-size:13.5px;color:var(--muted);text-align:center;max-width:26em">
+      <p v-else-if="['openai_quota_exceeded', 'fal_quota_exceeded'].includes(currentDesignRequest?.lastError ?? '')" style="font-size:13.5px;color:var(--muted);text-align:center;max-width:26em">
         AI-genereringen er midlertidig utilgjengelig. Vi jobber med å løse dette — prøv igjen om litt, eller kontakt support.
       </p>
       <p v-else style="font-size:13.5px;color:var(--muted);text-align:center;max-width:26em">
