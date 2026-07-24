@@ -71,7 +71,11 @@ public sealed class FalAiImageService : IAiImageService
             var dataUri = $"data:{GuessMime(referencePath)};base64,{Convert.ToBase64String(bytes)}";
             payload = new
             {
-                prompt = request.Prompt,
+                // FLUX.2 Pro edit supports explicit @imageN references. Always name
+                // the attached portrait here rather than relying on the optional
+                // prompt-refinement step to retain a generic "reference image"
+                // instruction.
+                prompt = BuildEditPrompt(request.Prompt),
                 image_size = new { width = size.Width, height = size.Height },
                 image_urls = new[] { dataUri },
                 safety_tolerance = "2",
@@ -235,6 +239,10 @@ public sealed class FalAiImageService : IAiImageService
 
         return true;
     }
+
+    private static string BuildEditPrompt(string prompt) =>
+        "Use the person in @image1 as the exact identity reference. Preserve their recognizable face and facial features while integrating them naturally into the banner scene. "
+        + prompt;
 
     private static NativeSize NativeSizeFor(string? aspectRatio)
     {

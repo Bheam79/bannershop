@@ -68,13 +68,32 @@ public sealed class DesignRequestService : IDesignRequestService
         if (template is null)
             return CreateAiResult.Fail("Banner template not found.", 400);
 
-        // Uploaded portraits live in the user's BannerDesigns table — only available
-        // for authenticated callers. Silently ignore for anonymous requests.
+        // Resolve the uploaded portrait for both authenticated and anonymous callers.
+        // BannerBuilderController deliberately allows anonymous uploads and records
+        // their IP address, so dropping the design id here meant the subsequent fal.ai
+        // request used text-to-image instead of /edit even though the wizard showed the
+        // customer a portrait preview.
         string? uploadedPhotoPath = null;
-        if (userId is int authUserId && req.UploadedPhotoBannerDesignId is int designId)
+        if (req.UploadedPhotoBannerDesignId is int designId)
         {
-            var design = await _db.BannerDesigns.AsNoTracking()
-                .FirstOrDefaultAsync(d => d.Id == designId && d.UserId == authUserId, ct);
+            BannerDesign? design;
+            if (userId is int authUserId)
+            {
+                design = await _db.BannerDesigns.AsNoTracking()
+                    .FirstOrDefaultAsync(d => d.Id == designId && d.UserId == authUserId, ct);
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(ipAddress))
+                    return CreateAiResult.Fail("Client IP address could not be determined.", 400);
+
+                design = await _db.BannerDesigns.AsNoTracking()
+                    .FirstOrDefaultAsync(d =>
+                        d.Id == designId
+                        && d.UserId == null
+                        && d.IpAddress == ipAddress, ct);
+            }
+
             if (design is null)
                 return CreateAiResult.Fail("Uploaded photo not found.", 400);
             uploadedPhotoPath = design.StoragePath;
@@ -97,7 +116,7 @@ public sealed class DesignRequestService : IDesignRequestService
                 userId: null,
                 ipAddress: ipAddress,
                 template: template,
-                uploadedPhotoPath: null,   // no portrait upload for anonymous
+                uploadedPhotoPath: uploadedPhotoPath,
                 regenerationsRemaining: 0,
                 chargeKind: AiChargeKind.FreeAnonymous,
                 req: req,

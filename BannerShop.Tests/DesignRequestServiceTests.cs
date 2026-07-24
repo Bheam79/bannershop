@@ -200,6 +200,69 @@ public class DesignRequestServiceTests
     }
 
     [Fact]
+    public async Task CreateAiRequestAsync_anonymous_preserves_same_ip_uploaded_portrait()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        db.BannerDesigns.Add(new BannerDesign
+        {
+            Id = 41,
+            UserId = null,
+            IpAddress = "1.2.3.4",
+            OriginalFileName = "portrait.png",
+            StoragePath = "banner-builder/0/portrait.png",
+            ContentType = "image/png",
+            WidthPx = 800,
+            HeightPx = 1000,
+            CreatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+        var (svc, _, queue, _) = MakeService(db);
+        var dto = SampleAiDto();
+        dto.UploadedPhotoBannerDesignId = 41;
+
+        var result = await svc.CreateAiRequestAsync(
+            userId: null, ipAddress: "1.2.3.4", dto);
+
+        result.Success.Should().BeTrue();
+        var saved = db.DesignRequests.Single();
+        saved.UploadedPhotoPath.Should().Be("banner-builder/0/portrait.png");
+        queue.Verify(q => q.EnqueueAsync(saved.Id, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateAiRequestAsync_anonymous_rejects_other_ips_uploaded_portrait()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        db.BannerDesigns.Add(new BannerDesign
+        {
+            Id = 42,
+            UserId = null,
+            IpAddress = "5.6.7.8",
+            OriginalFileName = "portrait.png",
+            StoragePath = "banner-builder/0/portrait.png",
+            ContentType = "image/png",
+            WidthPx = 800,
+            HeightPx = 1000,
+            CreatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+        var (svc, _, queue, _) = MakeService(db);
+        var dto = SampleAiDto();
+        dto.UploadedPhotoBannerDesignId = 42;
+
+        var result = await svc.CreateAiRequestAsync(
+            userId: null, ipAddress: "1.2.3.4", dto);
+
+        result.Success.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("not found");
+        db.DesignRequests.Should().BeEmpty();
+        queue.Verify(q => q.EnqueueAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task CreateAiRequestAsync_anonymous_ineligible_returns_402_ip_limit()
     {
         using var db = DbHelper.CreateInMemory();

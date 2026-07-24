@@ -62,6 +62,8 @@ public sealed class FalAiImageServiceTests
             {
                 handler.RequestUri!.AbsolutePath.Should().Be("/fal-ai/flux-2-pro/edit");
                 handler.Body.Should().Contain("\"image_urls\":[\"data:image/png;base64,");
+                handler.Body.Should().Contain("Use the person in @image1 as the exact identity reference.");
+                handler.Body.Should().Contain("include this person");
             }
             finally
             {
