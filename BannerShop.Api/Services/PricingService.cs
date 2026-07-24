@@ -29,9 +29,17 @@ public class PricingService : IPricingService
             .AsNoTracking()
             .ToDictionaryAsync(x => x.Key, x => x.Value);
 
+        return CalculatePrice(rule, widthCm, heightCm, p);
+    }
+
+    private static decimal CalculatePrice(BannerSize rule, int widthCm, int heightCm, IReadOnlyDictionary<string, decimal> pricingParams)
+    {
+        if (rule.FixedPrice.HasValue)
+            return rule.FixedPrice.Value;
+
         var basePricePerSqm = rule.Material?.PricePerSqm
-            ?? p.GetValueOrDefault("base_price_per_sqm", 180m);
-        var minimumPrice = p.GetValueOrDefault("minimum_price", 399m);
+            ?? pricingParams.GetValueOrDefault("base_price_per_sqm", 180m);
+        var minimumPrice = pricingParams.GetValueOrDefault("minimum_price", 399m);
 
         // Defensive clamps — bad data shouldn't crash the price calc.
         if (widthCm <= 0 || heightCm <= 0)
@@ -63,10 +71,16 @@ public class PricingService : IPricingService
         var rules = await query.ToListAsync(ct);
         if (rules.Count == 0) return null;
 
+        // Pricing parameters are the same for every candidate rule — fetch once
+        // instead of re-querying inside the loop (was N+1 for N matching rules).
+        var pricingParams = await _db.PricingParameters
+            .AsNoTracking()
+            .ToDictionaryAsync(x => x.Key, x => x.Value, ct);
+
         PriceMatch? best = null;
         foreach (var r in rules)
         {
-            var price = await CalculatePriceAsync(r, widthCm, heightCm);
+            var price = CalculatePrice(r, widthCm, heightCm, pricingParams);
             if (best is null || price < best.PriceNok)
                 best = new PriceMatch(r, price);
         }

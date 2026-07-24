@@ -40,7 +40,7 @@ public class AuthRateLimitTests : IClassFixture<AuthRateLimitTestFactory>
         r1.StatusCode.Should().NotBe(HttpStatusCode.TooManyRequests,
             "the first request must not be rate-limited");
 
-        // Second request — should be rejected by the rate limiter (limit = 1 / 2 s)
+        // Second request — should be rejected (permit already consumed, AutoReplenishment=false)
         var r2 = await client.PostAsJsonAsync("/api/auth/login", body);
         r2.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
     }
@@ -58,7 +58,7 @@ public class AuthRateLimitTests : IClassFixture<AuthRateLimitTestFactory>
         var r1 = await client.PostAsJsonAsync("/api/auth/register", body);
         r1.StatusCode.Should().NotBe(HttpStatusCode.TooManyRequests);
 
-        // Second call (same IP, limit = 1 / 2 s) → 429
+        // Second call (same IP, permit already consumed, AutoReplenishment=false) → 429
         var r2 = await client.PostAsJsonAsync("/api/auth/register", body);
         r2.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
     }
@@ -75,7 +75,7 @@ public class AuthRateLimitTests : IClassFixture<AuthRateLimitTestFactory>
         var r1 = await client.PostAsJsonAsync("/api/auth/refresh", body);
         r1.StatusCode.Should().NotBe(HttpStatusCode.TooManyRequests);
 
-        // Second request — should be rejected by the rate limiter (limit = 1 / 2 s)
+        // Second request — should be rejected (permit already consumed, AutoReplenishment=false)
         var r2 = await client.PostAsJsonAsync("/api/auth/refresh", body);
         r2.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
     }
@@ -101,7 +101,7 @@ public class AuthRateLimitTests : IClassFixture<AuthRateLimitTestFactory>
         var r1 = await client.PostAsJsonAsync("/api/auth/change-password", body);
         r1.StatusCode.Should().NotBe(HttpStatusCode.TooManyRequests);
 
-        // Second request — should be rejected (limit = 1 / 2 s)
+        // Second request — should be rejected (permit already consumed, AutoReplenishment=false)
         var r2 = await client.PostAsJsonAsync("/api/auth/change-password", body);
         r2.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
     }
@@ -109,8 +109,9 @@ public class AuthRateLimitTests : IClassFixture<AuthRateLimitTestFactory>
 
 /// <summary>
 /// WebApplicationFactory variant that overrides rate-limiting configuration to
-/// 1 request per 2 seconds on all auth policies so 429 responses can be asserted
-/// in tests without real 60-second windows.
+/// 1 permit on all auth policies, with AutoReplenishment disabled, so 429
+/// responses can be asserted deterministically without depending on a real
+/// wall-clock window.
 /// </summary>
 public class AuthRateLimitTestFactory : TestWebApplicationFactory
 {
@@ -119,22 +120,28 @@ public class AuthRateLimitTestFactory : TestWebApplicationFactory
         // Apply all base overrides first (InMemory DB, JWT, mock Stripe, …)
         base.ConfigureWebHost(builder);
 
-        // Override rate-limit permits to 1 / 2 s — the base factory sets 1000
-        // which would never trigger a 429.  Since ConfigureAppConfiguration
-        // callbacks are applied in registration order and later providers win on
-        // duplicate keys, this override takes precedence.
+        // Override rate-limit permits to 1 with AutoReplenishment=false — the base
+        // factory sets 1000 which would never trigger a 429. Disabling automatic
+        // time-based replenishment means the single permit, once consumed by the
+        // test's first call, never comes back regardless of how much real time
+        // elapses before the second call — this used to be a short WindowSeconds
+        // (e.g. 2s) instead, but that raced with real wall-clock delays under a
+        // loaded/parallel full-suite run (SlidingWindowRateLimiterOptions in this
+        // .NET version has no injectable TimeProvider to fake instead). Since
+        // ConfigureAppConfiguration callbacks are applied in registration order and
+        // later providers win on duplicate keys, this override takes precedence.
         builder.ConfigureAppConfiguration((_, config) =>
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["RateLimiting:Login:PermitLimit"]            = "1",
-                ["RateLimiting:Login:WindowSeconds"]          = "2",
+                ["RateLimiting:Login:AutoReplenishment"]      = "false",
                 ["RateLimiting:Register:PermitLimit"]         = "1",
-                ["RateLimiting:Register:WindowSeconds"]       = "2",
+                ["RateLimiting:Register:AutoReplenishment"]   = "false",
                 ["RateLimiting:Refresh:PermitLimit"]          = "1",
-                ["RateLimiting:Refresh:WindowSeconds"]        = "2",
+                ["RateLimiting:Refresh:AutoReplenishment"]    = "false",
                 ["RateLimiting:ChangePassword:PermitLimit"]   = "1",
-                ["RateLimiting:ChangePassword:WindowSeconds"] = "2",
+                ["RateLimiting:ChangePassword:AutoReplenishment"] = "false",
             });
         });
     }

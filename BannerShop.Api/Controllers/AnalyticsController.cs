@@ -63,21 +63,37 @@ public class AnalyticsController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(referrer)) return "Direct";
 
-        var r = referrer.ToLowerInvariant();
+        // Classify on the referrer's HOST, not the raw URL, so that (a) a path or
+        // query fragment that merely contains a network's name (e.g.
+        // "https://mysite.com/?ref=google.com") isn't misattributed, and (b) an
+        // unrelated domain that ends in a network's domain as a substring
+        // (e.g. "netflix.com" / "wix.com" both contain "x.com") isn't swept into
+        // Twitter/X. For host-specific domains we require an exact host or a
+        // "sub.domain" boundary via HostIs; brand names that vary by TLD/subdomain
+        // (google.*, facebook.*, instagram.*, tiktok.*) still match by substring.
+        string host;
+        if (Uri.TryCreate(referrer, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.Host))
+            host = uri.Host.ToLowerInvariant();
+        else
+            host = referrer.ToLowerInvariant(); // best-effort for a non-absolute referrer
 
-        if (r.Contains("google.") || r.Contains("googleads") || r.Contains("gads"))
+        // True when host == domain or is a subdomain of it (host ends in ".domain").
+        static bool HostIs(string host, string domain) =>
+            host == domain || host.EndsWith("." + domain, StringComparison.Ordinal);
+
+        if (host.Contains("google") || host.Contains("gads"))
             return "Google";
 
-        if (r.Contains("facebook.") || r.Contains("fb.com") || r.Contains("fb.me"))
+        if (host.Contains("facebook") || HostIs(host, "fb.com") || HostIs(host, "fb.me"))
             return "Facebook";
 
-        if (r.Contains("instagram.") || r.Contains("l.instagram"))
+        if (host.Contains("instagram"))
             return "Instagram";
 
-        if (r.Contains("t.co/") || r.Contains("twitter.") || r.Contains("x.com"))
+        if (HostIs(host, "t.co") || host.Contains("twitter") || HostIs(host, "x.com"))
             return "Twitter/X";
 
-        if (r.Contains("tiktok."))
+        if (host.Contains("tiktok"))
             return "TikTok";
 
         return "Other";

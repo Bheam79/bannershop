@@ -5,6 +5,7 @@ using BannerShop.Api.Services.DesignRequests;
 using BannerShop.Core.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace BannerShop.Api.Controllers;
 
@@ -72,6 +73,7 @@ public class DesignRequestsController : ControllerBase
     [HttpPost("ai")]
     [AllowAnonymous]
     [ServiceFilter(typeof(BotProtectionFilter))]
+    [EnableRateLimiting("ai-design-request")]
     public async Task<IActionResult> CreateAi([FromBody] CreateAiDesignRequestDto req, CancellationToken ct)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);

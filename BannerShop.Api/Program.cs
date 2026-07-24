@@ -258,6 +258,13 @@ builder.Services.AddRateLimiter(options =>
         var cfg      = httpContext.RequestServices.GetRequiredService<IConfiguration>();
         var limit    = cfg.GetValue($"RateLimiting:{cfgKey}:PermitLimit",   defaultLimit);
         var windowSec = cfg.GetValue($"RateLimiting:{cfgKey}:WindowSeconds", defaultWindowSec);
+        // AutoReplenishment defaults to true (real time-based window) in production.
+        // Tests that want a deterministic "second call is always blocked" assertion
+        // (independent of real wall-clock delays under parallel test-suite load) can
+        // set this to false via config instead of shrinking WindowSeconds — this
+        // version of SlidingWindowRateLimiterOptions has no injectable TimeProvider,
+        // so a short real window is inherently racy under CPU contention.
+        var autoReplenish = cfg.GetValue($"RateLimiting:{cfgKey}:AutoReplenishment", true);
         return RateLimitPartition.GetSlidingWindowLimiter(
             partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new SlidingWindowRateLimiterOptions
@@ -266,6 +273,7 @@ builder.Services.AddRateLimiter(options =>
                 Window            = TimeSpan.FromSeconds(windowSec),
                 SegmentsPerWindow = 2,
                 QueueLimit        = 0,
+                AutoReplenishment = autoReplenish,
             });
     }
 
@@ -284,6 +292,13 @@ builder.Services.AddRateLimiter(options =>
     // scripted flood is a much cheaper DoS/disk-fill vector than the JSON
     // endpoints above.
     options.AddPolicy("banner-upload",        ctx => SlidingAuthPartition(ctx, "BannerUpload", 20, 60));
+
+    // Anonymous AI design-request creation — each call can trigger a real fal.ai
+    // image-generation spend (BANNERSH-67). BotProtectionFilter only screens
+    // User-Agent/header shape, which a scripted caller can trivially fake, so it
+    // is not a substitute for throttling; this caps how fast a single IP can churn
+    // through requests regardless of UA.
+    options.AddPolicy("ai-design-request",     ctx => SlidingAuthPartition(ctx, "AiDesignRequest", 12, 60));
 });
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
