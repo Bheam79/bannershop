@@ -205,7 +205,7 @@ function syncEditBufferFromRequest() {
 }
 
 async function regenerate() {
-  if (!request.value || regenerating.value) return
+  if (!request.value || regenerating.value || photoUploading.value) return
   regenerating.value = true
   regenerateError.value = null
   regenerateInfo.value = null
@@ -536,7 +536,7 @@ function onPaywallGoToCheckout() { void router.push('/checkout') }
             <button
               type="button"
               class="btn btn-regenerate"
-              :disabled="regenerating"
+              :disabled="regenerating || photoUploading"
               @click="regenerate"
             >
               <i v-if="regenerating" class="fa-solid fa-circle-notch fa-spin"></i>

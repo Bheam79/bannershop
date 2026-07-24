@@ -388,41 +388,82 @@ public class AiGenerationPipelineTests : IDisposable
             saved.FinalCroppedStoragePath.Should().NotBe(saved.AiResultStoragePath);
     }
 
-    // 7. Missing reference photo -> pipeline still succeeds, ReferenceImagePath is null
+    // 7. Missing reference photo must fail rather than silently charging for a
+    // text-to-image generation while the customer expects their portrait.
     [Fact]
-    public async Task Missing_reference_photo_proceeds_without_portrait()
+    public async Task Missing_reference_photo_fails_without_calling_image_provider()
     {
         using var db = DbHelper.CreateInMemory();
         await SeedAsync(db);
         var req = MakeRequest(uploadedPhotoPath: "banner-builder/1/does-not-exist.png");
+        req.LastChargeKind = AiChargeKind.FreeAuthenticated;
+        var user = await db.Users.FindAsync(1);
+        user!.HasUsedFreeAiGeneration = true;
         db.DesignRequests.Add(req);
         await db.SaveChangesAsync();
 
-        AiImageRequest? capturedRequest = null;
-        var ai = new Mock<IAiImageService>();
-        ai.Setup(s => s.GenerateAsync(It.IsAny<AiImageRequest>(), It.IsAny<CancellationToken>()))
-          .Returns<AiImageRequest, CancellationToken>(async (r, ct) =>
-          {
-              capturedRequest = r;
-              var path = Path.Combine(Path.GetTempPath(), $"airesult_{Guid.NewGuid():N}.png");
-              using var img = new Image<Rgba32>(16, 9, new Rgba32(40, 40, 40, 255));
-              await img.SaveAsPngAsync(path, ct);
-              _aiOutputs.Add(path);
-              return new AiImageResult(path, 16, 9);
-          });
+        var ai = MakeAiMock();
 
         var images = MakeImagesMock();
         var pipeline = MakePipeline(db, ai.Object, images.Object);
 
         await pipeline.RunAsync(req.Id, CancellationToken.None);
 
-        capturedRequest.Should().NotBeNull();
-        capturedRequest!.ReferenceImagePath.Should().BeNull();
+        ai.Verify(s => s.GenerateAsync(
+            It.IsAny<AiImageRequest>(), It.IsAny<CancellationToken>()), Times.Never);
 
         var saved = await db.DesignRequests.FindAsync(req.Id);
-        saved!.Status.Should().Be(DesignRequestStatus.AwaitingApproval);
-        saved.LastError.Should().BeNull();
-        saved.AiResultStoragePath.Should().NotBeNullOrEmpty();
+        saved!.Status.Should().Be(DesignRequestStatus.Failed);
+        saved.LastError.Should().Be("portrait_reference_missing");
+        saved.AiResultStoragePath.Should().BeNull();
+        saved.LastChargeKind.Should().Be(AiChargeKind.None);
+        (await db.Users.FindAsync(1))!.HasUsedFreeAiGeneration.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Portrait_prompt_reasserts_exact_identity_and_customer_text_after_refinement()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var portraitRelative = "banner-builder/1/portrait.png";
+        var portraitAbsolute = _storage.AbsolutePathFor(portraitRelative);
+        Directory.CreateDirectory(Path.GetDirectoryName(portraitAbsolute)!);
+        await File.WriteAllBytesAsync(portraitAbsolute, [1, 2, 3]);
+
+        var req = MakeRequest(uploadedPhotoPath: portraitRelative);
+        req.PersonName = "Oda";
+        req.TextContent = "Gratulerer med dagen!";
+        db.DesignRequests.Add(req);
+        await db.SaveChangesAsync();
+
+        AiImageRequest? capturedRequest = null;
+        var ai = MakeAiMock();
+        ai.Setup(s => s.GenerateAsync(It.IsAny<AiImageRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<AiImageRequest, CancellationToken>((r, _) => capturedRequest = r)
+            .Returns<AiImageRequest, CancellationToken>(async (_, ct) =>
+            {
+                var path = Path.Combine(Path.GetTempPath(), $"airesult_{Guid.NewGuid():N}.png");
+                using var img = new Image<Rgba32>(16, 9, new Rgba32(120, 80, 200, 255));
+                await img.SaveAsPngAsync(path, ct);
+                _aiOutputs.Add(path);
+                return new AiImageResult(path, 16, 9);
+            });
+        var refiner = new Mock<IPromptRefinementService>();
+        refiner.Setup(s => s.RefineAsync(
+                It.IsAny<PromptRefinementInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("A creative banner whose rewrite accidentally omitted the portrait and text.");
+
+        var pipeline = MakePipeline(
+            db, ai.Object, MakeImagesMock().Object, refiner: refiner.Object);
+
+        await pipeline.RunAsync(req.Id, CancellationToken.None);
+
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.ReferenceImagePath.Should().Be(portraitAbsolute);
+        capturedRequest.Prompt.Should().Contain("person from @image1 must be clearly recognizable");
+        capturedRequest.Prompt.Should().Contain("\"Oda\"");
+        capturedRequest.Prompt.Should().Contain("\"Gratulerer med dagen!\"");
+        capturedRequest.Prompt.Should().Contain("Copy every character exactly");
     }
 
     // ── BANNERSH-66: BannerGeneration tracking ───────────────────────────────

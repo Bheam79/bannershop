@@ -277,6 +277,11 @@ const templateName = computed(() => {
 
 const step1Valid = computed(() => selectedTemplateId.value !== null)
 const step2Valid = computed(() => {
+  // The preview is a local object URL and appears before the upload request
+  // finishes. Do not let Generate race that request and submit without the
+  // BannerDesign id, which would make the server correctly choose text-to-image
+  // while the customer believes their portrait was attached.
+  if (photoUploading.value) return false
   if (
     personName.value.trim().length === 0 ||
     textContent.value.trim().length === 0 ||
@@ -433,6 +438,7 @@ async function loadCreditsBalance() {
 
 /** Generate with pre-flight paywall check + credits update */
 async function generateBanner() {
+  if (!step2Valid.value) return
   if (isOutOfGenerations.value) {
     paywallData.value = paywallData.value ?? {
       reason: 'insufficient_credits',
@@ -453,6 +459,7 @@ async function generateBanner() {
 
 /** Regenerate with pricing reset + credits update */
 async function regenerate() {
+  if (!step2Valid.value) return
   resetPricing()
   const result = await _regenerate()
   if (result && result.creditsRemaining !== undefined) {

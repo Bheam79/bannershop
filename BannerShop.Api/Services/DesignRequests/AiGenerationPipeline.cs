@@ -5,6 +5,7 @@ using BannerShop.Core.Enums;
 using BannerShop.Core.Helpers;
 using BannerShop.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace BannerShop.Api.Services.DesignRequests;
 
@@ -119,8 +120,11 @@ public sealed class AiGenerationPipeline
                 : _storage.AbsolutePathFor(request.UploadedPhotoPath);
             if (referenceAbs is not null && !File.Exists(referenceAbs))
             {
-                _log.LogWarning("Pipeline: reference image {Path} missing — proceeding without portrait.", referenceAbs);
-                referenceAbs = null;
+                // Never charge for a generation which silently omits a portrait the
+                // customer uploaded. The UI may still show its local object URL even
+                // when the persisted file has disappeared, making a text-only fallback
+                // look like fal.ai ignored the reference.
+                throw new InvalidOperationException("portrait_reference_missing");
             }
 
             // Derive a portrait-position hint from the request ID so successive
@@ -165,6 +169,13 @@ public sealed class AiGenerationPipeline
                 BasePrompt: basePrompt), ct);
             if (string.IsNullOrWhiteSpace(prompt))
                 prompt = basePrompt;
+
+            // Prompt refinement is intentionally best-effort, but identity and the
+            // customer's spelling are not creative details. Re-append them after the
+            // refiner so they cannot be diluted, paraphrased or dropped. In a live
+            // FLUX.2 Pro /edit verification this concise constraint preserved @image1
+            // and rendered the requested Norwegian text exactly.
+            prompt = AppendNonNegotiableConstraints(prompt, request, referenceAbs is not null);
 
             // BANNERSH-155: log the FINAL prompt actually sent to the image model
             // (post-refinement, or the base prompt if refinement was a no-op /
@@ -268,11 +279,14 @@ public sealed class AiGenerationPipeline
             request.LastError = ex.Message;
             request.UpdatedAt = DateTime.UtcNow;
 
-            // BANNERSH-288: The image provider's moderation blocked this attempt through no fault
-            // of ours — refund whatever the customer was charged for it (a credit,
-            // their one free authenticated try, or their anonymous free try) rather
-            // than silently keeping the charge for a generation they never got.
-            if (ex.Message.StartsWith("moderation_block", StringComparison.OrdinalIgnoreCase)
+            // Provider moderation and a vanished portrait are both failures outside
+            // the customer's control. Refund whatever was charged rather than keeping
+            // a credit/free try for a generation they never received.
+            var refundableFailure =
+                ex.Message.StartsWith("moderation_block", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(
+                    ex.Message, "portrait_reference_missing", StringComparison.OrdinalIgnoreCase);
+            if (refundableFailure
                 && request.LastChargeKind != AiChargeKind.None)
             {
                 try
@@ -291,6 +305,44 @@ public sealed class AiGenerationPipeline
             try { await _db.SaveChangesAsync(ct); }
             catch (Exception saveEx) { _log.LogError(saveEx, "Pipeline: failed to persist Failed status for {Id}", designRequestId); }
         }
+    }
+
+    private static string AppendNonNegotiableConstraints(
+        string prompt,
+        DesignRequest request,
+        bool hasPortrait)
+    {
+        var constraints = new List<string>();
+        if (hasPortrait)
+        {
+            constraints.Add(
+                "IDENTITY REQUIREMENT: The person from @image1 must be clearly recognizable. " +
+                "Keep the same face, facial features, hair, apparent age and identity.");
+        }
+
+        var exactText = new List<string>();
+        if (request.BannerTemplate.Category.IsPersonCentred()
+            && !string.IsNullOrWhiteSpace(request.PersonName))
+        {
+            exactText.Add(request.PersonName.Trim());
+        }
+        if (!string.IsNullOrWhiteSpace(request.TextContent))
+            exactText.Add(request.TextContent.Trim());
+
+        exactText = exactText
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (exactText.Count > 0)
+        {
+            var quoted = string.Join(", ", exactText.Select(value => JsonSerializer.Serialize(value)));
+            constraints.Add(
+                $"TEXT REQUIREMENT: Render only these text strings: {quoted}. " +
+                "Copy every character exactly, with no misspellings, paraphrasing or additional text.");
+        }
+
+        return constraints.Count == 0
+            ? prompt
+            : $"{prompt.Trim()} NON-NEGOTIABLE: {string.Join(" ", constraints)}";
     }
 
     private static void TryDelete(string path)

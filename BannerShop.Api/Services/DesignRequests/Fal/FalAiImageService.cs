@@ -59,8 +59,15 @@ public sealed class FalAiImageService : IAiImageService
 
         var options = _options.CurrentValue;
         var size = NativeSizeFor(request.AspectRatio);
-        var hasReference = !string.IsNullOrWhiteSpace(request.ReferenceImagePath)
-            && File.Exists(request.ReferenceImagePath);
+        var referenceRequested = !string.IsNullOrWhiteSpace(request.ReferenceImagePath);
+        if (referenceRequested && !File.Exists(request.ReferenceImagePath))
+        {
+            _log.LogError(
+                "fal.ai portrait reference is missing at generation time: {ReferencePath}",
+                request.ReferenceImagePath);
+            throw new InvalidOperationException("portrait_reference_missing");
+        }
+        var hasReference = referenceRequested;
         var endpoint = BuildEndpoint(options, hasReference);
 
         object payload;
@@ -242,7 +249,8 @@ public sealed class FalAiImageService : IAiImageService
 
     private static string BuildEditPrompt(string prompt) =>
         "Use the person in @image1 as the exact identity reference. Preserve their recognizable face and facial features while integrating them naturally into the banner scene. "
-        + prompt;
+        + prompt
+        + " FINAL IDENTITY CHECK: The person from @image1 must remain clearly recognizable as the same individual.";
 
     private static NativeSize NativeSizeFor(string? aspectRatio)
     {

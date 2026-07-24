@@ -63,6 +63,7 @@ public sealed class FalAiImageServiceTests
                 handler.RequestUri!.AbsolutePath.Should().Be("/fal-ai/flux-2-pro/edit");
                 handler.Body.Should().Contain("\"image_urls\":[\"data:image/png;base64,");
                 handler.Body.Should().Contain("Use the person in @image1 as the exact identity reference.");
+                handler.Body.Should().Contain("FINAL IDENTITY CHECK");
                 handler.Body.Should().Contain("include this person");
             }
             finally
@@ -74,6 +75,21 @@ public sealed class FalAiImageServiceTests
         {
             File.Delete(portrait);
         }
+    }
+
+    [Fact]
+    public async Task Missing_requested_portrait_fails_instead_of_falling_back_to_text_generation()
+    {
+        var handler = new StubHandler(_ => throw new InvalidOperationException("network should not be called"));
+        var service = CreateService(handler);
+        var missing = Path.Combine(Path.GetTempPath(), $"missing_portrait_{Guid.NewGuid():N}.png");
+
+        var action = () => service.GenerateAsync(
+            new AiImageRequest("include this person", "2:1", missing), CancellationToken.None);
+
+        (await action.Should().ThrowAsync<InvalidOperationException>())
+            .WithMessage("portrait_reference_missing");
+        handler.RequestUri.Should().BeNull();
     }
 
     [Fact]
