@@ -105,25 +105,32 @@ public sealed class FalAiImageServiceTests
     }
 
     [Fact]
-    public async Task Missing_key_returns_placeholder_without_network_call()
+    public async Task Missing_key_fails_instead_of_returning_a_single_colour_placeholder()
     {
         var handler = new StubHandler(_ => throw new InvalidOperationException("network should not be called"));
         var service = CreateService(handler, apiKey: null);
 
-        var result = await service.GenerateAsync(
-            new AiImageRequest("placeholder", "4:1", null), CancellationToken.None);
+        var action = () => service.GenerateAsync(
+            new AiImageRequest("banner", "4:1", null), CancellationToken.None);
 
-        try
-        {
-            handler.RequestUri.Should().BeNull();
-            result.WidthPx.Should().Be(2048);
-            result.HeightPx.Should().Be(512);
-            File.Exists(result.AbsolutePath).Should().BeTrue();
-        }
-        finally
-        {
-            File.Delete(result.AbsolutePath);
-        }
+        (await action.Should().ThrowAsync<InvalidOperationException>())
+            .WithMessage("fal_api_key_not_configured");
+        handler.RequestUri.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Single_colour_provider_response_is_rejected()
+    {
+        var png = await MakePngAsync(32, 18, singleColour: true);
+        var handler = new StubHandler(_ => JsonResponse(
+            $$"""{"images":[{"url":"data:image/png;base64,{{Convert.ToBase64String(png)}}" }]}"""));
+        var service = CreateService(handler);
+
+        var action = () => service.GenerateAsync(
+            new AiImageRequest("banner", "16:9", null), CancellationToken.None);
+
+        (await action.Should().ThrowAsync<InvalidOperationException>())
+            .WithMessage("fal.ai returned a single-colour image.");
     }
 
     private static FalAiImageService CreateService(StubHandler handler, string? apiKey = "test-fal-key")
@@ -144,9 +151,14 @@ public sealed class FalAiImageServiceTests
             Content = new StringContent(body, Encoding.UTF8, "application/json")
         };
 
-    private static async Task<byte[]> MakePngAsync(int width, int height)
+    private static async Task<byte[]> MakePngAsync(
+        int width,
+        int height,
+        bool singleColour = false)
     {
         using var image = new Image<Rgba32>(width, height, Color.CornflowerBlue);
+        if (!singleColour)
+            image[width - 1, height - 1] = Color.Gold;
         await using var stream = new MemoryStream();
         await image.SaveAsPngAsync(stream);
         return stream.ToArray();

@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using BannerShop.Api.Services.SystemSettings;
 using Microsoft.Extensions.Options;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Advanced;
 using SixLabors.ImageSharp.PixelFormats;
 
 namespace BannerShop.Api.Services.DesignRequests.Fal;
@@ -51,9 +52,9 @@ public sealed class FalAiImageService : IAiImageService
         if (string.IsNullOrWhiteSpace(apiKey) || IsPlaceholderKey(apiKey))
         {
             _log.LogError(
-                "fal.ai API key NOT CONFIGURED — falling back to a placeholder image. " +
+                "fal.ai API key NOT CONFIGURED — refusing to generate a placeholder image. " +
                 "Enter fal_api_key via /admin/settings; no restart is required.");
-            return await GeneratePlaceholderAsync(request, ct);
+            throw new InvalidOperationException("fal_api_key_not_configured");
         }
 
         var options = _options.CurrentValue;
@@ -115,15 +116,16 @@ public sealed class FalAiImageService : IAiImageService
             throw new InvalidOperationException("fal.ai returned no image URL.");
 
         var imageBytes = await DownloadImageAsync(imageUrl, ct);
-        var info = Image.Identify(imageBytes)
-            ?? throw new InvalidOperationException("fal.ai returned an unreadable image.");
+        using var image = Image.Load<Rgba32>(imageBytes);
+        if (IsSingleColor(image))
+            throw new InvalidOperationException("fal.ai returned a single-colour image.");
         var tempPath = Path.Combine(Path.GetTempPath(), $"fal_{Guid.NewGuid():N}.png");
         await File.WriteAllBytesAsync(tempPath, imageBytes, ct);
 
         _log.LogInformation(
             "fal.ai image generation succeeded. Bytes={Bytes} Size={Width}x{Height} SavedTo={Path}",
-            imageBytes.Length, info.Width, info.Height, tempPath);
-        return new AiImageResult(tempPath, info.Width, info.Height);
+            imageBytes.Length, image.Width, image.Height, tempPath);
+        return new AiImageResult(tempPath, image.Width, image.Height);
     }
 
     private async Task<byte[]> DownloadImageAsync(string imageUrl, CancellationToken ct)
@@ -218,20 +220,20 @@ public sealed class FalAiImageService : IAiImageService
             || detail.Contains("billing", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static async Task<AiImageResult> GeneratePlaceholderAsync(
-        AiImageRequest request,
-        CancellationToken ct)
+    private static bool IsSingleColor(Image<Rgba32> image)
     {
-        var size = NativeSizeFor(request.AspectRatio);
-        var path = Path.Combine(Path.GetTempPath(), $"placeholder_{Guid.NewGuid():N}.png");
-        var hash = unchecked((uint)request.Prompt.GetHashCode());
-        var tint = new Rgba32(
-            (byte)(40 + (hash & 0xFF) / 2),
-            (byte)(40 + ((hash >> 8) & 0xFF) / 2),
-            (byte)(60 + ((hash >> 16) & 0xFF) / 3));
-        using var image = new Image<Rgba32>(size.Width, size.Height, tint);
-        await image.SaveAsPngAsync(path, ct);
-        return new AiImageResult(path, size.Width, size.Height);
+        var first = image[0, 0];
+        for (var y = 0; y < image.Height; y++)
+        {
+            var row = image.DangerousGetPixelRowMemory(y).Span;
+            for (var x = 0; x < row.Length; x++)
+            {
+                if (row[x] != first)
+                    return false;
+            }
+        }
+
+        return true;
     }
 
     private static NativeSize NativeSizeFor(string? aspectRatio)

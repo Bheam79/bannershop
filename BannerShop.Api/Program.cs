@@ -412,8 +412,8 @@ var app = builder.Build();
 
     // BANNERSH-161: probe the DB system_settings rows for every secret key
     // (fal.ai + OpenAI + Stripe). These are the ONLY source the services consult — if
-    // any is "<unset>", the corresponding feature will return a placeholder /
-    // 500 until the admin enters it via the settings panel.
+    // any is "<unset>", the corresponding feature will return a configuration
+    // error / 500 until the admin enters it via the settings panel.
     try
     {
         using var scope = app.Services.CreateScope();
