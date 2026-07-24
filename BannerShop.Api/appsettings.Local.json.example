@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy this file to appsettings.Local.json and fill in your real local overrides. The .Local.json file is git-ignored. API keys (fal.ai, OpenAI and Stripe) live in system_settings and are set via /admin/settings — do NOT put them here.",
+  "_comment": "Copy this file to appsettings.Local.json and fill in your real local overrides. The .Local.json file is git-ignored. API keys and the Claude OAuth token live in system_settings and are set via /admin/settings — do NOT put them here.",
 
   "ConnectionStrings": {
     "DefaultConnection": "Server=127.0.0.1;Port=3306;Database=bannershop;User=bannershop;Password=bannershop_dev;"
@@ -7,6 +7,12 @@
 
   "OpenAi": {
     "ChatModel": "gpt-4o-mini"
+  },
+
+  "ClaudeCli": {
+    "ExecutablePath": "claude",
+    "Model": "sonnet",
+    "TimeoutSeconds": 60
   },
 
   "Fal": {

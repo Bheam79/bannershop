@@ -24,10 +24,10 @@ public sealed record PromptRefinementInput(
 /// Optional LLM-backed prompt rewriter that turns terse customer input
 /// (e.g. ThemeDescription = "minecraft") into a richer prompt for the image
 /// generator. Added in BANNERSH-61 so birthday/konfirmasjon/dåp/bryllup
-/// banners get a higher-quality refined prompt before hitting gpt-image-2.
+/// banners get a higher-quality refined prompt before image generation.
 ///
-/// Lives behind an interface so the LLM provider can be swapped (OpenAI today,
-/// Azure / open-source tomorrow). The pipeline always treats a refinement
+/// Lives behind an interface so the LLM provider can be swapped. The registered
+/// implementation uses Claude CLI. The pipeline always treats a refinement
 /// failure as non-fatal: if the refiner throws, we use the base prompt.
 /// </summary>
 public interface IPromptRefinementService

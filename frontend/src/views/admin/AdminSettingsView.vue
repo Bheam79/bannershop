@@ -50,6 +50,10 @@ function cancelEdit(s: SystemSetting) {
   saveError.value[s.key] = ''
 }
 
+function isPromptSetting(s: SystemSetting) {
+  return s.key.startsWith('claude_flux_')
+}
+
 async function saveSetting(s: SystemSetting) {
   saving.value[s.key] = true
   saveError.value[s.key] = ''
@@ -108,7 +112,13 @@ onMounted(load)
                 v-if="s.value && s.value !== ''"
                 class="text-sm text-green-400"
               >
-                ✓ {{ s.isSensitive ? 'Nøkkel er satt' : s.value }}
+                ✓ {{
+                  s.isSensitive
+                    ? 'Nøkkel er satt'
+                    : isPromptSetting(s)
+                      ? `Prompt er satt (${s.value.length} tegn)`
+                      : s.value
+                }}
               </span>
               <span v-else class="text-sm text-orange-400">
                 ⚠ Ikke konfigurert
@@ -121,7 +131,16 @@ onMounted(load)
 
             <!-- Edit field -->
             <div v-else class="mt-2">
+              <textarea
+                v-if="isPromptSetting(s)"
+                v-model="editValues[s.key]"
+                rows="8"
+                placeholder="Prompt"
+                class="w-full bg-gray-900 border border-blue-500 text-gray-100 rounded-lg px-3 py-2 text-sm font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500"
+                @keyup.escape="cancelEdit(s)"
+              />
               <input
+                v-else
                 v-model="editValues[s.key]"
                 :type="s.isSensitive ? 'password' : 'text'"
                 :placeholder="s.isSensitive ? 'Skriv inn ny nøkkel…' : 'Verdi'"
@@ -167,10 +186,18 @@ onMounted(load)
           </a>. Brukes til bildegenerering med <code class="bg-gray-800 px-1 rounded">fal-ai/flux-2-pro</code>.
         </li>
         <li>
+          <strong class="text-gray-300">claude_code_oauth_token</strong>: Langlivet token opprettet med
+          <code class="bg-gray-800 px-1 rounded">claude setup-token</code>. Brukes av Claude CLI til å lage den endelige FLUX-prompten.
+        </li>
+        <li>
+          <strong class="text-gray-300">claude_flux_*</strong>: Hovedinstruksjonen og én justerbar
+          art direction per bannertype. Tom verdi bruker den innebygde standardteksten.
+        </li>
+        <li>
           <strong class="text-gray-300">openai_api_key</strong>: Nøkkel fra
           <a href="https://platform.openai.com/api-keys" target="_blank" class="text-blue-400 hover:underline">
             platform.openai.com/api-keys
-          </a>. Brukes kun til å forbedre tekstprompten før bildegenerering.
+          </a>. Beholdes for eldre OpenAI-funksjoner; bannerprompten forbedres nå av Claude CLI.
           Starter med <code class="bg-gray-800 px-1 rounded">sk-</code>.
         </li>
         <li>

@@ -31,6 +31,7 @@ docker-compose.yml         # MariaDB for local dev (outside dev container)
 - .NET 10 SDK
 - Node 22+
 - Docker (for MariaDB) — or use the dev container
+- Claude Code CLI (for vivid FLUX prompt refinement)
 
 ### 1. Start the database
 
@@ -127,6 +128,7 @@ dotnet-ef database update \
 | `Email__SmtpPass` | SMTP AUTH password |
 | `Admin__SeedEmail` | Initial admin user email |
 | `Admin__SeedPassword` | Initial admin user password |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Optional first-install fallback for Claude CLI prompt refinement; the admin DB setting takes precedence |
 | `VITE_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (frontend `.env`) |
 
 ## Shipping (Bring/Posten)

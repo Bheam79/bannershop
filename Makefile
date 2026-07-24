@@ -1,8 +1,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # BannerShop — production Makefile
 #
-# Goal: a single `make up` on a Linux host with `docker`, `dotnet` and `npm`
-# in PATH stands the whole stack up — no manual config required. Secrets
+# Goal: a single `make up` on a Linux host with `docker`, `dotnet`, `npm` and
+# the Claude CLI in PATH stands the whole stack up — no manual config required. Secrets
 # (DB password, JWT key, admin password) are generated on first run and
 # persisted under $HOME/.local/share/bannershop/secrets/.
 #
@@ -84,6 +84,7 @@ UNIT_FILE     := $(UNIT_DIR)/$(SERVICE_NAME).service
 DOTNET        := $(shell command -v dotnet 2>/dev/null)
 NPM           := $(shell command -v npm 2>/dev/null)
 DOCKER        := $(shell command -v docker 2>/dev/null)
+CLAUDE        := $(shell command -v claude 2>/dev/null)
 
 # ─────────────────────────────────────────────────────────────────────────────
 .PHONY: help up down restart status logs build publish frontend config secrets \
@@ -144,6 +145,7 @@ check-tools:
 	@if [ -z "$(DOTNET)" ]; then echo "ERROR: 'dotnet' not found in PATH" >&2; exit 1; fi
 	@if [ -z "$(NPM)" ];    then echo "ERROR: 'npm' not found in PATH"    >&2; exit 1; fi
 	@if [ -z "$(DOCKER)" ]; then echo "ERROR: 'docker' not found in PATH" >&2; exit 1; fi
+	@if [ -z "$(CLAUDE)" ]; then echo "ERROR: 'claude' CLI not found in PATH (required for AI prompt refinement)" >&2; exit 1; fi
 	@command -v systemctl >/dev/null || { echo "ERROR: 'systemctl' not found in PATH" >&2; exit 1; }
 	@command -v openssl   >/dev/null || { echo "ERROR: 'openssl' not found in PATH"   >&2; exit 1; }
 
@@ -283,6 +285,11 @@ config: secrets publish
 	'    "OrgId": "",' \
 	'    "BaseUrl": "https://api.openai.com",' \
 	'    "TimeoutSeconds": 180' \
+	'  },' \
+	'  "ClaudeCli": {' \
+	'    "ExecutablePath": "$(CLAUDE)",' \
+	'    "Model": "sonnet",' \
+	'    "TimeoutSeconds": 60' \
 	'  },' \
 	'  "Replicate": {' \
 	'    "ApiToken": "$(REPLICATE_API_TOKEN)",' \

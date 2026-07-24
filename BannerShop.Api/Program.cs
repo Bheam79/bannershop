@@ -8,6 +8,7 @@ using BannerShop.Api.Services.AiCredits;
 using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Core;
 using BannerShop.Api.Services.DesignRequests;
+using BannerShop.Api.Services.DesignRequests.Claude;
 using BannerShop.Api.Services.DesignRequests.Fal;
 using BannerShop.Api.Services.DesignRequests.OpenAi;
 using BannerShop.Api.Services.DesignRequests.Replicate;
@@ -143,14 +144,16 @@ builder.Services.AddScoped<ISystemSettingsService, SystemSettingsService>();
 // ─── AI Design Requests (95 kr) ──────────────────────────────────────────────
 builder.Services.Configure<OpenAiOptions>(builder.Configuration.GetSection(OpenAiOptions.SectionName));
 builder.Services.Configure<FalOptions>(builder.Configuration.GetSection(FalOptions.SectionName));
+builder.Services.Configure<ClaudeCliOptions>(builder.Configuration.GetSection(ClaudeCliOptions.SectionName));
 
 // BANNERSH-289: FLUX.2 [pro] on fal.ai generates banner images. The fal key is
 // resolved from system_settings on each call so admin edits require no restart.
 builder.Services.AddHttpClient<IAiImageService, FalAiImageService>();
-// Prompt refinement: always register the OpenAI-backed refiner. It already falls
-// back to the base prompt on any HTTP error (including 401 from a missing key),
-// so it is safe to call even when the key is not configured.
-builder.Services.AddHttpClient<IPromptRefinementService, OpenAiPromptRefinementService>();
+// BANNERSH-291: Claude Code expands the customer details into the vivid,
+// composition-heavy prompt FLUX.2 Pro needs. It is stateless and tool-free;
+// failures fall back to BannerPromptService's deterministic prompt.
+builder.Services.AddSingleton<IClaudeCliRunner, ClaudeCliRunner>();
+builder.Services.AddScoped<IPromptRefinementService, ClaudeCliPromptRefinementService>();
 
 // IUpscalingService stays Noop for the customer-facing AiGenerationPipeline —
 // per BANNERSH-57 the Real-ESRGAN 4x pass is an order-backend / admin step,
@@ -360,14 +363,16 @@ builder.Services.AddSwaggerGen(c =>
 var app = builder.Build();
 
 // ─── BANNERSH-98 / BANNERSH-127 / BANNERSH-161 / BANNERSH-289: key state log ─
-// Keys (fal.ai + OpenAI prompt refinement + Stripe) are read from the database.
+// Keys (fal.ai + Claude prompt refinement + legacy OpenAI + Stripe) are read
+// from the database. Claude additionally accepts its documented environment
+// variable as a first-install fallback.
 // BANNERSH-161. At boot we dump the resolved working directory, the present
 // appsettings files (so operators can see what config IS being loaded for
 // non-secret tuning knobs), and the masked state of every key row in
 // system_settings. Whatever's wrong is then visible from journalctl on the
 // first lines of boot.
 {
-    var startupLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup.OpenAi");
+    var startupLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup.Ai");
     var cwd = Directory.GetCurrentDirectory();
     var contentRoot = app.Environment.ContentRootPath;
     var envName = app.Environment.EnvironmentName;
@@ -393,6 +398,7 @@ var app = builder.Build();
 
     var openAiCfg = app.Configuration.GetSection("OpenAi");
     var falCfg = app.Configuration.GetSection("Fal");
+    var claudeCfg = app.Configuration.GetSection("ClaudeCli");
 
     startupLog.LogInformation(
         "Boot config: Environment={Env} ContentRoot={ContentRoot} CWD={Cwd}",
@@ -409,11 +415,14 @@ var app = builder.Build();
         "(API key is read from db:fal_api_key, NOT appsettings)",
         falCfg["ModelId"] ?? "(default)",
         falCfg["BaseUrl"] ?? "(default)");
+    startupLog.LogInformation(
+        "Boot config: ClaudeCli ExecutablePath={ExecutablePath} Model={Model} TimeoutSeconds={Timeout}",
+        claudeCfg["ExecutablePath"] ?? "(default)",
+        claudeCfg["Model"] ?? "(default)",
+        claudeCfg["TimeoutSeconds"] ?? "(default)");
 
-    // BANNERSH-161: probe the DB system_settings rows for every secret key
-    // (fal.ai + OpenAI + Stripe). These are the ONLY source the services consult — if
-    // any is "<unset>", the corresponding feature will return a configuration
-    // error / 500 until the admin enters it via the settings panel.
+    // Probe system_settings for every secret key. Claude may additionally use
+    // CLAUDE_CODE_OAUTH_TOKEN when its DB row is blank.
     try
     {
         using var scope = app.Services.CreateScope();
@@ -421,16 +430,20 @@ var app = builder.Build();
             .GetRequiredService<BannerShop.Api.Services.SystemSettings.ISystemSettingsService>();
         var dbOpenAiKey = await settings.GetValueAsync("openai_api_key");
         var dbFalKey = await settings.GetValueAsync("fal_api_key");
+        var dbClaudeToken = await settings.GetValueAsync("claude_code_oauth_token");
         var dbStripeSecret = await settings.GetValueAsync("stripe_secret_key");
         var dbStripePub = await settings.GetValueAsync("stripe_publishable_key");
         var dbStripeWh = await settings.GetValueAsync("stripe_webhook_secret");
         startupLog.LogInformation(
             "Boot config: DB system_settings 'fal_api_key'={FalKeyState} " +
+            "'claude_code_oauth_token'={ClaudeTokenState} " +
             "'openai_api_key'={DbKeyState} " +
             "'stripe_secret_key'={DbStripeSecret} 'stripe_publishable_key'={DbStripePub} " +
             "'stripe_webhook_secret'={DbStripeWh} " +
-            "(BANNERSH-161: ALL keys are DB-only; set blanks via /admin/settings)",
+            "(set blanks via /admin/settings; Claude also supports its environment variable)",
             DescribeKeyState(dbFalKey),
+            DescribeKeyState(dbClaudeToken
+                ?? Environment.GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN")),
             DescribeKeyState(dbOpenAiKey),
             DescribeKeyState(dbStripeSecret),
             DescribeKeyState(dbStripePub),
