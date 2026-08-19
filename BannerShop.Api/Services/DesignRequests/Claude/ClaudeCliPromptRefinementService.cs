@@ -100,7 +100,9 @@ public sealed class ClaudeCliPromptRefinementService : IPromptRefinementService
             }
 
             refined = StripFences(refined);
-            _log.LogDebug(
+            // Successful CLI calls are visible in the production service journal.
+            // The CLI deliberately does not persist sessions under ~/.claude.
+            _log.LogInformation(
                 "Prompt refined by Claude CLI: base={BaseLength} chars -> refined={RefinedLength} chars.",
                 input.BasePrompt.Length,
                 refined.Length);
