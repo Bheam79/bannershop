@@ -125,6 +125,52 @@ public class AdminSizesControllerTests : IClassFixture<TestWebApplicationFactory
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [Fact]
+    public async Task Create_MaxWidthLessThanMinWidth_Returns400()
+    {
+        var materialId = await GetFirstMaterialIdAsync();
+
+        var response = await AdminClient().PostAsJsonAsync("/api/admin/sizes", new
+        {
+            name = "InvertedWidth-" + Guid.NewGuid().ToString("N")[..8],
+            isActive = true,
+            materialId,
+            sortOrder = 1,
+            minWidthCm = 100,
+            maxWidthCm = 50,
+            minHeightCm = 1,
+            maxHeightCm = 150,
+            pricingHeightCm = 150,
+            pricingMultiplier = 1,
+            fixedPrice = (decimal?)null
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Create_MaxHeightLessThanMinHeight_Returns400()
+    {
+        var materialId = await GetFirstMaterialIdAsync();
+
+        var response = await AdminClient().PostAsJsonAsync("/api/admin/sizes", new
+        {
+            name = "InvertedHeight-" + Guid.NewGuid().ToString("N")[..8],
+            isActive = true,
+            materialId,
+            sortOrder = 1,
+            minWidthCm = 1,
+            maxWidthCm = 500,
+            minHeightCm = 200,
+            maxHeightCm = 100,
+            pricingHeightCm = 150,
+            pricingMultiplier = 1,
+            fixedPrice = (decimal?)null
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     // ── PUT /api/admin/sizes/{id} ─────────────────────────────────────────────
 
     [Fact]
@@ -192,6 +238,48 @@ public class AdminSizesControllerTests : IClassFixture<TestWebApplicationFactory
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Update_MaxWidthLessThanMinWidth_Returns400()
+    {
+        var materialId = await GetFirstMaterialIdAsync();
+
+        var createResp = await AdminClient().PostAsJsonAsync("/api/admin/sizes", new
+        {
+            name = "ToInvalidate-" + Guid.NewGuid().ToString("N")[..8],
+            isActive = true,
+            materialId,
+            sortOrder = 96,
+            minWidthCm = 1,
+            maxWidthCm = 500,
+            minHeightCm = 1,
+            maxHeightCm = 200,
+            pricingHeightCm = 154,
+            pricingMultiplier = 1,
+            fixedPrice = (decimal?)null
+        });
+        createResp.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = JsonSerializer.Deserialize<JsonElement>(
+            await createResp.Content.ReadAsStringAsync(), _json);
+        var id = created.GetProperty("id").GetInt32();
+
+        var response = await AdminClient().PutAsJsonAsync($"/api/admin/sizes/{id}", new
+        {
+            name = "StillInvalid",
+            isActive = true,
+            materialId,
+            sortOrder = 96,
+            minWidthCm = 500,
+            maxWidthCm = 1,
+            minHeightCm = 1,
+            maxHeightCm = 200,
+            pricingHeightCm = 154,
+            pricingMultiplier = 1,
+            fixedPrice = (decimal?)null
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     // ── DELETE /api/admin/sizes/{id} ──────────────────────────────────────────

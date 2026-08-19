@@ -921,4 +921,162 @@ public class DesignRequestServiceTests
         result.BannerPriceNok.Should().Be(590.74m); // fell back to cheapest (mat 2, rule id 1)
         db.DesignRequests.Single().BannerSizeId.Should().Be(1);
     }
+
+    // ── GetAsync ────────────────────────────────────────────────────────────
+
+    private static DesignRequest MakeDr(int? userId) => new()
+    {
+        UserId = userId,
+        BannerTemplateId = 1,
+        Mode = DesignRequestMode.Ai,
+        Status = DesignRequestStatus.AwaitingApproval,
+        Language = "nb",
+        PersonName = "Ola",
+        TextContent = "Gratulerer",
+        ThemeDescription = "tropisk",
+        AspectRatio = "16:9",
+        PriceNok = 0m,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
+    };
+
+    [Fact]
+    public async Task GetAsync_NonExistentId_ReturnsNull()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var (svc, _, _, _) = MakeService(db);
+
+        var dto = await svc.GetAsync(99999, callerUserId: 1, isAdmin: false);
+
+        dto.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetAsync_AnonymousRequest_AccessibleByAnyAuthenticatedCaller()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var dr = MakeDr(userId: null);
+        db.DesignRequests.Add(dr);
+        await db.SaveChangesAsync();
+        var (svc, _, _, _) = MakeService(db);
+
+        // Caller is a completely different, unrelated authenticated user (id 777)
+        var dto = await svc.GetAsync(dr.Id, callerUserId: 777, isAdmin: false);
+
+        dto.Should().NotBeNull();
+        dto!.Id.Should().Be(dr.Id);
+    }
+
+    [Fact]
+    public async Task GetAsync_OwnedByOtherUser_NonAdmin_ReturnsNull()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var dr = MakeDr(userId: 1);
+        db.DesignRequests.Add(dr);
+        await db.SaveChangesAsync();
+        var (svc, _, _, _) = MakeService(db);
+
+        var dto = await svc.GetAsync(dr.Id, callerUserId: 2, isAdmin: false);
+
+        dto.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetAsync_OwnedByOtherUser_Admin_ReturnsDto()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var dr = MakeDr(userId: 1);
+        db.DesignRequests.Add(dr);
+        await db.SaveChangesAsync();
+        var (svc, _, _, _) = MakeService(db);
+
+        var dto = await svc.GetAsync(dr.Id, callerUserId: 2, isAdmin: true);
+
+        dto.Should().NotBeNull();
+        dto!.Id.Should().Be(dr.Id);
+    }
+
+    [Fact]
+    public async Task GetAsync_Owner_ReturnsDto()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var dr = MakeDr(userId: 1);
+        db.DesignRequests.Add(dr);
+        await db.SaveChangesAsync();
+        var (svc, _, _, _) = MakeService(db);
+
+        var dto = await svc.GetAsync(dr.Id, callerUserId: 1, isAdmin: false);
+
+        dto.Should().NotBeNull();
+        dto!.Id.Should().Be(dr.Id);
+    }
+
+    [Fact]
+    public async Task GetAsync_UploadedPhotoPath_Set_ResolvesUrlAndMatchingBannerDesignId()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var dr = MakeDr(userId: 1);
+        dr.UploadedPhotoPath = "banner-builder/1/portrait.png";
+        db.DesignRequests.Add(dr);
+        db.BannerDesigns.Add(new BannerDesign
+        {
+            Id = 41,
+            UserId = 1,
+            OriginalFileName = "portrait.png",
+            StoragePath = "banner-builder/1/portrait.png",
+            ContentType = "image/png",
+            WidthPx = 800,
+            HeightPx = 1000,
+            CreatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+        var (svc, _, _, _) = MakeService(db);
+
+        var dto = await svc.GetAsync(dr.Id, callerUserId: 1, isAdmin: false);
+
+        dto.Should().NotBeNull();
+        dto!.UploadedPhotoUrl.Should().NotBeNullOrEmpty();
+        dto.UploadedPhotoBannerDesignId.Should().Be(41);
+    }
+
+    [Fact]
+    public async Task GetAsync_UploadedPhotoPath_SetButNoMatchingBannerDesign_LeavesIdNull()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var dr = MakeDr(userId: 1);
+        dr.UploadedPhotoPath = "banner-builder/1/portrait.png";
+        db.DesignRequests.Add(dr);
+        await db.SaveChangesAsync();
+        var (svc, _, _, _) = MakeService(db);
+
+        var dto = await svc.GetAsync(dr.Id, callerUserId: 1, isAdmin: false);
+
+        dto.Should().NotBeNull();
+        dto!.UploadedPhotoUrl.Should().NotBeNullOrEmpty();
+        dto.UploadedPhotoBannerDesignId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetAsync_NoUploadedPhotoPath_LeavesPhotoFieldsNull()
+    {
+        using var db = DbHelper.CreateInMemory();
+        await SeedAsync(db);
+        var dr = MakeDr(userId: 1);
+        db.DesignRequests.Add(dr);
+        await db.SaveChangesAsync();
+        var (svc, _, _, _) = MakeService(db);
+
+        var dto = await svc.GetAsync(dr.Id, callerUserId: 1, isAdmin: false);
+
+        dto.Should().NotBeNull();
+        dto!.UploadedPhotoUrl.Should().BeNull();
+        dto.UploadedPhotoBannerDesignId.Should().BeNull();
+    }
 }

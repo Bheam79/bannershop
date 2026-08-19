@@ -13,8 +13,10 @@ namespace BannerShop.Tests.Controllers;
 /// is rate-limited per IP (it accepts up to 75 MB and runs CPU-bound PDF/image
 /// processing per request, with no throttling before this test was added).
 ///
-/// Uses <see cref="BannerUploadRateLimitTestFactory"/> which overrides the
-/// rate-limiter configuration to 1 request / 2 s.
+/// Uses the corresponding TestFactory which overrides the
+/// rate-limiter configuration to 1 permit with AutoReplenishment disabled
+/// (never a short WindowSeconds — that races with real wall-clock delays
+/// under a loaded/parallel full-suite run; see AuthRateLimitTestFactory).
 /// </summary>
 public class BannerUploadRateLimitTests : IClassFixture<BannerUploadRateLimitTestFactory>
 {
@@ -67,8 +69,8 @@ public class BannerUploadRateLimitTestFactory : BannerBuilderTestFactory
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["RateLimiting:BannerUpload:PermitLimit"]   = "1",
-                ["RateLimiting:BannerUpload:WindowSeconds"] = "2",
+                ["RateLimiting:BannerUpload:PermitLimit"]       = "1",
+                ["RateLimiting:BannerUpload:AutoReplenishment"] = "false",
             });
         });
     }

@@ -110,4 +110,36 @@ public class PricingService : IPricingService
         var pricePerEyelet = await GetEyeletPriceNokAsync();
         return (decimal.Round(pricePerEyelet * count, 2), count);
     }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<ItemPriceResult>> CalculateItemPricingAsync(
+        IReadOnlyList<ItemPricingInput> items, CancellationToken ct = default)
+    {
+        if (items.Count == 0) return Array.Empty<ItemPriceResult>();
+
+        // Pricing parameters are the same for every line — fetch once instead of
+        // re-querying per item (was up to 2×N queries for an N-item order/cart).
+        var pricingParams = await _db.PricingParameters
+            .AsNoTracking()
+            .ToDictionaryAsync(x => x.Key, x => x.Value, ct);
+        var pricePerEyelet = pricingParams.GetValueOrDefault("eyelet_price_nok", 0m);
+
+        var results = new List<ItemPriceResult>(items.Count);
+        foreach (var item in items)
+        {
+            var unitPrice = CalculatePrice(item.Rule, item.WidthCm, item.HeightCm, pricingParams);
+
+            var eyeletFee = 0m;
+            var eyeletCount = 0;
+            if (item.EyeletOption != EyeletOption.None)
+            {
+                eyeletCount = EyeletCalculator.CountEyelets(item.WidthCm, item.HeightCm, item.EyeletOption);
+                if (eyeletCount > 0)
+                    eyeletFee = decimal.Round(pricePerEyelet * eyeletCount, 2);
+            }
+
+            results.Add(new ItemPriceResult(unitPrice, eyeletFee, eyeletCount));
+        }
+        return results;
+    }
 }

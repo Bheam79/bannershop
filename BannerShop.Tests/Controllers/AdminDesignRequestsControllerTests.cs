@@ -155,6 +155,71 @@ public class AdminDesignRequestsControllerTests : IClassFixture<TestWebApplicati
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    // ── POST /api/admin/design-requests/{id}/upload-preview ──────────────────
+
+    private static byte[] PngBytes() =>
+        [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D];
+
+    private static MultipartFormDataContent MakePreviewUpload(byte[] content, string mime)
+    {
+        var form = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(content);
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mime);
+        form.Add(fileContent, "file", "preview.png");
+        return form;
+    }
+
+    [Fact]
+    public async Task UploadPreview_WithoutAuth_Returns401()
+    {
+        var response = await _factory.CreateClient()
+            .PostAsync("/api/admin/design-requests/1002/upload-preview", MakePreviewUpload(PngBytes(), "image/png"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task UploadPreview_NoFile_Returns400()
+    {
+        var response = await AdminClient()
+            .PostAsync("/api/admin/design-requests/1002/upload-preview", new MultipartFormDataContent());
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task UploadPreview_DisallowedContentType_Returns400()
+    {
+        var response = await AdminClient().PostAsync(
+            "/api/admin/design-requests/1002/upload-preview",
+            MakePreviewUpload(PngBytes(), "image/gif"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task UploadPreview_NonExistentRequest_Returns400AndDeletesSavedFile()
+    {
+        var response = await AdminClient().PostAsync(
+            "/api/admin/design-requests/99999/upload-preview",
+            MakePreviewUpload(PngBytes(), "image/png"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task UploadPreview_ValidPng_Returns200AndSetsAwaitingApproval()
+    {
+        var response = await AdminClient().PostAsync(
+            "/api/admin/design-requests/1002/upload-preview",
+            MakePreviewUpload(PngBytes(), "image/png"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(_json);
+        body.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+        body.GetProperty("previewUrl").GetString().Should().NotBeNullOrEmpty();
+    }
+
     // ── POST /api/admin/design-requests/{id}/upscale ──────────────────────────
 
     [Fact]

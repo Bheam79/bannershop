@@ -56,6 +56,11 @@ public class BannerBuilderTestFactory : TestWebApplicationFactory
                 .ReturnsAsync((1920, 1080));
 
             ImageProcessingMock
+                .Setup(s => s.RenderPdfFirstPageToPngAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((850, 1100));
+
+            ImageProcessingMock
                 .Setup(s => s.GeneratePreviewAsync(
                     It.IsAny<string>(), It.IsAny<string>(),
                     It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(),

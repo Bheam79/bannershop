@@ -31,7 +31,20 @@ public interface IPricingService
 
     /// <summary>Price per individual eyelet (malje) in NOK, read from pricing parameters.</summary>
     Task<decimal> GetEyeletPriceNokAsync();
+
+    /// <summary>
+    /// Batch variant of <see cref="CalculatePriceAsync"/> + <see cref="CalculateEyeletCostAsync"/>
+    /// for pricing several order lines at once: fetches <c>PricingParameters</c> a single time
+    /// instead of once per line (was N+1 for an N-item order/cart).
+    /// </summary>
+    Task<IReadOnlyList<ItemPriceResult>> CalculateItemPricingAsync(IReadOnlyList<ItemPricingInput> items, CancellationToken ct = default);
 }
 
 /// <summary>Result of <see cref="IPricingService.FindCheapestAsync"/> — the winning rule + its computed price.</summary>
 public sealed record PriceMatch(BannerSize Rule, decimal PriceNok);
+
+/// <summary>One line's inputs for <see cref="IPricingService.CalculateItemPricingAsync"/>.</summary>
+public sealed record ItemPricingInput(BannerSize Rule, int WidthCm, int HeightCm, EyeletOption EyeletOption);
+
+/// <summary>One line's computed price for <see cref="IPricingService.CalculateItemPricingAsync"/>.</summary>
+public sealed record ItemPriceResult(decimal UnitPriceNok, decimal EyeletFeeNok, int EyeletCount);

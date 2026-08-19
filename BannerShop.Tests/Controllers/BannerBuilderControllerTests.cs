@@ -328,6 +328,13 @@ public class BannerBuilderControllerTests : IClassFixture<BannerBuilderTestFacto
     private static byte[] FakeBytes() =>
         [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B];
 
+    private static byte[] WebpBytes() =>
+        // "RIFF" + 4-byte size (unused by the magic-byte check) + "WEBP"
+        [0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50];
+
+    private static byte[] PdfBytes() =>
+        [0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34]; // "%PDF-1.4"
+
     /// <summary>Builds a multipart/form-data body with a single "file" part.</summary>
     private static MultipartFormDataContent MakeUpload(string name, byte[] content, string mime)
     {
@@ -422,6 +429,86 @@ public class BannerBuilderControllerTests : IClassFixture<BannerBuilderTestFacto
         var body = await response.Content.ReadAsStringAsync();
         var doc = JsonSerializer.Deserialize<JsonElement>(body, _json);
         doc.GetProperty("designId").GetInt32().Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task Upload_ZeroLengthFile_Returns400()
+    {
+        // A real "file" part is present but has no content — file.Length == 0,
+        // distinct from Upload_NoFile_Returns400 where IFormFile binds to null entirely.
+        var form = MakeUpload("empty.jpg", [], "image/jpeg");
+
+        var response = await _factory.CreateClient().PostAsync("/api/banner-builder/upload", form);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Upload_FileExceedsMaxSize_Returns413()
+    {
+        // Declared MaxUploadBytes is 50 MB (appsettings default); send valid JPEG magic bytes
+        // followed by enough padding to exceed it, while staying under the 75 MB Kestrel/form cap.
+        var oversized = new byte[51 * 1024 * 1024];
+        JpegBytes().CopyTo(oversized, 0);
+        var form = MakeUpload("huge.jpg", oversized, "image/jpeg");
+
+        var response = await _factory.CreateClient().PostAsync("/api/banner-builder/upload", form);
+
+        response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+    }
+
+    [Fact]
+    public async Task Upload_ValidWebp_Returns200()
+    {
+        var form = MakeUpload("mine.webp", WebpBytes(), "image/webp");
+
+        var response = await UserClient(700).PostAsync("/api/banner-builder/upload", form);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Upload_ValidPdf_Returns200_RendersFirstPageToPng()
+    {
+        var form = MakeUpload("mine.pdf", PdfBytes(), "application/pdf");
+
+        var response = await UserClient(700).PostAsync("/api/banner-builder/upload", form);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        var doc = JsonSerializer.Deserialize<JsonElement>(body, _json);
+        // Dimensions come from the mocked RenderPdfFirstPageToPngAsync, not ReadDimensionsAsync.
+        doc.GetProperty("widthPx").GetInt32().Should().Be(850);
+        doc.GetProperty("heightPx").GetInt32().Should().Be(1100);
+
+        _factory.ImageProcessingMock.Verify(
+            m => m.RenderPdfFirstPageToPngAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task Upload_PdfRenderingFails_Returns400_AndDeletesOriginal()
+    {
+        _factory.ImageProcessingMock
+            .Setup(s => s.RenderPdfFirstPageToPngAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("corrupt PDF"));
+        try
+        {
+            var form = MakeUpload("bad.pdf", PdfBytes(), "application/pdf");
+
+            var response = await UserClient(700).PostAsync("/api/banner-builder/upload", form);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain("Could not render PDF");
+        }
+        finally
+        {
+            // Restore the default success stub so later tests in this shared-factory class aren't affected.
+            _factory.ImageProcessingMock
+                .Setup(s => s.RenderPdfFirstPageToPngAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((850, 1100));
+        }
     }
 
     // ── PUT /api/banner-builder/{id}/rotate — edge cases ─────────────────────

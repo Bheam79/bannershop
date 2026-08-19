@@ -79,6 +79,54 @@ public class ShippingControllerTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task Calculate_QtyRequiringMultiplePackages_AggregatesCostAndPackageCount()
+    {
+        var client = _factory.CreateClient();
+        // MaxItemsPerPackage = 4, so qty=5 splits into a 4-pack + a 1-pack.
+        var singleReq = new
+        {
+            materialId = 1,
+            widthCm = 300,
+            heightCm = 150,
+            qty = 4,
+            postalCode = "0001",
+            city = "Oslo",
+            packingMode = "Folded"
+        };
+        var multiReq = new
+        {
+            materialId = 1,
+            widthCm = 300,
+            heightCm = 150,
+            qty = 5,
+            postalCode = "0001",
+            city = "Oslo",
+            packingMode = "Folded"
+        };
+
+        var singleResponse = await client.PostAsJsonAsync("/api/shipping/calculate", singleReq);
+        var multiResponse = await client.PostAsJsonAsync("/api/shipping/calculate", multiReq);
+
+        singleResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        multiResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var singleBody = JsonDocument.Parse(await singleResponse.Content.ReadAsStringAsync()).RootElement;
+        var multiBody = JsonDocument.Parse(await multiResponse.Content.ReadAsStringAsync()).RootElement;
+
+        var singleStandardCost = singleBody.GetProperty("standard").GetProperty("cost").GetDecimal();
+        var multiStandardCost = multiBody.GetProperty("standard").GetProperty("cost").GetDecimal();
+        var singleExpressCost = singleBody.GetProperty("express").GetProperty("cost").GetDecimal();
+        var multiExpressCost = multiBody.GetProperty("express").GetProperty("cost").GetDecimal();
+
+        // qty=5 → 2 packages (4-pack costed like qty=4, plus a 1-pack costed like qty=1) —
+        // strictly more than the single 4-pack's cost, and package count reflects the split.
+        multiStandardCost.Should().BeGreaterThan(singleStandardCost);
+        multiExpressCost.Should().BeGreaterThan(singleExpressCost);
+        multiBody.GetProperty("parcel").GetProperty("packageCount").GetInt32().Should().Be(2);
+        singleBody.GetProperty("parcel").GetProperty("packageCount").GetInt32().Should().Be(1);
+    }
+
     // ── POST /api/shipping/parcel-preview ─────────────────────────────────────
 
     [Fact]

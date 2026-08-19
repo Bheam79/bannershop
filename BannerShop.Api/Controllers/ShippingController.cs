@@ -146,12 +146,4 @@ public class ShippingController : ControllerBase
             PackageCount = packages.Count,
         });
     }
-
-    private static ShippingOptionDto ToDto(ShippingOption o) => new()
-    {
-        Cost = o.CostNok,
-        EstimatedDays = o.EstimatedDays,
-        CarrierProductId = o.CarrierProductId,
-        CarrierProductName = o.CarrierProductName
-    };
 }

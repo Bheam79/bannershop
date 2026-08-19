@@ -95,6 +95,12 @@ public class OrderServiceTests
                 var rule = db.BannerSizes.Include(s => s.Material).FirstOrDefault();
                 return rule is null ? null : new PriceMatch(rule, 810m);
             });
+        // Batch pricing mock: mirrors the CalculatePriceAsync (810m flat) + no-eyelet
+        // defaults above, one result per input in order, so tests that don't care about
+        // pricing specifics stay unaffected by the CreateDraftAsync N+1 fix.
+        pricingMock.Setup(p => p.CalculateItemPricingAsync(It.IsAny<IReadOnlyList<ItemPricingInput>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ItemPricingInput> inputs, CancellationToken _) =>
+                (IReadOnlyList<ItemPriceResult>)inputs.Select(_ => new ItemPriceResult(810m, 0m, 0)).ToList());
 
         // Default stripe mock
         stripeMock.Setup(s => s.CreatePaymentIntentAsync(
@@ -525,6 +531,99 @@ public class OrderServiceTests
             a => a.GrantAsync(
                 It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CreditReason>(),
                 It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    // ── Order-confirmation email (TrySendOrderConfirmationAsync) ────────────
+
+    [Fact]
+    public async Task MarkPaid_NoRecipientEmail_SkipsSendButStillMarksPaid()
+    {
+        // No User row seeded for id=1 → LoadFullOrderAsync's Include leaves order.User null.
+        var (service, db, _, _, _, emailMock) = CreateServiceWithEmail();
+        var draft = await service.CreateDraftAsync(userId: 1, MakeRequest());
+        var order = db.Orders.Find(draft.OrderId)!;
+        order.StripePaymentIntentId = "pi_no_recipient";
+        db.SaveChanges();
+
+        await service.MarkPaidAsync("pi_no_recipient", draft.OrderId);
+
+        db.Orders.Find(draft.OrderId)!.Status.Should().Be(OrderStatus.Paid);
+        emailMock.Verify(e => e.SendAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task MarkPaid_SendsConfirmationEmail_ToUserAddressWithSubject()
+    {
+        var (service, db, _, _, _, emailMock) = CreateServiceWithEmail();
+        db.Users.Add(DbHelper.MakeUser(id: 1, email: "buyer@example.com"));
+        db.SaveChanges();
+        var draft = await service.CreateDraftAsync(userId: 1, MakeRequest());
+        var order = db.Orders.Find(draft.OrderId)!;
+        order.StripePaymentIntentId = "pi_confirm";
+        db.SaveChanges();
+
+        await service.MarkPaidAsync("pi_confirm", draft.OrderId);
+
+        emailMock.Verify(e => e.SendAsync(
+                "buyer@example.com",
+                $"Ordrebekreftelse – BannerShop #{draft.OrderId}",
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task MarkPaid_EmailSendThrows_SwallowedButOrderStillPaid()
+    {
+        var (service, db, _, _, _, emailMock) = CreateServiceWithEmail();
+        db.Users.Add(DbHelper.MakeUser(id: 1, email: "buyer2@example.com"));
+        db.SaveChanges();
+        emailMock.Setup(e => e.SendAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("smtp down"));
+        var draft = await service.CreateDraftAsync(userId: 1, MakeRequest());
+        var order = db.Orders.Find(draft.OrderId)!;
+        order.StripePaymentIntentId = "pi_email_throws";
+        db.SaveChanges();
+
+        var act = () => service.MarkPaidAsync("pi_email_throws", draft.OrderId);
+
+        await act.Should().NotThrowAsync();
+        db.Orders.Find(draft.OrderId)!.Status.Should().Be(OrderStatus.Paid);
+        emailMock.Verify(e => e.SendAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task MarkPaid_CreditPackOrder_DoesNotSendConfirmationEmail()
+    {
+        var (service, db, _, _, _, emailMock) = CreateServiceWithEmail();
+        var user = DbHelper.MakeUser(id: 1, email: "creditbuyer@example.com");
+        db.Users.Add(user);
+        var order = new Order
+        {
+            UserId                = user.Id,
+            OrderType             = OrderType.CreditPack,
+            OrderState            = OrderState.Draft,
+            Status                = OrderStatus.PendingPayment,
+            DeliveryType          = DeliveryType.Pickup,
+            TotalNok              = 29m,
+            StripePaymentIntentId = "pi_creditpack_email",
+            CreatedAt             = DateTime.UtcNow,
+            UpdatedAt             = DateTime.UtcNow
+        };
+        db.Orders.Add(order);
+        db.SaveChanges();
+
+        await service.MarkPaidAsync("pi_creditpack_email", order.Id);
+
+        db.Orders.Find(order.Id)!.Status.Should().Be(OrderStatus.Paid);
+        emailMock.Verify(e => e.SendAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 

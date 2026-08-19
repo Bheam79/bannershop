@@ -166,21 +166,26 @@ public class OrderService : IOrderService
         // 495 kr designer fee is bundled into THAT item's LineTotalNok (UnitPriceNok
         // stays the pure banner price, the fee is added separately like EyeletFeeNok).
         // The order detail view derives the fee back from the linked DR for display.
+        //
+        // Priced in one batch (CalculateItemPricingAsync) rather than per-item
+        // CalculatePriceAsync/CalculateEyeletCostAsync calls — those each re-queried
+        // PricingParameters, so an N-item order used to issue up to 2×N queries for
+        // a table that's identical across every line.
+        var pricingInputs = new List<ItemPricingInput>(req.Items.Count);
+        for (int i = 0; i < req.Items.Count; i++)
+            pricingInputs.Add(new ItemPricingInput(resolvedSizes[i], req.Items[i].WidthCm, req.Items[i].HeightCm, req.Items[i].EyeletOption));
+        var pricingResults = await _pricing.CalculateItemPricingAsync(pricingInputs, ct);
+
         var items = new List<OrderItem>(req.Items.Count);
         decimal itemsSubtotal = 0m;
         for (int i = 0; i < req.Items.Count; i++)
         {
             var input = req.Items[i];
             var size = resolvedSizes[i];
-            var unitPrice = await _pricing.CalculatePriceAsync(size, input.WidthCm, input.HeightCm);
+            var (unitPrice, eyeletFee, eyeletCount) = pricingResults[i];
             var widthCm = input.WidthCm;
             var heightCm = input.HeightCm;
             var areaSqm = decimal.Round((widthCm / 100m) * (heightCm / 100m), 4);
-
-            // Eyelet (malje) addon — calculated server-side so the price is snapshotted
-            // against the pricing parameters at order time.
-            var (eyeletFee, eyeletCount) = await _pricing.CalculateEyeletCostAsync(
-                widthCm, heightCm, input.EyeletOption);
 
             // BANNERSH-249: bundle the manual designer fee (DR.PriceNok, default 495 kr)
             // into the linked banner item. Charged once per design, NOT per quantity —

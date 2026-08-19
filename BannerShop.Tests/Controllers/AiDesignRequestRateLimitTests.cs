@@ -15,8 +15,10 @@ namespace BannerShop.Tests.Controllers;
 /// <see cref="BannerShop.Api.Services.AiCredits.BotProtectionFilter"/>, which only checks
 /// User-Agent/header shape and is trivially satisfied by a scripted caller.
 ///
-/// Uses <see cref="AiDesignRequestRateLimitTestFactory"/> which overrides the
-/// rate-limiter configuration to 1 request / 2 s.
+/// Uses the corresponding TestFactory which overrides the
+/// rate-limiter configuration to 1 permit with AutoReplenishment disabled
+/// (never a short WindowSeconds — that races with real wall-clock delays
+/// under a loaded/parallel full-suite run; see AuthRateLimitTestFactory).
 /// </summary>
 public class AiDesignRequestRateLimitTests : IClassFixture<AiDesignRequestRateLimitTestFactory>
 {
@@ -73,8 +75,8 @@ public class AiDesignRequestRateLimitTestFactory : TestWebApplicationFactory
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["RateLimiting:AiDesignRequest:PermitLimit"]   = "1",
-                ["RateLimiting:AiDesignRequest:WindowSeconds"] = "2",
+                ["RateLimiting:AiDesignRequest:PermitLimit"]       = "1",
+                ["RateLimiting:AiDesignRequest:AutoReplenishment"] = "false",
             });
         });
     }

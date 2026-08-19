@@ -12,8 +12,10 @@ namespace BannerShop.Tests.Controllers;
 /// Integration test verifying that the anonymous /api/analytics/track endpoint
 /// is rate-limited per IP (BANNERSH-285 added it with no throttling at all).
 ///
-/// Uses <see cref="AnalyticsRateLimitTestFactory"/> which overrides the
-/// rate-limiter configuration to 1 request / 2 s.
+/// Uses the corresponding TestFactory which overrides the
+/// rate-limiter configuration to 1 permit with AutoReplenishment disabled
+/// (never a short WindowSeconds — that races with real wall-clock delays
+/// under a loaded/parallel full-suite run; see AuthRateLimitTestFactory).
 /// </summary>
 public class AnalyticsRateLimitTests : IClassFixture<AnalyticsRateLimitTestFactory>
 {
@@ -59,8 +61,8 @@ public class AnalyticsRateLimitTestFactory : TestWebApplicationFactory
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["RateLimiting:AnalyticsTrack:PermitLimit"]   = "1",
-                ["RateLimiting:AnalyticsTrack:WindowSeconds"] = "2",
+                ["RateLimiting:AnalyticsTrack:PermitLimit"]       = "1",
+                ["RateLimiting:AnalyticsTrack:AutoReplenishment"] = "false",
             });
         });
     }

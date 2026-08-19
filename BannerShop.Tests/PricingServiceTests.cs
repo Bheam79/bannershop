@@ -296,4 +296,84 @@ public class PricingServiceTests
         pinned.PriceNok.Should().BeGreaterThan(unpinned.PriceNok,
             "pinned price must be higher because 400g is more expensive than 680g for these dims");
     }
+
+    // ── CalculateItemPricingAsync (batch) ───────────────────────────────────
+
+    [Fact]
+    public async Task CalculateItemPricing_EmptyList_ReturnsEmpty()
+    {
+        var (service, _) = CreateSeeded();
+
+        var results = await service.CalculateItemPricingAsync(Array.Empty<ItemPricingInput>());
+
+        results.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CalculateItemPricing_SingleItem_MatchesStandaloneCalculatePriceAndEyeletCost()
+    {
+        var db = DbHelper.CreateInMemory();
+        DbHelper.SeedPricingParameters(db);
+        db.PricingParameters.First(p => p.Key == "eyelet_price_nok").Value = 10m;
+        db.SaveChanges();
+        var service = new PricingService(db);
+
+        var material = DbHelper.MakeMaterial();
+        var rule = DbHelper.MakeSizeRule(1, material, 1, 500, 1, 500, pricingHeight: 150, multiplier: 1);
+
+        var expectedPrice = await service.CalculatePriceAsync(rule, 300, 150);
+        var (expectedFee, expectedCount) = await service.CalculateEyeletCostAsync(300, 150, EyeletOption.FourCorners);
+
+        var results = await service.CalculateItemPricingAsync(new[]
+        {
+            new ItemPricingInput(rule, 300, 150, EyeletOption.FourCorners)
+        });
+
+        results.Should().HaveCount(1);
+        results[0].UnitPriceNok.Should().Be(expectedPrice);
+        results[0].EyeletFeeNok.Should().Be(expectedFee);
+        results[0].EyeletCount.Should().Be(expectedCount);
+    }
+
+    [Fact]
+    public async Task CalculateItemPricing_MultipleItems_PricesEachIndependentlyInInputOrder()
+    {
+        var db = DbHelper.CreateInMemory();
+        DbHelper.SeedPricingParameters(db);
+        db.PricingParameters.First(p => p.Key == "eyelet_price_nok").Value = 10m;
+        db.SaveChanges();
+        var service = new PricingService(db);
+
+        var material = DbHelper.MakeMaterial();
+        var singleTier = DbHelper.MakeSizeRule(1, material, 1, 500, 1, 500, pricingHeight: 150, multiplier: 1);
+        var doubleTier = DbHelper.MakeSizeRule(2, material, 1, 500, 1, 500, pricingHeight: 150, multiplier: 2);
+
+        var results = await service.CalculateItemPricingAsync(new[]
+        {
+            new ItemPricingInput(singleTier, 300, 150, EyeletOption.None),
+            new ItemPricingInput(doubleTier, 300, 150, EyeletOption.FourCorners),
+        });
+
+        results.Should().HaveCount(2);
+        results[0].EyeletFeeNok.Should().Be(0m, "first item requested no eyelets");
+        results[0].EyeletCount.Should().Be(0);
+        results[1].EyeletFeeNok.Should().Be(40m, "4 corners × 10 kr");
+        results[1].EyeletCount.Should().Be(4);
+        results[1].UnitPriceNok.Should().Be(results[0].UnitPriceNok * 2, "doubleTier's 2× multiplier applies only to its own line");
+    }
+
+    [Fact]
+    public async Task CalculateItemPricing_FixedPriceRule_IgnoresPricingParametersAndDims()
+    {
+        var (service, _) = CreateSeeded();
+        var material = DbHelper.MakeMaterial();
+        var fixedRule = DbHelper.MakeSizeRule(1, material, 1, 500, 1, 500, pricingHeight: 150, multiplier: 1, fixedPrice: 699m);
+
+        var results = await service.CalculateItemPricingAsync(new[]
+        {
+            new ItemPricingInput(fixedRule, 300, 180, EyeletOption.None)
+        });
+
+        results[0].UnitPriceNok.Should().Be(699m);
+    }
 }

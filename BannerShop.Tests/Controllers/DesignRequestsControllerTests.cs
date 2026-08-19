@@ -306,6 +306,103 @@ public class DesignRequestsControllerTests : IClassFixture<TestWebApplicationFac
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    /// <summary>Seeds a Customer user + an AI DesignRequest owned by them, returning the DR id.</summary>
+    private int SeedAiDesignRequest(int userId, DesignRequestStatus status,
+        int aiCreditsRemaining = 5, bool hasUsedFreeAiGeneration = true)
+    {
+        int drId = 0;
+        _factory.SeedDatabase(db =>
+        {
+            if (!db.Users.Any(u => u.Id == userId))
+            {
+                db.Users.Add(new BannerShop.Core.Entities.User
+                {
+                    Id = userId, Email = $"regen_user_{userId}@test.com",
+                    Name = "Regen User", PasswordHash = "x",
+                    Role = BannerShop.Core.Enums.UserRole.Customer,
+                    CreatedAt = DateTime.UtcNow
+                });
+                db.SaveChanges();
+            }
+            var user = db.Users.First(u => u.Id == userId);
+            user.AiCreditsRemaining = aiCreditsRemaining;
+            user.HasUsedFreeAiGeneration = hasUsedFreeAiGeneration;
+
+            var dr = new DesignRequest
+            {
+                UserId = userId,
+                BannerTemplateId = 1,
+                Mode = DesignRequestMode.Ai,
+                Status = status,
+                Language = "nb",
+                PersonName = "Ola",
+                TextContent = "Gratulerer",
+                ThemeDescription = "tropisk",
+                AspectRatio = "16:9",
+                PriceNok = 0m,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            db.DesignRequests.Add(dr);
+            db.SaveChanges();
+            drId = dr.Id;
+        });
+        return drId;
+    }
+
+    [Fact]
+    public async Task Regenerate_WithCredits_Returns202WithGenerationId()
+    {
+        int userId = 9101;
+        int drId = SeedAiDesignRequest(userId, DesignRequestStatus.AwaitingApproval, aiCreditsRemaining: 5);
+
+        var client = _factory.CreateAuthenticatedClient(userId: userId, email: $"regen_user_{userId}@test.com");
+        var response = await client.PostAsJsonAsync($"/api/design-requests/{drId}/regenerate", new { });
+
+        response.StatusCode.Should().Be((HttpStatusCode)202);
+        var body = await response.ReadJsonAsync<RegenerateAiResponseDto>();
+        body!.GenerationId.Should().BeGreaterThan(0);
+        body.CreditsRemaining.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task Regenerate_NoCredits_Returns402WithPaywallMetadata()
+    {
+        int userId = 9102;
+        int drId = SeedAiDesignRequest(userId, DesignRequestStatus.AwaitingApproval, aiCreditsRemaining: 0);
+
+        var client = _factory.CreateAuthenticatedClient(userId: userId, email: $"regen_user_{userId}@test.com");
+        var response = await client.PostAsJsonAsync($"/api/design-requests/{drId}/regenerate", new { });
+
+        response.StatusCode.Should().Be((HttpStatusCode)402);
+        var json = await response.Content.ReadAsStringAsync();
+        json.Should().Contain("insufficient_credits");
+    }
+
+    [Fact]
+    public async Task Regenerate_OwnedByAnotherUser_Returns403()
+    {
+        int ownerId = 9103;
+        int drId = SeedAiDesignRequest(ownerId, DesignRequestStatus.AwaitingApproval);
+
+        var otherClient = _factory.CreateAuthenticatedClient(userId: 9104, email: "other_regen@test.com");
+        var response = await otherClient.PostAsJsonAsync($"/api/design-requests/{drId}/regenerate", new { });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Regenerate_FromCancelledStatus_Returns400()
+    {
+        int userId = 9105;
+        int drId = SeedAiDesignRequest(userId, DesignRequestStatus.Cancelled);
+
+        var client = _factory.CreateAuthenticatedClient(userId: userId, email: $"regen_user_{userId}@test.com");
+        var response = await client.PostAsJsonAsync($"/api/design-requests/{drId}/regenerate", new { });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     // ── POST /api/design-requests/{id}/generations/{generationId}/activate ────
 
     [Fact]
