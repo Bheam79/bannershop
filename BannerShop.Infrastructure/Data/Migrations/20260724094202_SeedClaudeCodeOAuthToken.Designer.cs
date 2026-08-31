@@ -1156,7 +1156,7 @@ namespace BannerShop.Infrastructure.Data.Migrations
                             IsSensitive = true,
                             Key = "claude_code_oauth_token",
                             Label = "Claude Code long-lived OAuth token",
-                            Value = "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"
+                            Value = ""
                         },
                         new
                         {

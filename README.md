@@ -157,6 +157,14 @@ refinement, and failures are logged by the API instead; in production, inspect
 them with `journalctl --user -u bannershop | grep -Ei 'Claude|prompt refined'`
 or via `make logs`. Prompt content and the OAuth token are never logged.
 
+An administrator can connect a Claude account from `/admin/settings`. The API
+uses a ten-minute PKCE flow, stores the resulting access/refresh credentials as
+masked sensitive settings, and refreshes the access token in the background
+before it expires. A manually generated `claude setup-token` can still be saved
+in the same settings page; `CLAUDE_CODE_OAUTH_TOKEN` is the fallback for hosts
+that inject the token into the service environment. No Claude credential is
+seeded or read from checked-in appsettings files.
+
 ## Shipping (Bring/Posten)
 
 Checkout uses the Bring Shipping Guide 2.0 API to quote shipping cost.

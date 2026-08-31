@@ -1,4 +1,5 @@
 using BannerShop.Api.Services.SystemSettings;
+using BannerShop.Api.Services.DesignRequests.Claude;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,8 +11,15 @@ namespace BannerShop.Api.Controllers.Admin;
 public class AdminSettingsController : ControllerBase
 {
     private readonly ISystemSettingsService _settings;
+    private readonly ClaudeOAuthTokenManager _claudeOAuth;
 
-    public AdminSettingsController(ISystemSettingsService settings) => _settings = settings;
+    public AdminSettingsController(
+        ISystemSettingsService settings,
+        ClaudeOAuthTokenManager claudeOAuth)
+    {
+        _settings = settings;
+        _claudeOAuth = claudeOAuth;
+    }
 
     // ── GET /api/admin/settings ───────────────────────────────────────────────
     /// <summary>
@@ -45,7 +53,21 @@ public class AdminSettingsController : ControllerBase
         if (req.Value is null)
             return BadRequest(new { error = "Value is required." });
 
-        await _settings.SetValueAsync(key, req.Value.Trim(), ct);
+        if (string.Equals(key, ClaudeOAuthTokenManager.AccessTokenSetting, StringComparison.Ordinal))
+        {
+            // A manually entered setup-token replaces (rather than mixes with)
+            // any refreshable OAuth credential from a previous browser flow.
+            await _settings.SetValuesAsync(new Dictionary<string, string>
+            {
+                [ClaudeOAuthTokenManager.AccessTokenSetting] = req.Value.Trim(),
+                [ClaudeOAuthTokenManager.RefreshTokenSetting] = "",
+                [ClaudeOAuthTokenManager.ExpiresAtSetting] = ""
+            }, ct);
+        }
+        else
+        {
+            await _settings.SetValueAsync(key, req.Value.Trim(), ct);
+        }
 
         // Return the updated (masked) view.
         var all = await _settings.GetAllAsync(ct);
@@ -64,6 +86,43 @@ public class AdminSettingsController : ControllerBase
                 : updated.Value
         });
     }
+
+    /// <summary>Creates a ten-minute Claude Code OAuth PKCE authorization URL.</summary>
+    [HttpPost("claude-oauth/start")]
+    public IActionResult StartClaudeOAuth() => Ok(_claudeOAuth.StartAuthorization());
+
+    /// <summary>
+    /// Exchanges the code#state value displayed by Claude after authorization.
+    /// Access and refresh tokens are persisted as masked sensitive settings.
+    /// </summary>
+    [HttpPost("claude-oauth/complete")]
+    public async Task<IActionResult> CompleteClaudeOAuth(
+        [FromBody] CompleteClaudeOAuthRequest req,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Code))
+            return BadRequest(new { error = "Code is required." });
+
+        try
+        {
+            await _claudeOAuth.CompleteAuthorizationAsync(req.Code, ct);
+            return Ok(await _claudeOAuth.GetStatusAsync(ct));
+        }
+        catch (ClaudeOAuthInputException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (ClaudeOAuthProtocolException ex)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, new { error = ex.Message });
+        }
+    }
+
+    /// <summary>Returns credential metadata only; token values are never exposed.</summary>
+    [HttpGet("claude-oauth/status")]
+    public async Task<IActionResult> GetClaudeOAuthStatus(CancellationToken ct) =>
+        Ok(await _claudeOAuth.GetStatusAsync(ct));
 }
 
 public sealed record UpdateSettingRequest(string? Value);
+public sealed record CompleteClaudeOAuthRequest(string? Code);

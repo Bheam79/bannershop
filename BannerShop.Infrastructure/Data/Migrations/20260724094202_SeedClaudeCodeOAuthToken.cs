@@ -15,7 +15,7 @@ namespace BannerShop.Infrastructure.Data.Migrations
                 keyColumn: "Id",
                 keyValue: 8,
                 column: "Value",
-                value: "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");
+                value: "");
         }
 
         /// <inheritdoc />

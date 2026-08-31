@@ -50,25 +50,40 @@ public sealed class ClaudeCliPromptRefinementService : IPromptRefinementService
         };
 
     private readonly IClaudeCliRunner _runner;
+    private readonly IClaudeOAuthTokenProvider _oauthTokens;
     private readonly ISystemSettingsService _settings;
     private readonly ILogger<ClaudeCliPromptRefinementService> _log;
 
     public ClaudeCliPromptRefinementService(
         IClaudeCliRunner runner,
+        IClaudeOAuthTokenProvider oauthTokens,
         ISystemSettingsService settings,
         ILogger<ClaudeCliPromptRefinementService> log)
     {
         _runner = runner;
+        _oauthTokens = oauthTokens;
         _settings = settings;
         _log = log;
     }
 
     public async Task<string> RefineAsync(PromptRefinementInput input, CancellationToken ct)
     {
-        // The DB value is authoritative, but the environment fallback makes a
-        // freshly deployed installation work before an admin has saved it.
-        var token = await _settings.GetValueAsync(TokenSetting, ct)
-            ?? Environment.GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN");
+        // The token manager refreshes OAuth credentials when needed and retains
+        // support for a manually entered setup-token or environment fallback.
+        string? token;
+        try
+        {
+            token = await _oauthTokens.GetAccessTokenAsync(ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Claude OAuth token refresh failed; using deterministic base prompt.");
+            return input.BasePrompt;
+        }
         if (string.IsNullOrWhiteSpace(token))
         {
             _log.LogWarning(

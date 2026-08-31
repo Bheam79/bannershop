@@ -47,18 +47,32 @@ public sealed class SystemSettingsService : ISystemSettingsService
 
     public async Task SetValueAsync(string key, string value, CancellationToken ct = default)
     {
-        var row = await _db.SystemSettings.FirstOrDefaultAsync(s => s.Key == key, ct);
-        if (row is null)
+        await SetValuesAsync(new Dictionary<string, string> { [key] = value }, ct);
+    }
+
+    public async Task SetValuesAsync(
+        IReadOnlyDictionary<string, string> values,
+        CancellationToken ct = default)
+    {
+        if (values.Count == 0)
+            return;
+
+        var keys = values.Keys.ToArray();
+        var rows = await _db.SystemSettings
+            .Where(s => keys.Contains(s.Key))
+            .ToDictionaryAsync(s => s.Key, ct);
+
+        foreach (var (key, value) in values)
         {
-            row = new SystemSetting { Key = key, Value = value };
-            _db.SystemSettings.Add(row);
+            if (rows.TryGetValue(key, out var row))
+                row.Value = value;
+            else
+                _db.SystemSettings.Add(new SystemSetting { Key = key, Value = value });
         }
-        else
-        {
-            row.Value = value;
-        }
+
         await _db.SaveChangesAsync(ct);
-        _cache.Remove(CacheKey(key));
+        foreach (var key in keys)
+            _cache.Remove(CacheKey(key));
     }
 
     private static string CacheKey(string key) => $"system_settings:{key}";

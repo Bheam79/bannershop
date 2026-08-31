@@ -19,6 +19,17 @@ public interface ISystemSettingsService
     /// </summary>
     Task SetValueAsync(string key, string value, CancellationToken ct = default);
 
+    /// <summary>
+    /// Persists several settings in one database save. This is used for rotating
+    /// OAuth token sets so an access token is never stored without its matching
+    /// refresh token and expiry.
+    /// </summary>
+    async Task SetValuesAsync(IReadOnlyDictionary<string, string> values, CancellationToken ct = default)
+    {
+        foreach (var (key, value) in values)
+            await SetValueAsync(key, value, ct);
+    }
+
     /// <summary>Returns all settings (key, label, isSensitive, current value).</summary>
     Task<IReadOnlyList<SystemSettingDto>> GetAllAsync(CancellationToken ct = default);
 }

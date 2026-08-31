@@ -152,6 +152,16 @@ builder.Services.AddHttpClient<IAiImageService, FalAiImageService>();
 // BANNERSH-291: Claude Code expands the customer details into the vivid,
 // composition-heavy prompt FLUX.2 Pro needs. It is stateless and tool-free;
 // failures fall back to BannerPromptService's deterministic prompt.
+builder.Services.AddHttpClient("ClaudeOAuth", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("BannerShop-ClaudeOAuth/1.0");
+});
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<ClaudeOAuthTokenManager>();
+builder.Services.AddSingleton<IClaudeOAuthTokenProvider>(sp =>
+    sp.GetRequiredService<ClaudeOAuthTokenManager>());
+builder.Services.AddHostedService<ClaudeOAuthRefreshService>();
 builder.Services.AddSingleton<IClaudeCliRunner, ClaudeCliRunner>();
 builder.Services.AddScoped<IPromptRefinementService, ClaudeCliPromptRefinementService>();
 

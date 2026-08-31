@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import apiClient from '@/api/client'
 
 interface SystemSetting {
@@ -21,6 +21,24 @@ const saving = ref<Record<string, boolean>>({})
 const saveError = ref<Record<string, string>>({})
 const saveSuccess = ref<Record<string, boolean>>({})
 
+interface ClaudeOAuthStatus {
+  isConfigured: boolean
+  canRefresh: boolean
+  source: 'database' | 'environment' | 'none'
+  expiresAt: string | null
+}
+
+const claudeOAuthStatus = ref<ClaudeOAuthStatus | null>(null)
+const claudeOAuthCode = ref('')
+const claudeOAuthPending = ref(false)
+const claudeOAuthBusy = ref(false)
+const claudeOAuthError = ref('')
+const managedClaudeKeys = new Set([
+  'claude_code_oauth_refresh_token',
+  'claude_code_oauth_expires_at',
+])
+const visibleSettings = computed(() => settings.value.filter((s) => !managedClaudeKeys.has(s.key)))
+
 async function load() {
   loading.value = true
   error.value = ''
@@ -31,11 +49,59 @@ async function load() {
       // For sensitive fields, don't pre-fill — force a fresh entry
       editValues.value[s.key] = s.isSensitive ? '' : s.value
     })
+    await loadClaudeOAuthStatus()
   } catch {
     error.value = 'Kunne ikke laste innstillinger.'
   } finally {
     loading.value = false
   }
+}
+
+async function loadClaudeOAuthStatus() {
+  try {
+    const { data } = await apiClient.get<ClaudeOAuthStatus>('/admin/settings/claude-oauth/status')
+    claudeOAuthStatus.value = data
+  } catch {
+    claudeOAuthStatus.value = null
+  }
+}
+
+async function startClaudeOAuth() {
+  claudeOAuthBusy.value = true
+  claudeOAuthError.value = ''
+  try {
+    const { data } = await apiClient.post<{ authorizationUrl: string }>('/admin/settings/claude-oauth/start')
+    claudeOAuthPending.value = true
+    window.open(data.authorizationUrl, '_blank', 'noopener,noreferrer')
+  } catch (err: any) {
+    claudeOAuthError.value = err.response?.data?.error ?? 'Kunne ikke starte Claude-tilkoblingen.'
+  } finally {
+    claudeOAuthBusy.value = false
+  }
+}
+
+async function completeClaudeOAuth() {
+  if (!claudeOAuthCode.value.trim()) return
+  claudeOAuthBusy.value = true
+  claudeOAuthError.value = ''
+  try {
+    const { data } = await apiClient.post<ClaudeOAuthStatus>('/admin/settings/claude-oauth/complete', {
+      code: claudeOAuthCode.value.trim(),
+    })
+    claudeOAuthStatus.value = data
+    claudeOAuthCode.value = ''
+    claudeOAuthPending.value = false
+    await load()
+  } catch (err: any) {
+    claudeOAuthError.value = err.response?.data?.error ?? 'Kunne ikke fullføre Claude-tilkoblingen.'
+  } finally {
+    claudeOAuthBusy.value = false
+  }
+}
+
+function formatOAuthExpiry(value: string | null) {
+  if (!value) return ''
+  return new Intl.DateTimeFormat('nb-NO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
 
 function startEdit(s: SystemSetting) {
@@ -65,6 +131,7 @@ async function saveSetting(s: SystemSetting) {
     // Update local state
     const idx = settings.value.findIndex((x) => x.key === s.key)
     if (idx !== -1) settings.value[idx] = data
+    if (s.key === 'claude_code_oauth_token') await loadClaudeOAuthStatus()
     editing.value[s.key] = false
     saveSuccess.value[s.key] = true
     setTimeout(() => { saveSuccess.value[s.key] = false }, 3000)
@@ -92,7 +159,7 @@ onMounted(load)
 
     <div v-else class="space-y-4">
       <div
-        v-for="s in settings"
+        v-for="s in visibleSettings"
         :key="s.key"
         class="bg-gray-800 rounded-xl border border-gray-700 p-5"
       >
@@ -127,6 +194,60 @@ onMounted(load)
                 v-if="saveSuccess[s.key]"
                 class="ml-3 text-sm text-green-400 animate-pulse"
               >Lagret!</span>
+            </div>
+
+            <div
+              v-if="s.key === 'claude_code_oauth_token'"
+              class="mt-4 rounded-lg border border-gray-700 bg-gray-900/70 p-4"
+            >
+              <p class="text-sm text-gray-300">
+                <template v-if="claudeOAuthStatus?.canRefresh">
+                  ✓ OAuth er tilkoblet og fornyes automatisk
+                  <span v-if="claudeOAuthStatus.expiresAt" class="text-gray-500">
+                    (neste utløp {{ formatOAuthExpiry(claudeOAuthStatus.expiresAt) }})
+                  </span>
+                </template>
+                <template v-else-if="claudeOAuthStatus?.source === 'environment'">
+                  ✓ Token hentes fra tjenestens miljøvariabel
+                </template>
+                <template v-else-if="claudeOAuthStatus?.isConfigured">
+                  ✓ Manuelt langtids-token er konfigurert
+                </template>
+                <template v-else>
+                  Koble til en Claude-konto for å hente og fornye token automatisk.
+                </template>
+              </p>
+              <button
+                type="button"
+                :disabled="claudeOAuthBusy"
+                class="mt-3 rounded-md bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-60"
+                @click="startClaudeOAuth"
+              >
+                {{ claudeOAuthBusy ? 'Venter…' : (claudeOAuthStatus?.isConfigured ? 'Koble til på nytt' : 'Koble til Claude') }}
+              </button>
+
+              <div v-if="claudeOAuthPending" class="mt-3 space-y-2">
+                <p class="text-xs text-gray-400">
+                  Fullfør innloggingen i den nye fanen, kopier hele koden Claude viser (kode#state), og lim den inn her.
+                </p>
+                <div class="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    v-model="claudeOAuthCode"
+                    type="password"
+                    autocomplete="off"
+                    placeholder="kode#state"
+                    class="min-w-0 flex-1 rounded-lg border border-violet-500 bg-gray-950 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    @keyup.enter="completeClaudeOAuth"
+                  />
+                  <button
+                    type="button"
+                    :disabled="claudeOAuthBusy || !claudeOAuthCode.trim()"
+                    class="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-60"
+                    @click="completeClaudeOAuth"
+                  >Fullfør</button>
+                </div>
+              </div>
+              <p v-if="claudeOAuthError" class="mt-2 text-xs text-red-400">{{ claudeOAuthError }}</p>
             </div>
 
             <!-- Edit field -->
@@ -186,8 +307,10 @@ onMounted(load)
           </a>. Brukes til bildegenerering med <code class="bg-gray-800 px-1 rounded">fal-ai/flux-2-pro</code>.
         </li>
         <li>
-          <strong class="text-gray-300">claude_code_oauth_token</strong>: Langlivet token opprettet med
-          <code class="bg-gray-800 px-1 rounded">claude setup-token</code>. Brukes av Claude CLI til å lage den endelige FLUX-prompten.
+          <strong class="text-gray-300">claude_code_oauth_token</strong>: Bruk «Koble til Claude» for
+          OAuth med automatisk tokenfornyelse. Alternativt kan et langlivet token fra
+          <code class="bg-gray-800 px-1 rounded">claude setup-token</code> lagres manuelt, eller settes som
+          <code class="bg-gray-800 px-1 rounded">CLAUDE_CODE_OAUTH_TOKEN</code> i tjenestens miljø.
         </li>
         <li>
           <strong class="text-gray-300">claude_flux_*</strong>: Hovedinstruksjonen og én justerbar

@@ -100,7 +100,14 @@ public sealed class ClaudeCliPromptRefinementServiceTests
     private static ClaudeCliPromptRefinementService CreateService(
         IClaudeCliRunner runner,
         ISystemSettingsService settings) =>
-        new(runner, settings, NullLogger<ClaudeCliPromptRefinementService>.Instance);
+        new(runner, new SettingsTokenProvider(settings), settings,
+            NullLogger<ClaudeCliPromptRefinementService>.Instance);
+
+    private sealed class SettingsTokenProvider(ISystemSettingsService settings) : IClaudeOAuthTokenProvider
+    {
+        public Task<string?> GetAccessTokenAsync(CancellationToken ct = default) =>
+            settings.GetValueAsync(ClaudeCliPromptRefinementService.TokenSetting, ct);
+    }
 
     private static PromptRefinementInput MakeInput() =>
         new(
