@@ -88,7 +88,7 @@ CLAUDE        := $(shell command -v claude 2>/dev/null)
 
 # ─────────────────────────────────────────────────────────────────────────────
 .PHONY: help up down restart status logs build publish frontend config secrets \
-        db-up db-down install-service stop-service start-service uninstall \
+        db-up db-down db-shell db-users install-service stop-service start-service uninstall \
         check-tools print-admin-password \
         test test-coverage e2e-coverage
 
@@ -104,6 +104,8 @@ help:
 	@echo "  build       Rebuild frontend + backend, write Production config"
 	@echo "  uninstall   Disable & remove the systemd unit (keeps data/secrets/db)"
 	@echo "  print-admin-password   Show the generated admin password"
+	@echo "  db-shell    Open a MariaDB shell for the production database"
+	@echo "  db-users    List users and roles (never prints password hashes)"
 	@echo ""
 	@echo "Listening (after 'make up'):"
 	@echo "  http://localhost:$(BACKEND_PORT)         (SPA + API)"
@@ -207,6 +209,25 @@ db-up: secrets
 db-down:
 	-@$(DOCKER) stop $(DB_CONTAINER) >/dev/null 2>&1 || true
 	@echo "MariaDB container stopped (data volume bannershop_dbdata kept)."
+
+db-shell:
+	@[ -f $(SECRETS_DIR)/db_password ] \
+		|| { echo "No database password found — run 'make up' first" >&2; exit 1; }
+	@$(DOCKER) container inspect $(DB_CONTAINER) >/dev/null 2>&1 \
+		|| { echo "MariaDB container '$(DB_CONTAINER)' does not exist — run 'make up' first" >&2; exit 1; }
+	@$(DOCKER) exec -it \
+		-e MYSQL_PWD="$$(cat $(SECRETS_DIR)/db_password)" \
+		$(DB_CONTAINER) mariadb -u$(DB_USER) $(DB_NAME)
+
+db-users:
+	@[ -f $(SECRETS_DIR)/db_password ] \
+		|| { echo "No database password found — run 'make up' first" >&2; exit 1; }
+	@$(DOCKER) container inspect $(DB_CONTAINER) >/dev/null 2>&1 \
+		|| { echo "MariaDB container '$(DB_CONTAINER)' does not exist — run 'make up' first" >&2; exit 1; }
+	@$(DOCKER) exec \
+		-e MYSQL_PWD="$$(cat $(SECRETS_DIR)/db_password)" \
+		$(DB_CONTAINER) mariadb -u$(DB_USER) $(DB_NAME) --table \
+		-e 'SELECT Id, Email, Name, Role, CreatedAt FROM Users ORDER BY Id;'
 
 # ── Frontend → wwwroot ───────────────────────────────────────────────────────
 frontend:

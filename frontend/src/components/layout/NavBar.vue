@@ -155,7 +155,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick, true
               @click="closeMenu"
             >
               <i class="fa-solid fa-gear" style="width:16px;opacity:.7"></i>
-              Admin
+              Adminpanel
             </RouterLink>
 
             <div style="height:1px;background:var(--line-soft);margin:6px 4px"></div>

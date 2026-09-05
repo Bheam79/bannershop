@@ -131,6 +131,50 @@ dotnet-ef database update \
 | `CLAUDE_CODE_OAUTH_TOKEN` | Optional first-install fallback for Claude CLI prompt refinement; the admin DB setting takes precedence |
 | `VITE_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (frontend `.env`) |
 
+## Production admin and database access
+
+Run these commands from the repository directory on the production host, as
+the same OS user that originally ran `make up`.
+
+The generated administrator login is `admin@bannershop.no`. Its password is
+stored outside the repository and can be printed with:
+
+```bash
+make print-admin-password
+```
+
+After signing in with an administrator account, open the hamburger menu and
+select **Adminpanel** to enter the admin area. The link is hidden for customer
+accounts.
+
+The application synchronizes that generated password to the admin account on
+startup. If the printed password is rejected, restart the service once with
+`make restart`, then try the login again.
+
+To inspect the non-sensitive columns in the `Users` table without exposing
+password hashes:
+
+```bash
+make db-users
+```
+
+To open an interactive MariaDB session using the application's generated
+database credentials:
+
+```bash
+make db-shell
+```
+
+Inside the session, the equivalent query is:
+
+```sql
+SELECT Id, Email, Name, Role, CreatedAt FROM Users ORDER BY Id;
+```
+
+Use `exit` to leave the database shell. The production database is bound only
+to `127.0.0.1:17006`; do not expose that port publicly. Passwords are BCrypt
+hashes and cannot be recovered from the `PasswordHash` column.
+
 ## AI banner generation
 
 AI banner requests first build a deterministic prompt from the customer's
