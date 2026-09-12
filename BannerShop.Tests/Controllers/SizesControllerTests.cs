@@ -217,7 +217,7 @@ public class SizesControllerTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task GetSizes_SeededCatalog_400gMaterialHasFutureAvailableFrom()
+    public async Task GetSizes_SeededCatalog_400gMaterialExposesItsAvailableFromDate()
     {
         EnsureCatalogSeeded();
         var client = _factory.CreateClient();
@@ -228,15 +228,17 @@ public class SizesControllerTests : IClassFixture<TestWebApplicationFactory>
         var body = await response.Content.ReadAsStringAsync();
         var sizes = JsonSerializer.Deserialize<JsonElement[]>(body, _json)!;
 
-        // Rule id=4 (400g×180) should have material with a future availableFrom.
+        // Rule id=4 (400g×180) should have material carrying the seeded availableFrom date.
+        // Asserted against the seeded constant rather than DateTime.UtcNow: the seed uses a
+        // fixed calendar date, so a "must be in the future" assertion silently rots into a
+        // failure the day that date passes (it did, on 2026-08-31).
         var rule4 = sizes.FirstOrDefault(s => s.GetProperty("id").GetInt32() == 4);
         rule4.ValueKind.Should().NotBe(JsonValueKind.Undefined, "rule id=4 should exist in seeded catalog");
         var mat = rule4.GetProperty("material");
         mat.GetProperty("weightGsm").GetInt32().Should().Be(400);
         mat.TryGetProperty("availableFrom", out var af).Should().BeTrue();
-        af.ValueKind.Should().Be(JsonValueKind.String, "400g material must have a future availableFrom date");
-        var availableFrom = af.GetDateTime();
-        availableFrom.Should().BeAfter(DateTime.UtcNow, "400g material is not yet in production");
+        af.ValueKind.Should().Be(JsonValueKind.String, "400g material must expose a non-null availableFrom date");
+        af.GetDateTime().Should().Be(DbHelper.IndoorMaterialAvailableFromUtc);
     }
 
     // ── GET /api/sizes/eyelet-price ───────────────────────────────────────────

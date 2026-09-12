@@ -4,6 +4,7 @@ using BannerShop.Core.Enums;
 using BannerShop.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace BannerShop.Api.Controllers;
@@ -53,6 +54,7 @@ public class BannerPreviewController : ControllerBase
     /// URL parameters.
     /// </summary>
     [HttpGet("generate")]
+    [EnableRateLimiting("banner-preview")]
     public async Task<IActionResult> Generate(
         [FromQuery] int designId,
         [FromQuery] EyeletOption eyelet = EyeletOption.None,

@@ -312,6 +312,19 @@ builder.Services.AddRateLimiter(options =>
     // is not a substitute for throttling; this caps how fast a single IP can churn
     // through requests regardless of UA.
     options.AddPolicy("ai-design-request",     ctx => SlidingAuthPartition(ctx, "AiDesignRequest", 12, 60));
+
+    // Anonymous banner rotation — PUT /api/banner-builder/{id}/rotate re-runs a full
+    // decode + rotate + downscale + JPEG encode of the uploaded artwork on every call,
+    // and there is no result cache, so hammering one id repeats the whole cost each
+    // time. Anonymous designs are reachable by any caller (UserCanAccess returns true
+    // when UserId is null), so this needs an IP cap of its own.
+    options.AddPolicy("banner-rotate",         ctx => SlidingAuthPartition(ctx, "BannerRotate", 30, 60));
+
+    // Anonymous preview generation — GET /api/banner-preview/generate renders an
+    // 800 px JPEG with eyelet overlays on a cache miss. The cache is content-addressed
+    // so repeats are cheap, but a scripted caller walking designIds × eyelet options
+    // can still force one render (and one cache file) per combination.
+    options.AddPolicy("banner-preview",        ctx => SlidingAuthPartition(ctx, "BannerPreview", 60, 60));
 });
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────

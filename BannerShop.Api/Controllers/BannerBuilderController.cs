@@ -176,6 +176,7 @@ public class BannerBuilderController : ControllerBase
     // ── PUT /api/banner-builder/{id}/rotate ──────────────────────────────────
     [HttpPut("{id:int}/rotate")]
     [AllowAnonymous]
+    [EnableRateLimiting("banner-rotate")]
     public async Task<IActionResult> Rotate(int id, [FromBody] RotateRequestDto req, CancellationToken ct)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);

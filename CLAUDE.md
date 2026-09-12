@@ -358,6 +358,39 @@ across failed `confirmCardPayment` retries on the same PaymentView mount —
 either of those flows creating a fresh draft per click was the source of the
 "every order makes 2 orders" duplication.
 
+## Rate limiting on anonymous endpoints
+
+Every `[AllowAnonymous]` endpoint that costs real money, real CPU or real disk
+carries an `[EnableRateLimiting("<policy>")]` attribute. Policies are declared in
+`Program.cs` (`AddRateLimiter`) and all share the `SlidingAuthPartition` helper,
+which partitions by `RemoteIpAddress` and reads its permit/window from
+`RateLimiting:<Key>:{PermitLimit,WindowSeconds,AutoReplenishment}`.
+
+| Policy | Endpoint | Default |
+|---|---|---|
+| `auth-login` / `auth-register` / `auth-refresh` / `auth-change-password` | `AuthController` | 10 / 5 / 20 / 5 per 60s |
+| `analytics-track` | `POST /api/analytics/track` | 120 / 60s |
+| `banner-upload` | `POST /api/banner-builder/upload` | 20 / 60s |
+| `ai-design-request` | `POST /api/design-requests/ai` | 12 / 60s |
+| `banner-rotate` | `PUT /api/banner-builder/{id}/rotate` | 30 / 60s |
+| `banner-preview` | `GET /api/banner-preview/generate` | 60 / 60s |
+
+Notes:
+- The config values are read **lazily inside the partitioner** (via
+  `httpContext.RequestServices`), not inline at startup — `WebApplicationFactory`
+  adds its config providers after top-level `Program.cs` runs, so an inline read
+  would always see the defaults and no test could override them.
+- Tests assert 429 by setting `PermitLimit=1` **and** `AutoReplenishment=false`.
+  Never shrink `WindowSeconds` instead: there is no injectable `TimeProvider` on
+  `SlidingWindowRateLimiterOptions`, so a short real window races under parallel
+  suite load. See `*RateLimitTests.cs` in `BannerShop.Tests/Controllers/`.
+- The limiter runs as endpoint middleware, ahead of the action, so a request that
+  would 404 still consumes a permit — which is what lets the tests assert a 429
+  against a nonexistent id without touching the image pipeline.
+- `GET /api/banner-preview/{guid}` is deliberately **not** limited: it is a plain
+  read of a content-addressed cache file, and one page can legitimately request
+  many previews at once.
+
 ## API keys: DB-only (BANNERSH-161)
 All secret API keys live in `system_settings` and are set via `/admin/settings`. **There is no appsettings fallback.** Affected rows:
 - `fal_api_key` → consumed by `FalAiImageService` for FLUX.2 Pro image generation
