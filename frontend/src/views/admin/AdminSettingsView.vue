@@ -31,7 +31,9 @@ interface ClaudeOAuthStatus {
 
 const claudeOAuthStatus = ref<ClaudeOAuthStatus | null>(null)
 const claudeOAuthCode = ref('')
-const claudeOAuthPending = ref(false)
+const claudeOAuthAuthorizationUrl = ref('')
+const claudeOAuthExpiresAt = ref<string | null>(null)
+const claudeOAuthPending = computed(() => !!claudeOAuthAuthorizationUrl.value)
 const claudeOAuthBusy = ref(false)
 const claudeOAuthError = ref('')
 const managedClaudeKeys = new Set([
@@ -70,21 +72,38 @@ async function loadClaudeOAuthStatus() {
 }
 
 async function startClaudeOAuth() {
+  if (claudeOAuthBusy.value) return
+  // Open during the click event: opening after awaiting the API is blocked by
+  // some browsers. The visible link below also works when popups are disabled.
+  const authorizationWindow = window.open('about:blank', '_blank')
+  if (authorizationWindow) authorizationWindow.opener = null
   claudeOAuthBusy.value = true
   claudeOAuthError.value = ''
+  claudeOAuthCode.value = ''
+  claudeOAuthAuthorizationUrl.value = ''
+  claudeOAuthExpiresAt.value = null
   try {
-    const { data } = await apiClient.post<{ authorizationUrl: string }>('/admin/settings/claude-oauth/start')
-    claudeOAuthPending.value = true
-    window.open(data.authorizationUrl, '_blank', 'noopener,noreferrer')
+    const { data } = await apiClient.post<{ authorizationUrl: string; expiresAt: string }>('/admin/settings/claude-oauth/start')
+    claudeOAuthAuthorizationUrl.value = data.authorizationUrl
+    claudeOAuthExpiresAt.value = data.expiresAt
+    if (authorizationWindow) authorizationWindow.location.replace(data.authorizationUrl)
   } catch (err: any) {
+    authorizationWindow?.close()
     claudeOAuthError.value = err.response?.data?.error ?? 'Kunne ikke starte Claude-tilkoblingen.'
   } finally {
     claudeOAuthBusy.value = false
   }
 }
 
+function cancelClaudeOAuth() {
+  claudeOAuthCode.value = ''
+  claudeOAuthAuthorizationUrl.value = ''
+  claudeOAuthExpiresAt.value = null
+  claudeOAuthError.value = ''
+}
+
 async function completeClaudeOAuth() {
-  if (!claudeOAuthCode.value.trim()) return
+  if (claudeOAuthBusy.value || !claudeOAuthPending.value || !claudeOAuthCode.value.trim()) return
   claudeOAuthBusy.value = true
   claudeOAuthError.value = ''
   try {
@@ -92,8 +111,7 @@ async function completeClaudeOAuth() {
       code: claudeOAuthCode.value.trim(),
     })
     claudeOAuthStatus.value = data
-    claudeOAuthCode.value = ''
-    claudeOAuthPending.value = false
+    cancelClaudeOAuth()
     await load()
   } catch (err: any) {
     claudeOAuthError.value = err.response?.data?.error ?? 'Kunne ikke fullføre Claude-tilkoblingen.'
@@ -162,6 +180,78 @@ onMounted(load)
 
     <div v-else class="space-y-4">
       <ImageCliConnections />
+      <section class="bg-gray-800 rounded-xl border border-gray-700 p-5" aria-labelledby="claude-oauth-heading">
+        <h2 id="claude-oauth-heading" class="font-semibold text-gray-100">Claude – innlogging</h2>
+        <p class="mt-1 text-sm text-gray-400">
+          Koble til Claude-kontoen som brukes til å forbedre bannerpromptene.
+          Logg inn hos Anthropic, godkjenn tilgangen, og lim inn verifikasjonskoden her.
+        </p>
+        <p class="mt-3 text-sm text-gray-300" role="status">
+          <template v-if="claudeOAuthStatus?.canRefresh">
+            ✓ OAuth er tilkoblet og fornyes automatisk
+            <span v-if="claudeOAuthStatus.expiresAt" class="text-gray-500">
+              (neste utløp {{ formatOAuthExpiry(claudeOAuthStatus.expiresAt) }})
+            </span>
+          </template>
+          <template v-else-if="claudeOAuthStatus?.source === 'environment'">
+            ✓ Token hentes fra tjenestens miljøvariabel
+          </template>
+          <template v-else-if="claudeOAuthStatus?.isConfigured">
+            ✓ Manuelt langtids-token er konfigurert
+          </template>
+          <template v-else>Ingen Claude-konto tilkoblet</template>
+        </p>
+        <button
+          type="button"
+          :disabled="claudeOAuthBusy"
+          class="mt-3 rounded-md bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-60"
+          @click="startClaudeOAuth"
+        >
+          {{ claudeOAuthBusy ? 'Venter…' : claudeOAuthPending ? 'Start innlogging på nytt' : claudeOAuthStatus?.isConfigured ? 'Koble til på nytt' : 'Koble til Claude' }}
+        </button>
+        <div v-if="claudeOAuthPending" class="mt-4 space-y-3">
+          <div class="text-sm text-gray-300 space-y-1">
+            <p>1. Logg inn og godkjenn tilgangen i fanen fra Anthropic.</p>
+            <a
+              :href="claudeOAuthAuthorizationUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-block text-violet-300 underline"
+            >Åpne innlogging hos Anthropic</a>
+            <p class="text-xs text-gray-400">Bruk lenken hvis fanen ikke åpnet seg, eller hvis du lukket den.</p>
+          </div>
+          <form class="space-y-2" @submit.prevent="completeClaudeOAuth">
+            <label for="claude-oauth-code" class="block text-sm text-gray-300">
+              2. Verifikasjonskode fra Anthropic
+            </label>
+            <p id="claude-oauth-code-help" class="text-xs text-gray-400">
+              Kopier hele koden (kode#state) som vises etter godkjenning.
+              Innloggingen må fullføres før {{ formatOAuthExpiry(claudeOAuthExpiresAt) }}.
+            </p>
+            <div class="flex flex-col gap-2 sm:flex-row">
+              <input
+                id="claude-oauth-code"
+                v-model="claudeOAuthCode"
+                type="password"
+                autocomplete="off"
+                :spellcheck="false"
+                autocapitalize="none"
+                aria-describedby="claude-oauth-code-help"
+                placeholder="kode#state"
+                :disabled="claudeOAuthBusy"
+                class="min-w-0 flex-1 rounded-lg border border-violet-500 bg-gray-950 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
+              />
+              <button
+                type="submit"
+                :disabled="claudeOAuthBusy || !claudeOAuthCode.trim()"
+                class="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-60"
+              >Bekreft kode</button>
+              <button type="button" :disabled="claudeOAuthBusy" class="text-sm text-gray-400 underline disabled:opacity-60" @click="cancelClaudeOAuth">Avbryt</button>
+            </div>
+          </form>
+        </div>
+        <p v-if="claudeOAuthError" class="mt-2 text-sm text-red-400" role="alert">{{ claudeOAuthError }}</p>
+      </section>
       <div
         v-for="s in visibleSettings"
         :key="s.key"
@@ -198,60 +288,6 @@ onMounted(load)
                 v-if="saveSuccess[s.key]"
                 class="ml-3 text-sm text-green-400 animate-pulse"
               >Lagret!</span>
-            </div>
-
-            <div
-              v-if="s.key === 'claude_code_oauth_token'"
-              class="mt-4 rounded-lg border border-gray-700 bg-gray-900/70 p-4"
-            >
-              <p class="text-sm text-gray-300">
-                <template v-if="claudeOAuthStatus?.canRefresh">
-                  ✓ OAuth er tilkoblet og fornyes automatisk
-                  <span v-if="claudeOAuthStatus.expiresAt" class="text-gray-500">
-                    (neste utløp {{ formatOAuthExpiry(claudeOAuthStatus.expiresAt) }})
-                  </span>
-                </template>
-                <template v-else-if="claudeOAuthStatus?.source === 'environment'">
-                  ✓ Token hentes fra tjenestens miljøvariabel
-                </template>
-                <template v-else-if="claudeOAuthStatus?.isConfigured">
-                  ✓ Manuelt langtids-token er konfigurert
-                </template>
-                <template v-else>
-                  Koble til en Claude-konto for å hente og fornye token automatisk.
-                </template>
-              </p>
-              <button
-                type="button"
-                :disabled="claudeOAuthBusy"
-                class="mt-3 rounded-md bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-60"
-                @click="startClaudeOAuth"
-              >
-                {{ claudeOAuthBusy ? 'Venter…' : (claudeOAuthStatus?.isConfigured ? 'Koble til på nytt' : 'Koble til Claude') }}
-              </button>
-
-              <div v-if="claudeOAuthPending" class="mt-3 space-y-2">
-                <p class="text-xs text-gray-400">
-                  Fullfør innloggingen i den nye fanen, kopier hele koden Claude viser (kode#state), og lim den inn her.
-                </p>
-                <div class="flex flex-col gap-2 sm:flex-row">
-                  <input
-                    v-model="claudeOAuthCode"
-                    type="password"
-                    autocomplete="off"
-                    placeholder="kode#state"
-                    class="min-w-0 flex-1 rounded-lg border border-violet-500 bg-gray-950 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                    @keyup.enter="completeClaudeOAuth"
-                  />
-                  <button
-                    type="button"
-                    :disabled="claudeOAuthBusy || !claudeOAuthCode.trim()"
-                    class="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-60"
-                    @click="completeClaudeOAuth"
-                  >Fullfør</button>
-                </div>
-              </div>
-              <p v-if="claudeOAuthError" class="mt-2 text-xs text-red-400">{{ claudeOAuthError }}</p>
             </div>
 
             <!-- Edit field -->
