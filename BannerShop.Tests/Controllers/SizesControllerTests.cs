@@ -190,8 +190,8 @@ public class SizesControllerTests : IClassFixture<TestWebApplicationFactory>
     //
     // The picker composable (useBannerPricing) reads `availableFrom` from the
     // GET /api/sizes response to determine `isComingSoon`. This test guards the
-    // seed so the 680g material (IDs 1–3, 8) is available NOW and the 400g
-    // material (IDs 4–7) is future. A mismatch here would cause the picker to
+    // seed so both the 680g (IDs 1–3, 8) and 400g (IDs 4–7) materials
+    // are available without a date gate. A mismatch here would cause the picker to
     // show "Kommer snart" on actually-available rules.
 
     [Fact]
@@ -217,7 +217,7 @@ public class SizesControllerTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task GetSizes_SeededCatalog_400gMaterialExposesItsAvailableFromDate()
+    public async Task GetSizes_SeededCatalog_400gMaterialHasNullAvailableFrom()
     {
         EnsureCatalogSeeded();
         var client = _factory.CreateClient();
@@ -228,17 +228,14 @@ public class SizesControllerTests : IClassFixture<TestWebApplicationFactory>
         var body = await response.Content.ReadAsStringAsync();
         var sizes = JsonSerializer.Deserialize<JsonElement[]>(body, _json)!;
 
-        // Rule id=4 (400g×180) should have material carrying the seeded availableFrom date.
-        // Asserted against the seeded constant rather than DateTime.UtcNow: the seed uses a
-        // fixed calendar date, so a "must be in the future" assertion silently rots into a
-        // failure the day that date passes (it did, on 2026-08-31).
+        // Rule id=4 (400g×180) is in stock, independent of the current date.
         var rule4 = sizes.FirstOrDefault(s => s.GetProperty("id").GetInt32() == 4);
         rule4.ValueKind.Should().NotBe(JsonValueKind.Undefined, "rule id=4 should exist in seeded catalog");
         var mat = rule4.GetProperty("material");
         mat.GetProperty("weightGsm").GetInt32().Should().Be(400);
         mat.TryGetProperty("availableFrom", out var af).Should().BeTrue();
-        af.ValueKind.Should().Be(JsonValueKind.String, "400g material must expose a non-null availableFrom date");
-        af.GetDateTime().Should().Be(DbHelper.IndoorMaterialAvailableFromUtc);
+        af.ValueKind.Should().Be(JsonValueKind.Null, "400g material must be available now (null availableFrom)");
+        rule4.GetProperty("availableFrom").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     // ── GET /api/sizes/eyelet-price ───────────────────────────────────────────

@@ -21,7 +21,7 @@ public class BannerShopStartupSeederTests
         indoor.WidthCm.Should().Be(160);
         indoor.WeightGsm.Should().Be(400);
         indoor.PricePerSqm.Should().Be(180m);
-        indoor.AvailableFrom.Should().Be(new DateTime(2026, 8, 31, 0, 0, 0, DateTimeKind.Utc));
+        indoor.AvailableFrom.Should().BeNull("400g material is in stock without a date gate");
 
         var outdoor = db.Materials.Single(m => m.Id == 2);
         outdoor.Name.Should().Be("680g kraftig banner - 3 år utendørs garanti");
