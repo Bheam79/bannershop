@@ -6,6 +6,7 @@ using BannerShop.Api.Services.SystemSettings;
 using BannerShop.Core.Entities;
 using BannerShop.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace BannerShop.Api.Services.DesignRequests.Cli;
 
@@ -17,7 +18,7 @@ public sealed class ImageCliOptions
 }
 
 public sealed record ImageCliLoginStatus(bool IsConfigured, bool Pending, string? AuthorizationUrl,
-    string? UserCode, string? Error);
+    string? UserCode, string? Error, string LoginMethod = "device");
 
 /// <summary>
 /// Native CLI device login and token refresh. Credentials are kept in masked DB rows;
@@ -41,14 +42,15 @@ public sealed class ImageCliRuntime(
         ValidateProvider(provider);
         var configured = !string.IsNullOrWhiteSpace(await ReadCredentialAsync(provider, ct));
         return _flows.TryGetValue(provider, out var flow)
-            ? new(configured, !flow.Finished, flow.Url, flow.Code, flow.Error)
+            ? new(configured, !flow.Finished, flow.Url, flow.Code, flow.Error, flow.BrowserOAuth ? "oauth" : "device")
             : new(configured, false, null, null, null);
     }
 
-    public void StartLogin(string provider)
+    public void StartLogin(string provider, bool browserOAuth = false)
     {
         ValidateProvider(provider);
-        var flow = new LoginFlow();
+        if (browserOAuth && provider != "grok") throw new ArgumentException("Browser OAuth is only available for Grok.");
+        var flow = new LoginFlow { BrowserOAuth = browserOAuth };
         // At most one pending login per provider. Repeated clicks are idempotent.
         _flows.AddOrUpdate(provider, _ => flow, (_, previous) => previous.Finished ? flow : previous);
         if (ReferenceEquals(_flows[provider], flow))
@@ -59,6 +61,69 @@ public sealed class ImageCliRuntime(
     {
         ValidateProvider(provider);
         if (_flows.TryGetValue(provider, out var flow)) flow.Cancellation.Cancel();
+    }
+
+    // The browser runs on the administrator's computer, so its loopback redirect
+    // cannot reach the server's CLI. Relay only to the callback emitted by that CLI.
+    // Grok ignores piped stdin for OAuth; it only reads pasted codes from a TTY.
+    public async Task CompleteBrowserLoginAsync(string provider, string? input, CancellationToken ct)
+    {
+        ValidateProvider(provider);
+        if (!_flows.TryGetValue(provider, out var flow) || !flow.BrowserOAuth
+            || flow.Finished || flow.Cancellation.IsCancellationRequested)
+            throw new ArgumentException("Ingen aktiv OAuth-innlogging. Start tilkoblingen på nytt.");
+
+        var authorizationUrl = flow.Url;
+        if (authorizationUrl is null)
+            throw new ArgumentException("Venter på innloggingslenken. Prøv igjen om et øyeblikk.");
+        var authorization = QueryHelpers.ParseQuery(new Uri(authorizationUrl).Query);
+        if (!Uri.TryCreate(authorization["redirect_uri"].ToString(), UriKind.Absolute, out var callback)
+            || callback.Scheme != "http" || callback.Host != "127.0.0.1"
+            || callback.Port <= 0 || callback.AbsolutePath != "/callback"
+            || callback.UserInfo.Length != 0 || callback.Query.Length != 0 || callback.Fragment.Length != 0
+            || string.IsNullOrWhiteSpace(authorization["state"]))
+            throw new ArgumentException("Ugyldig OAuth-innlogging. Start tilkoblingen på nytt.");
+
+        var state = authorization["state"].ToString();
+        var code = input?.Trim() ?? "";
+        if (code.Length == 0 || code.Length > 8192 || code.Any(char.IsControl))
+            throw new ArgumentException("Lim inn koden eller hele returadressen fra Grok.");
+        if (Uri.TryCreate(code, UriKind.Absolute, out var pasted))
+        {
+            var query = QueryHelpers.ParseQuery(pasted.Query);
+            if (pasted.GetLeftPart(UriPartial.Path) != callback.GetLeftPart(UriPartial.Path)
+                || pasted.UserInfo.Length != 0 || pasted.Fragment.Length != 0
+                || query["state"].Count != 1 || query["state"].ToString() != state)
+                throw new ArgumentException("Returadressen tilhører ikke denne innloggingen. Bruk den nyeste lenken.");
+            if (query.ContainsKey("error"))
+                throw new ArgumentException("Grok godkjente ikke innloggingen. Prøv igjen eller avbryt.");
+            code = query["code"].Count == 1 ? query["code"].ToString() : "";
+        }
+        if (string.IsNullOrWhiteSpace(code) || code.Any(char.IsWhiteSpace))
+            throw new ArgumentException("Lim inn koden eller hele returadressen fra Grok.");
+        if (Interlocked.CompareExchange(ref flow.Submitted, 1, 0) != 0)
+            throw new ArgumentException("Koden er allerede sendt. Vent på tilkoblingsstatus eller start på nytt.");
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct,
+            lifetime.ApplicationStopping, flow.Cancellation.Token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        // No redirects or proxies: never forward an authorization code outside the
+        // active local CLI, even if the pasted URL or local response is malicious.
+        using var handler = new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false };
+        using var client = new HttpClient(handler);
+        var target = QueryHelpers.AddQueryString(callback.AbsoluteUri,
+            new Dictionary<string, string?> { ["code"] = code, ["state"] = state });
+        try
+        {
+            using var response = await client.GetAsync(target, timeout.Token);
+            if (!response.IsSuccessStatusCode) throw new HttpRequestException();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
+        {
+            // Delivery may have succeeded. Cancel before allowing another attempt.
+            flow.Cancellation.Cancel();
+            throw new ArgumentException("Kunne ikke fullføre innloggingen. Start tilkoblingen på nytt.");
+        }
     }
 
     private async Task LoginAsync(string provider, LoginFlow flow)
@@ -76,7 +141,7 @@ public sealed class ImageCliRuntime(
             root = NewPrivateDirectory();
             var start = StartInfo(provider, root);
             start.ArgumentList.Add("login");
-            start.ArgumentList.Add("--device-auth");
+            start.ArgumentList.Add(flow.BrowserOAuth ? "--oauth" : "--device-auth");
             if (provider == "codex")
             {
                 start.ArgumentList.Add("-c");
@@ -94,7 +159,7 @@ public sealed class ImageCliRuntime(
         catch (Exception ex)
         {
             log.LogWarning("{Provider} login failed ({ErrorType}).", provider, ex.GetType().Name);
-            flow.Error = "Kunne ikke logge inn. Kontroller at CLI er installert og at kontoen tillater enhetsinnlogging.";
+            flow.Error = "Kunne ikke logge inn. Kontroller at CLI er installert og at kontoen tillater valgt innloggingsmetode.";
         }
         finally
         {
@@ -271,6 +336,8 @@ public sealed class ImageCliRuntime(
 
     private sealed class LoginFlow
     {
+        public bool BrowserOAuth;
+        public int Submitted;
         public volatile bool Finished;
         public volatile string? Url;
         public volatile string? Code;

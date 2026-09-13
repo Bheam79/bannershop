@@ -252,6 +252,14 @@ No fal.ai fallback is registered. Earlier fal.ai notes below describe the previo
 provider. Copyright-alternative instructions are appended after prompt refinement
 and also included in the CLI instruction, including for existing admin prompts.
 
+BANNERSH-300 adds browser OAuth for Grok in the same admin panel, with device-code
+login as a fallback. The admin pastes Grok's code or full loopback return URL;
+`ImageCliRuntime` relays it only to the active CLI callback, leaving PKCE, token
+validation and refresh with Grok. Piping codes to stdin does not work: Grok only
+reads OAuth paste input from a TTY. Targeted offline verification:
+`dotnet run --project scripts/verify-grok-oauth/VerifyGrokOAuth.csproj`
+(`GROK_OAUTH_CHECK_PORT` selects the local fixture port, default 10013).
+
 ## AI design requests (BANNERSH-19)
 - `DesignRequest` + `DesignRequestRevision` entities + `AddDesignRequests` migration ship with this task (BANNERSH-26 is the consolidated foundation task — was still TODO when this was done, so the entities were added here).
 - Stripe webhook (`payment_intent.succeeded`) calls BOTH `OrderService.MarkPaidAsync` and `DesignRequestService.MarkPaidAndEnqueueAsync` — the latter looks up by PaymentIntentId, ignores misses, and enqueues a job. Design-request PaymentIntents use `orderId = -designRequestId` metadata so order-lookups by id won't accidentally hit them.

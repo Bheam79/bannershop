@@ -15,11 +15,29 @@ public sealed class AdminImageCliController(ImageCliRuntime runtime) : Controlle
         ImageCliRuntime.IsProvider(provider) ? Ok(await runtime.StatusAsync(provider, ct)) : NotFound();
 
     [HttpPost("start")]
-    public async Task<IActionResult> Start(string provider, CancellationToken ct)
+    public async Task<IActionResult> Start(string provider, CancellationToken ct, [FromQuery] string method = "device")
     {
         if (!ImageCliRuntime.IsProvider(provider)) return NotFound();
-        runtime.StartLogin(provider);
+        if (method is not ("device" or "oauth") || (method == "oauth" && provider != "grok"))
+            return BadRequest(new { error = "Ugyldig innloggingsmetode." });
+        runtime.StartLogin(provider, browserOAuth: method == "oauth");
         return Ok(await runtime.StatusAsync(provider, ct));
+    }
+
+    [HttpPost("complete")]
+    [RequestSizeLimit(16384)]
+    public async Task<IActionResult> Complete(string provider, [FromBody] CompleteImageCliLoginRequest request, CancellationToken ct)
+    {
+        if (!ImageCliRuntime.IsProvider(provider)) return NotFound();
+        try
+        {
+            await runtime.CompleteBrowserLoginAsync(provider, request.Code, ct);
+            return Ok(await runtime.StatusAsync(provider, ct));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
     }
 
     [HttpPost("cancel")]
@@ -30,3 +48,5 @@ public sealed class AdminImageCliController(ImageCliRuntime runtime) : Controlle
         return NoContent();
     }
 }
+
+public sealed record CompleteImageCliLoginRequest(string? Code);
