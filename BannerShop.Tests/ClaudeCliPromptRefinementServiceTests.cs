@@ -53,6 +53,8 @@ public sealed class ClaudeCliPromptRefinementServiceTests
         runner.SystemPrompt.Should().Contain("banner-within-a-banner");
         runner.SystemPrompt.Should().Contain("premium designed graphic composition");
         runner.UserPrompt.Should().Contain("celebratory birthday banner");
+        runner.SystemPrompt.Should().NotContain("FLUX").And.NotContain("fal.ai");
+        runner.UserPrompt.Should().NotContain("FLUX").And.NotContain("fal.ai");
     }
 
     [Fact]

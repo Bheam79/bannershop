@@ -123,7 +123,7 @@ public sealed class AiGenerationPipeline
                 // Never charge for a generation which silently omits a portrait the
                 // customer uploaded. The UI may still show its local object URL even
                 // when the persisted file has disappeared, making a text-only fallback
-                // look like fal.ai ignored the reference.
+                // look like the image provider ignored the reference.
                 throw new InvalidOperationException("portrait_reference_missing");
             }
 
@@ -172,21 +172,19 @@ public sealed class AiGenerationPipeline
 
             // Prompt refinement is intentionally best-effort, but identity and the
             // customer's spelling are not creative details. Re-append them after the
-            // refiner so they cannot be diluted, paraphrased or dropped. In a live
-            // FLUX.2 Pro /edit verification this concise constraint preserved @image1
-            // and rendered the requested Norwegian text exactly.
+            // refiner so they cannot be diluted, paraphrased or dropped.
             prompt = AppendNonNegotiableConstraints(prompt, request, referenceAbs is not null);
 
             // BANNERSH-155: log the FINAL prompt actually sent to the image model
             // (post-refinement, or the base prompt if refinement was a no-op /
-            // fell back). This is what FLUX.2 Pro sees.
+            // fell back). This is what the image providers see.
             _log.LogInformation(
                 "Pipeline: DesignRequest {Id} final prompt: {FinalPrompt}",
                 designRequestId, prompt);
 
             // 3. Generate
             // BANNERSH-98: explicitly log the IAiImageService implementation type
-            // so operators can confirm at a glance whether the real fal.ai-backed
+            // so operators can confirm at a glance whether the real CLI-backed
             // service or a fallback (Mock/Placeholder) is wired in.
             _log.LogInformation(
                 "Pipeline: generating image for DesignRequest {Id} (generation {GenId}) using {AiServiceType}",

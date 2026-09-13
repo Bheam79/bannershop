@@ -9,7 +9,6 @@ using BannerShop.Api.Services.BannerBuilder;
 using BannerShop.Core;
 using BannerShop.Api.Services.DesignRequests;
 using BannerShop.Api.Services.DesignRequests.Claude;
-using BannerShop.Api.Services.DesignRequests.Fal;
 using BannerShop.Api.Services.DesignRequests.OpenAi;
 using BannerShop.Api.Services.DesignRequests.Replicate;
 using BannerShop.Api.Services.Email;
@@ -143,7 +142,6 @@ builder.Services.AddScoped<ISystemSettingsService, SystemSettingsService>();
 
 // ─── AI Design Requests (95 kr) ──────────────────────────────────────────────
 builder.Services.Configure<OpenAiOptions>(builder.Configuration.GetSection(OpenAiOptions.SectionName));
-builder.Services.Configure<FalOptions>(builder.Configuration.GetSection(FalOptions.SectionName));
 builder.Services.Configure<ClaudeCliOptions>(builder.Configuration.GetSection(ClaudeCliOptions.SectionName));
 
 // BANNERSH-297: native Codex + Grok image tools run concurrently with isolated OAuth homes.
@@ -151,7 +149,7 @@ builder.Services.Configure<BannerShop.Api.Services.DesignRequests.Cli.ImageCliOp
 builder.Services.AddSingleton<BannerShop.Api.Services.DesignRequests.Cli.ImageCliRuntime>();
 builder.Services.AddScoped<IAiImageService, BannerShop.Api.Services.DesignRequests.Cli.ParallelCliImageService>();
 // BANNERSH-291: Claude Code expands the customer details into the vivid,
-// composition-heavy prompt FLUX.2 Pro needs. It is stateless and tool-free;
+// composition-heavy prompt the image providers need. It is stateless and tool-free;
 // failures fall back to BannerPromptService's deterministic prompt.
 builder.Services.AddHttpClient("ClaudeOAuth", client =>
 {
@@ -307,7 +305,7 @@ builder.Services.AddRateLimiter(options =>
     // endpoints above.
     options.AddPolicy("banner-upload",        ctx => SlidingAuthPartition(ctx, "BannerUpload", 20, 60));
 
-    // Anonymous AI design-request creation — each call can trigger a real fal.ai
+    // Anonymous AI design-request creation — each call can trigger real
     // image-generation spend (BANNERSH-67). BotProtectionFilter only screens
     // User-Agent/header shape, which a scripted caller can trivially fake, so it
     // is not a substitute for throttling; this caps how fast a single IP can churn
@@ -387,7 +385,7 @@ builder.Services.AddSwaggerGen(c =>
 var app = builder.Build();
 
 // ─── BANNERSH-98 / BANNERSH-127 / BANNERSH-161 / BANNERSH-289: key state log ─
-// Keys (fal.ai + Claude prompt refinement + legacy OpenAI + Stripe) are read
+// Keys (Claude prompt refinement + legacy OpenAI + Stripe) are read
 // from the database. Claude additionally accepts its documented environment
 // variable as a first-install fallback.
 // BANNERSH-161. At boot we dump the resolved working directory, the present
@@ -421,7 +419,6 @@ var app = builder.Build();
         .ToArray();
 
     var openAiCfg = app.Configuration.GetSection("OpenAi");
-    var falCfg = app.Configuration.GetSection("Fal");
     var claudeCfg = app.Configuration.GetSection("ClaudeCli");
 
     startupLog.LogInformation(
@@ -434,11 +431,6 @@ var app = builder.Build();
         "(API key is read from db:openai_api_key, NOT appsettings)",
         openAiCfg["ChatModel"] ?? "(default)",
         openAiCfg["BaseUrl"] ?? "(default)");
-    startupLog.LogInformation(
-        "Boot config: Fal ModelId={Model} BaseUrl={BaseUrl} " +
-        "(API key is read from db:fal_api_key, NOT appsettings)",
-        falCfg["ModelId"] ?? "(default)",
-        falCfg["BaseUrl"] ?? "(default)");
     startupLog.LogInformation(
         "Boot config: ClaudeCli ExecutablePath={ExecutablePath} Model={Model} TimeoutSeconds={Timeout}",
         claudeCfg["ExecutablePath"] ?? "(default)",
@@ -453,19 +445,16 @@ var app = builder.Build();
         var settings = scope.ServiceProvider
             .GetRequiredService<BannerShop.Api.Services.SystemSettings.ISystemSettingsService>();
         var dbOpenAiKey = await settings.GetValueAsync("openai_api_key");
-        var dbFalKey = await settings.GetValueAsync("fal_api_key");
         var dbClaudeToken = await settings.GetValueAsync("claude_code_oauth_token");
         var dbStripeSecret = await settings.GetValueAsync("stripe_secret_key");
         var dbStripePub = await settings.GetValueAsync("stripe_publishable_key");
         var dbStripeWh = await settings.GetValueAsync("stripe_webhook_secret");
         startupLog.LogInformation(
-            "Boot config: DB system_settings 'fal_api_key'={FalKeyState} " +
-            "'claude_code_oauth_token'={ClaudeTokenState} " +
+            "Boot config: DB system_settings 'claude_code_oauth_token'={ClaudeTokenState} " +
             "'openai_api_key'={DbKeyState} " +
             "'stripe_secret_key'={DbStripeSecret} 'stripe_publishable_key'={DbStripePub} " +
             "'stripe_webhook_secret'={DbStripeWh} " +
             "(set blanks via /admin/settings; Claude also supports its environment variable)",
-            DescribeKeyState(dbFalKey),
             DescribeKeyState(dbClaudeToken
                 ?? Environment.GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN")),
             DescribeKeyState(dbOpenAiKey),
@@ -480,7 +469,7 @@ var app = builder.Build();
     }
 
     // Verify the IAiImageService implementation that DI resolves — the type
-    // name confirms whether fal.ai or a fallback is wired in. Wrapped so
+    // name confirms whether the parallel CLI provider is wired in. Wrapped so
     // a DI-resolution issue can't take down the boot.
     try
     {

@@ -7,7 +7,7 @@ namespace BannerShop.Api.Services.DesignRequests.Claude;
 
 /// <summary>
 /// Uses Claude Code to turn the customer's banner details into a vivid,
-/// production-ready FLUX.2 Pro prompt. Prompt copy and category-specific art
+/// production-ready image prompt. Prompt copy and category-specific art
 /// direction are database settings so administrators can tune them live.
 /// </summary>
 public sealed class ClaudeCliPromptRefinementService : IPromptRefinementService
@@ -17,7 +17,7 @@ public sealed class ClaudeCliPromptRefinementService : IPromptRefinementService
 
     public const string DefaultMainPrompt =
         """
-        You are an expert advertising art director and prompt engineer. Turn the supplied customer details into one vivid, highly specific English image-generation prompt for FLUX.2 Pro. The output image IS the finished large-format print banner: never show a banner, sign, poster, print, frame, mockup, wall, room, hanging fabric, or banner-within-a-banner. Demand a premium designed graphic composition rather than a plain photo collage. Explicitly describe the background scene, rich colour palette, lighting, layered decorative framing, depth, energy, subject placement, and large legible typography whose colour, shading and effects suit the scene. When @image1 is available, place that exact person as a professionally retouched integrated cutout, preserve their recognizable identity, and describe a tasteful themed outfit transformation. Keep all important faces and text at least 10% inside every edge. Preserve every supplied text string exactly and request no extra words. Convert trademarked characters or brands into descriptive, original visual attributes without names or logos. Specify sharp, photorealistic, print-quality detail and the requested aspect ratio. Reply with the final FLUX prompt only: one paragraph, no preamble, markdown or quotation marks around the whole answer.
+        You are an expert advertising art director and prompt engineer. Turn the supplied customer details into one vivid, highly specific English image-generation prompt. The output image IS the finished large-format print banner: never show a banner, sign, poster, print, frame, mockup, wall, room, hanging fabric, or banner-within-a-banner. Demand a premium designed graphic composition rather than a plain photo collage. Explicitly describe the background scene, rich colour palette, lighting, layered decorative framing, depth, energy, subject placement, and large legible typography whose colour, shading and effects suit the scene. When @image1 is available, place that exact person as a professionally retouched integrated cutout, preserve their recognizable identity, and describe a tasteful themed outfit transformation. Keep all important faces and text at least 10% inside every edge. Preserve every supplied text string exactly and request no extra words. Convert trademarked characters or brands into descriptive, original visual attributes without names or logos. Specify sharp, photorealistic, print-quality detail and the requested aspect ratio. Reply with the final image prompt only: one paragraph, no preamble, markdown or quotation marks around the whole answer.
         """;
 
     private static readonly IReadOnlyDictionary<BannerTemplateCategory, CategoryPrompt> CategoryPrompts =
@@ -170,13 +170,13 @@ public sealed class ClaudeCliPromptRefinementService : IPromptRefinementService
         prompt.Append("Theme / style input: ").AppendLine(theme);
         prompt.Append("Portrait reference: ").AppendLine(
             input.HasPortrait
-                ? "Yes. The downstream FLUX edit request attaches it as @image1."
+                ? "Yes. The image providers receive the attached portrait as @image1."
                 : "No.");
         prompt.Append("Aspect ratio: ").AppendLine(input.AspectRatio);
         prompt.AppendLine("Deterministic draft for factual constraints (improve it substantially):");
         prompt.AppendLine(input.BasePrompt);
         prompt.AppendLine(
-            "Return only the vivid FLUX.2 Pro prompt. Remember: the generated image itself is the banner, not a scene containing a banner.");
+            "Return only the vivid image-generation prompt. Remember: the generated image itself is the banner, not a scene containing a banner.");
         return prompt.ToString();
     }
 

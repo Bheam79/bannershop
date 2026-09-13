@@ -141,8 +141,8 @@ public class PromptRefinementServiceTests
         body.Should().Contain("minecraft");
         body.Should().Contain("Gratulerer med 7!");
         // System prompt must target the image provider actually used downstream.
-        body.Should().Contain("FLUX.2 Pro");
-        body.Should().Contain("fal-ai/flux-2-pro/edit");
+        body.Should().Contain("Codex and Grok");
+        body.Should().Contain("@image1");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

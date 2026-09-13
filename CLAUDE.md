@@ -248,19 +248,19 @@ or service credentials. Verified CLI versions: Codex 0.154.0 and Grok 1.0.30.
 `grok login --device-auth` works; adding `--oauth` fails because those flags conflict.
 Executable paths are configurable via `ImageCli:CodexExecutable` / `GrokExecutable`.
 The server needs these CLIs installed and accounts with native image access.
-No fal.ai fallback is registered. Earlier fal.ai notes below describe the previous
-provider. Copyright-alternative instructions are appended after prompt refinement
+BANNERSH-298 removed the fal.ai implementation, config, and credential row.
+The `claude_flux_*` setting keys remain for compatibility with saved admin prompts;
+new defaults are provider-neutral and the removal migration preserves custom text.
+Copyright-alternative instructions are appended after prompt refinement
 and also included in the CLI instruction, including for existing admin prompts.
 
 ## AI design requests (BANNERSH-19)
 - `DesignRequest` + `DesignRequestRevision` entities + `AddDesignRequests` migration ship with this task (BANNERSH-26 is the consolidated foundation task — was still TODO when this was done, so the entities were added here).
 - Stripe webhook (`payment_intent.succeeded`) calls BOTH `OrderService.MarkPaidAsync` and `DesignRequestService.MarkPaidAndEnqueueAsync` — the latter looks up by PaymentIntentId, ignores misses, and enqueues a job. Design-request PaymentIntents use `orderId = -designRequestId` metadata so order-lookups by id won't accidentally hit them.
 - AI pipeline runs in `DesignRequestJobProcessor` (BackgroundService) reading from `IDesignRequestJobQueue` (in-process `Channel<int>`). No external queue dependency for v1 volumes.
-- **BANNERSH-289: fal.ai image generation.** `FalAiImageService` is the registered `IAiImageService` and calls `fal-ai/flux-2-pro` (or `/edit` with a portrait); `Fal:ModelId`/`BaseUrl` are non-secret appsettings and `system_settings.fal_api_key` is the DB-only secret.
-- **BANNERSH-290: portrait references.** fal.ai edit requests always name the attached portrait as `@image1`; the pipeline re-appends non-negotiable identity + exact customer-text constraints after prompt refinement. Anonymous portrait uploads are resolved by `(BannerDesign.Id, IpAddress)`, Generate is disabled while an upload is pending, and a requested-but-missing portrait now fails/refunds rather than silently falling back to text-to-image.
-- Image provider abstraction: `IAiImageService` is `FalAiImageService`; a blank `fal_api_key` now fails the generation with `fal_api_key_not_configured` instead of silently returning a solid-colour placeholder. Exact single-colour provider responses are rejected too.
-- **BANNERSH-127 (historical):** `OpenAiImageService` supported DB-first image model/quality overrides. BANNERSH-289 replaced it as the registered image provider and removed those two settings.
-- No Replicate upscaling runs on the customer pipeline — `NoopUpscalingService` returns input unchanged. `IPhotoCompositor` remains a stub because portraits go through the fal.ai edit endpoint.
+- **BANNERSH-290: portrait references.** image requests name the attached portrait as `@image1`; the pipeline re-appends non-negotiable identity + exact customer-text constraints after prompt refinement. Anonymous portrait uploads are resolved by `(BannerDesign.Id, IpAddress)`, Generate is disabled while an upload is pending, and a requested-but-missing portrait now fails/refunds rather than silently falling back to text-to-image.
+- **BANNERSH-127 (historical):** `OpenAiImageService` supported DB-first image model/quality overrides. It is no longer the registered image provider; those two settings were removed.
+- No Replicate upscaling runs on the customer pipeline — `NoopUpscalingService` returns input unchanged. `IPhotoCompositor` remains a stub because portraits are passed to the image providers.
 - **BANNERSH-287: `moderation_block` and quota errors.** `OpenAiImageService.ReadOrThrowAsync` detects two OpenAI failure codes and stores a distinguishable sentinel in `DesignRequest.LastError`: `429 insufficient_quota` → `"openai_quota_exceeded"` (billing quota exhausted — check https://platform.openai.com/settings/organization/billing/overview, not something visible anywhere in our own DB/admin panel), and `400 moderation_block` → `"moderation_block: <OpenAI's own error.message>"`. Before BANNERSH-287 the moderation sentinel was the bare literal `"moderation_block"` with the real reason discarded, and the frontend *always* showed a hardcoded "this looks like a copyrighted character" explanation — misleading when the actual trigger was something else (most plausibly here: the uploaded portrait being flagged for depicting a real, identifiable person during `/v1/images/edits`). The admin design-request detail page shows `LastError` verbatim, so the real OpenAI reason is now visible there for diagnosis; customer-facing copy in `BannerBuilderStep3.vue` / `BannerGenerationInlineArea.vue` stays generic (mentions both copyright AND the uploaded photo as possible causes) and matches via `.startsWith('moderation_block')`, not exact equality.
 - **BANNERSH-57: Real-ESRGAN 4x upscaler** (`Services/DesignRequests/Replicate/RealEsrganUpscalingService.cs`) calls Replicate `nightmareai/real-esrgan`. Registered only when `Replicate:ApiToken` is set; injected into `AdminDesignRequestService` as a constructor-optional dependency. Triggered via `POST /api/admin/design-requests/{id}/upscale?scale=4` — writes a new file alongside the original and repoints `FinalCroppedStoragePath`. The customer-facing `IUpscalingService` DI registration stays `NoopUpscalingService` (this is order-backend only).
 - **BANNERSH-61 / BANNERSH-291: prompt refinement.** `IPromptRefinementService` sits between `BannerPromptService.BuildPrompt` and `IAiImageService.GenerateAsync`. The registered `ClaudeCliPromptRefinementService` invokes `claude -p` statelessly with tools disabled, using `system_settings.claude_code_oauth_token` (or `CLAUDE_CODE_OAUTH_TOKEN` when the DB setting is blank). Its main instruction and all eight category directions are seeded `claude_flux_*` settings editable under `/admin/settings`; missing rows fall back to the same built-in defaults. Refiner failures never block generation and return the deterministic base prompt.
@@ -412,10 +412,9 @@ Notes:
 
 ## API keys: DB-only (BANNERSH-161)
 All secret API keys live in `system_settings` and are set via `/admin/settings`. **There is no appsettings fallback.** Affected rows:
-- `fal_api_key` → consumed by `FalAiImageService` for FLUX.2 Pro image generation
 - `openai_api_key` → consumed by `OpenAiPromptRefinementService`; refinement is silently skipped → base prompt if the key is blank
 - `stripe_secret_key`, `stripe_webhook_secret`, `stripe_publishable_key` → consumed by `StripePaymentService` and `ConfigController` (frontend pulls publishable via `GET /api/config/stripe`)
 
-Non-secret tuning (`Fal:ModelId`, `Fal:BaseUrl`, `OpenAi:ChatModel`, `OpenAi:BaseUrl`, `Stripe:Currency`, etc.) **stays in appsettings**.
+Non-secret tuning (`OpenAi:ChatModel`, `OpenAi:BaseUrl`, `Stripe:Currency`, etc.) **stays in appsettings**.
 
 Heads-up: when adding a new SystemSettings migration with only seed data, EF won't generate the `.Designer.cs` automatically if you wrote the `.cs` by hand. Always use `dotnet ef migrations add <Name>` (see CLAUDE.md migrations section) — running `dotnet ef migrations list` will reveal a missing migration if the Designer.cs is absent.

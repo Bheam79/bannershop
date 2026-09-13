@@ -70,7 +70,7 @@ public sealed class DesignRequestService : IDesignRequestService
 
         // Resolve the uploaded portrait for both authenticated and anonymous callers.
         // BannerBuilderController deliberately allows anonymous uploads and records
-        // their IP address, so dropping the design id here meant the subsequent fal.ai
+        // their IP address, so dropping the design id here meant the subsequent image-generation
         // request used text-to-image instead of /edit even though the wizard showed the
         // customer a portrait preview.
         string? uploadedPhotoPath = null;

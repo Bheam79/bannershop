@@ -305,12 +305,6 @@ onMounted(load)
       <h2 class="text-gray-200 font-semibold mb-2">Hjelp</h2>
       <ul class="space-y-1.5 list-disc list-inside">
         <li>
-          <strong class="text-gray-300">fal_api_key</strong>: Nøkkel fra
-          <a href="https://fal.ai/dashboard/keys" target="_blank" class="text-blue-400 hover:underline">
-            fal.ai/dashboard/keys
-          </a>. Brukes til bildegenerering med <code class="bg-gray-800 px-1 rounded">fal-ai/flux-2-pro</code>.
-        </li>
-        <li>
           <strong class="text-gray-300">claude_code_oauth_token</strong>: Bruk «Koble til Claude» for
           OAuth med automatisk tokenfornyelse. Alternativt kan et langlivet token fra
           <code class="bg-gray-800 px-1 rounded">claude setup-token</code> lagres manuelt, eller settes som
