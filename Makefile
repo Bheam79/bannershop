@@ -2,7 +2,8 @@
 # BannerShop — production Makefile
 #
 # Goal: a single `make up` on a Linux host with `docker`, `dotnet`, `npm` and
-# the Claude CLI in PATH stands the whole stack up — no manual config required. Secrets
+# the Claude CLI in PATH stands the whole stack up. Codex and Grok are installed
+# automatically in a user-local npm prefix (no sudo). Secrets
 # (DB password, JWT key, admin password) are generated on first run and
 # persisted under $HOME/.local/share/bannershop/secrets/.
 #
@@ -81,7 +82,13 @@ SECRETS_DIR   := $(PROD_BASE)/secrets
 UNIT_DIR      := $(HOME)/.config/systemd/user
 UNIT_FILE     := $(UNIT_DIR)/$(SERVICE_NAME).service
 
+# Dedicated, pinned image-provider CLIs; never modify system-wide installations.
+IMAGE_CLI_PREFIX ?= $(PROD_BASE)/cli
+CODEX_VERSION    ?= 0.154.0
+GROK_VERSION     ?= 1.0.30
+
 DOTNET        := $(shell command -v dotnet 2>/dev/null)
+NODE          := $(shell command -v node 2>/dev/null)
 NPM           := $(shell command -v npm 2>/dev/null)
 DOCKER        := $(shell command -v docker 2>/dev/null)
 CLAUDE        := $(shell command -v claude 2>/dev/null)
@@ -89,7 +96,7 @@ CLAUDE        := $(shell command -v claude 2>/dev/null)
 # ─────────────────────────────────────────────────────────────────────────────
 .PHONY: help up down restart status logs build publish frontend config secrets \
         db-up db-down db-shell db-users install-service stop-service start-service uninstall \
-        check-tools print-admin-password \
+        check-tools install-image-clis print-admin-password \
         test test-coverage e2e-coverage
 
 help:
@@ -101,6 +108,7 @@ help:
 	@echo "  restart     Restart only the systemd user service"
 	@echo "  status      Show service and container status"
 	@echo "  logs        Tail service logs (Ctrl-C to exit)"
+	@echo "  install-image-clis   Install pinned Codex/Grok CLIs (no login required)"
 	@echo "  build       Rebuild frontend + backend, write Production config"
 	@echo "  uninstall   Disable & remove the systemd unit (keeps data/secrets/db)"
 	@echo "  print-admin-password   Show the generated admin password"
@@ -114,7 +122,7 @@ help:
 	@echo "Layout under $(PROD_BASE)"
 
 # ── Top-level orchestration ──────────────────────────────────────────────────
-up: check-tools secrets db-up build install-service
+up: check-tools install-image-clis secrets db-up build install-service
 	@echo ""
 	@echo "==================================================================="
 	@echo "  BannerShop is up at  http://localhost:$(BACKEND_PORT)"
@@ -150,6 +158,11 @@ check-tools:
 	@if [ -z "$(CLAUDE)" ]; then echo "ERROR: 'claude' CLI not found in PATH (required for AI prompt refinement)" >&2; exit 1; fi
 	@command -v systemctl >/dev/null || { echo "ERROR: 'systemctl' not found in PATH" >&2; exit 1; }
 	@command -v openssl   >/dev/null || { echo "ERROR: 'openssl' not found in PATH"   >&2; exit 1; }
+
+# This also runs for build/install-service so generated executable paths exist.
+install-image-clis:
+	@NPM="$(NPM)" NODE="$(NODE)" bash "$(ROOT_DIR)/scripts/install-image-clis.sh" \
+		"$(IMAGE_CLI_PREFIX)" "$(CODEX_VERSION)" "$(GROK_VERSION)"
 
 # ── Secrets ──────────────────────────────────────────────────────────────────
 # Generates strong random secrets on first run. Idempotent: existing files
@@ -252,7 +265,7 @@ publish: frontend
 # ── Production appsettings ───────────────────────────────────────────────────
 # Written next to BannerShop.Api.dll. ASP.NET picks it up because the service
 # unit sets ASPNETCORE_ENVIRONMENT=Production.
-config: secrets publish
+config: install-image-clis secrets publish
 	@echo ">>> Writing $(APP_DIR)/appsettings.Production.json"
 	@JWT_SECRET=$$(cat $(SECRETS_DIR)/jwt_secret); \
 	 DB_PASSWORD=$$(cat $(SECRETS_DIR)/db_password); \
@@ -307,6 +320,10 @@ config: secrets publish
 	'    "BaseUrl": "https://api.openai.com",' \
 	'    "TimeoutSeconds": 180' \
 	'  },' \
+	'  "ImageCli": {' \
+	'    "CodexExecutable": "$(IMAGE_CLI_PREFIX)/bin/codex",' \
+	'    "GrokExecutable": "$(IMAGE_CLI_PREFIX)/bin/grok"' \
+	'  },' \
 	'  "ClaudeCli": {' \
 	'    "ExecutablePath": "$(CLAUDE)",' \
 	'    "Model": "sonnet",' \
@@ -356,6 +373,7 @@ install-service: build
 	'Environment=ASPNETCORE_ENVIRONMENT=Production' \
 	'Environment=ASPNETCORE_URLS=$(ASPNET_URLS)' \
 	'Environment=DOTNET_NOLOGO=1' \
+	'Environment="PATH=$(IMAGE_CLI_PREFIX)/bin:$(dir $(NODE)):$(dir $(CLAUDE)):/usr/local/bin:/usr/bin:/bin"' \
 	'ExecStart=$(DOTNET) $(APP_DIR)/BannerShop.Api.dll' \
 	'Restart=always' \
 	'RestartSec=3' \

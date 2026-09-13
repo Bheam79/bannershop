@@ -247,7 +247,14 @@ DB rows; child processes use private temporary homes with no inherited API keys
 or service credentials. Verified CLI versions: Codex 0.154.0 and Grok 1.0.30.
 `grok login --device-auth` works; adding `--oauth` fails because those flags conflict.
 Executable paths are configurable via `ImageCli:CodexExecutable` / `GrokExecutable`.
-The server needs these CLIs installed and accounts with native image access.
+`make up` (also `make build` / `make install-image-clis`) installs pinned
+Codex 0.154.0 and Grok 1.0.30 npm packages under
+`$HOME/.local/share/bannershop/cli`, reusing matching installations without npm
+network calls. Requires Node 20+; never uses sudo or changes global CLI copies.
+Override `CODEX_VERSION`, `GROK_VERSION`, or `IMAGE_CLI_PREFIX` via make variables.
+Production config uses absolute executable paths; the systemd unit includes the
+installer's Node directory in PATH so npm shims also work with nvm. Installation
+does not log in: connect accounts with native image access in `/admin/settings`.
 BANNERSH-298 removed the fal.ai implementation, config, and credential row.
 The `claude_flux_*` setting keys remain for compatibility with saved admin prompts;
 new defaults are provider-neutral and the removal migration preserves custom text.
