@@ -71,7 +71,7 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
 
   /** Switch the active generation to a previously-completed one. Free — no credit consumed. */
   async function selectGeneration(gen: BannerGenerationHistoryItem) {
-    if (!designRequestId.value || gen.isActive) return
+    if (!designRequestId.value || gen.isActive || approving.value || regenerating.value) return
     if (activatingGenerationId.value !== null) return
     activatingGenerationId.value = gen.id
     activateGenerationError.value = null
@@ -191,6 +191,7 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
 
   // ── Approve ────────────────────────────────────────────────────────────────
   async function approve() {
+    if (activatingGenerationId.value !== null) return
     if (!designRequestId.value || approving.value) return
     approveError.value = null
     approving.value = true

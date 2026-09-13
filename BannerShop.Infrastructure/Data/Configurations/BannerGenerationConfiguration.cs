@@ -10,6 +10,7 @@ public class BannerGenerationConfiguration : IEntityTypeConfiguration<BannerGene
     public void Configure(EntityTypeBuilder<BannerGeneration> e)
     {
         e.HasKey(x => x.Id);
+        e.Property(x => x.Provider).HasMaxLength(30);
         e.Property(x => x.StoragePath).HasMaxLength(500);
         e.Property(x => x.CroppedStoragePath).HasMaxLength(500);
         e.Property(x => x.PreviewPath).HasMaxLength(500);

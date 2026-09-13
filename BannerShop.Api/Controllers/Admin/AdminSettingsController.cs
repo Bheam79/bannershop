@@ -50,6 +50,9 @@ public class AdminSettingsController : ControllerBase
     [HttpPut("{key}")]
     public async Task<IActionResult> Update(string key, [FromBody] UpdateSettingRequest req, CancellationToken ct)
     {
+        if (key is "codex_image_cli_credentials" or "grok_image_cli_credentials")
+            return BadRequest(new { error = "Use the image provider OAuth connection controls." });
+
         if (req.Value is null)
             return BadRequest(new { error = "Value is required." });
 

@@ -12,6 +12,8 @@ public class BannerGeneration
 {
     public int Id { get; set; }
 
+    public string? Provider { get; set; }
+
     public int DesignRequestId { get; set; }
 
     /// <summary>Relative storage path of the raw AI-generated PNG (uncropped 4K source).</summary>

@@ -233,6 +233,25 @@ Per-item display (BANNERSH-249):
 - Banner cost is resolved server-side from the chosen `AspectRatio` (`18:9` → 300×150 standard size; `16:9` → 266×150 via custom-width size). Mirrored on the frontend in `ManualBannerBuilderView.pickBannerSize` — keep the two in sync. If no `BannerSize` matches (e.g. catalog not seeded in tests), the service logs and degrades to design-fee-only pricing rather than crashing.
 - `CreateDesignRequestResponseDto` now also returns `designPriceNok` + `bannerPriceNok` so the wizard's summary panel renders the line items without recomputing.
 
+## Parallel image generation (BANNERSH-297)
+`IAiImageService` now resolves to `ParallelCliImageService`: Codex and Grok native
+image tools run concurrently, with independent timeouts (`ImageCli:TimeoutSeconds`,
+default 360). One credit buys the pair; if neither yields a valid banner, the
+charge/free attempt is refunded. Results are separate `BannerGeneration` rows
+(`Provider` column, `AddImageGenerationProvider` migration); the existing activate
+endpoint synchronizes preview and print paths when the customer chooses.
+
+Connect both accounts under `/admin/settings`. Device login and refresh use each
+provider's CLI and store complete auth JSON in masked `*_image_cli_credentials`
+DB rows; child processes use private temporary homes with no inherited API keys
+or service credentials. Verified CLI versions: Codex 0.154.0 and Grok 1.0.30.
+`grok login --device-auth` works; adding `--oauth` fails because those flags conflict.
+Executable paths are configurable via `ImageCli:CodexExecutable` / `GrokExecutable`.
+The server needs these CLIs installed and accounts with native image access.
+No fal.ai fallback is registered. Earlier fal.ai notes below describe the previous
+provider. Copyright-alternative instructions are appended after prompt refinement
+and also included in the CLI instruction, including for existing admin prompts.
+
 ## AI design requests (BANNERSH-19)
 - `DesignRequest` + `DesignRequestRevision` entities + `AddDesignRequests` migration ship with this task (BANNERSH-26 is the consolidated foundation task — was still TODO when this was done, so the entities were added here).
 - Stripe webhook (`payment_intent.succeeded`) calls BOTH `OrderService.MarkPaidAsync` and `DesignRequestService.MarkPaidAndEnqueueAsync` — the latter looks up by PaymentIntentId, ignores misses, and enqueues a job. Design-request PaymentIntents use `orderId = -designRequestId` metadata so order-lookups by id won't accidentally hit them.

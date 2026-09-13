@@ -738,6 +738,7 @@ public sealed class DesignRequestService : IDesignRequestService
         foreach (var g in r.Generations)
             g.IsActive = g.Id == target.Id;
 
+        r.AiPreviewPath = target.PreviewPath;
         r.AiResultStoragePath = target.StoragePath;
         r.FinalCroppedStoragePath = target.CroppedStoragePath ?? target.StoragePath;
         r.CurrentGenerationId = target.Id;
@@ -962,6 +963,7 @@ public sealed class DesignRequestService : IDesignRequestService
                     Id = g.Id,
                     Status = g.Status.ToString(),
                     IsActive = g.IsActive,
+                    Provider = g.Provider,
                     CreatedAt = g.CreatedAt,
                     CompletedAt = g.CompletedAt,
                     // Prefer the per-generation low-res JPEG preview (populated since BANNERSH-217)

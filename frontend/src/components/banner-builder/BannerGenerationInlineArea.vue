@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BannerImageChoices from './BannerImageChoices.vue'
 import { RouterLink } from 'vue-router'
 import type { DesignRequestDetail, BannerGenerationHistoryItem } from '@/api/designRequests'
 import type { GenPhase } from '@/composables/banner-builder/useBannerGeneration'
@@ -140,34 +141,10 @@ function formatGenTime(iso: string | null | undefined): string {
 
     <!-- Phase: ready — show the generated image (or "Ditt banner" placeholder in manual mode) -->
     <template v-else-if="genPhase === 'ready' && currentDesignRequest">
-      <!-- Generation history thumbnails — shown when there are ≥2 completed AI generations -->
-      <div
-        v-if="!isManual && hasGenerationHistory"
-        style="display:flex;gap:8px;overflow-x:auto;padding:10px 12px;background:rgba(0,0,0,.04);border-radius:10px;margin-bottom:8px"
-      >
-        <button
-          v-for="gen in completedGenerations"
-          :key="gen.id"
-          type="button"
-          class="gen-thumb"
-          :class="{ 'gen-thumb--active': gen.isActive }"
-          :disabled="activatingGenerationId === gen.id || gen.isActive"
-          :title="`Versjon ${formatGenTime(gen.completedAt)}`"
-          @click="emit('selectGeneration', gen)"
-        >
-          <span class="gen-thumb__img-wrap">
-            <img v-if="gen.previewUrl" :src="gen.previewUrl" />
-            <span v-else class="gen-thumb__placeholder">?</span>
-            <span v-if="activatingGenerationId === gen.id" class="gen-thumb__spinner">
-              <i class="fa-solid fa-circle-notch fa-spin"></i>
-            </span>
-            <span v-else-if="gen.isActive" class="gen-thumb__check">
-              <i class="fa-solid fa-check"></i>
-            </span>
-          </span>
-          <span class="gen-thumb__time">{{ formatGenTime(gen.completedAt) }}</span>
-        </button>
-      </div>
+    <BannerImageChoices v-if="!isManual && hasGenerationHistory"
+      :generations="completedGenerations" :activating-generation-id="activatingGenerationId"
+      :locked="approving || currentDesignRequest.status !== 'AwaitingApproval'"
+      @select="emit('selectGeneration', $event)" />
       <p
         v-if="activateGenerationError && !isManual"
         style="color:#ef4444;font-size:13px;margin:0 0 6px"
@@ -235,7 +212,7 @@ function formatGenTime(iso: string | null | undefined): string {
           <i class="fa-solid fa-palette"></i> Velg manuell design
         </button>
       </template>
-      <p v-else-if="['openai_quota_exceeded', 'fal_quota_exceeded'].includes(currentDesignRequest?.lastError ?? '')" style="font-size:13.5px;color:var(--muted);text-align:center;max-width:26em">
+      <p v-else-if="['openai_quota_exceeded', 'fal_quota_exceeded', 'image_providers_failed'].includes(currentDesignRequest?.lastError ?? '')" style="font-size:13.5px;color:var(--muted);text-align:center;max-width:26em">
         AI-genereringen er midlertidig utilgjengelig. Vi jobber med å løse dette — prøv igjen om litt, eller kontakt support.
       </p>
       <p v-else style="font-size:13.5px;color:var(--muted);text-align:center;max-width:26em">
@@ -280,10 +257,10 @@ function formatGenTime(iso: string | null | undefined): string {
         type="button"
         class="btn"
         style="width:100%;justify-content:center;padding:14px;font-size:16px;border-radius:12px;background:#3a9d7e;color:#fff"
-        :disabled="isManual ? (manualSubmitting || !step2Valid) : approving"
+        :disabled="isManual ? (manualSubmitting || !step2Valid) : (approving || activatingGenerationId !== null)"
         @click="emit('proceed')"
       >
-        <i v-if="isManual ? manualSubmitting : approving" class="fa-solid fa-circle-notch fa-spin"></i>
+        <i v-if="isManual ? manualSubmitting : (approving || activatingGenerationId !== null)" class="fa-solid fa-circle-notch fa-spin"></i>
         <i v-else class="fa-solid fa-arrow-right"></i>
         <template v-if="isManual">{{ manualSubmitting ? 'Behandler…' : 'Gå videre' }}</template>
         <template v-else>{{ approving ? 'Behandler…' : 'Gå videre' }}</template>

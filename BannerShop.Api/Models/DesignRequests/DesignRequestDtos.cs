@@ -265,6 +265,7 @@ public class DesignRequestDetailDto
 /// </summary>
 public class BannerGenerationHistoryItemDto
 {
+    public string? Provider { get; set; }
     public int Id { get; set; }
     public string Status { get; set; } = string.Empty;
     public bool IsActive { get; set; }

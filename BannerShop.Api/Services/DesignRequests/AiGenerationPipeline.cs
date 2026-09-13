@@ -191,59 +191,101 @@ public sealed class AiGenerationPipeline
             _log.LogInformation(
                 "Pipeline: generating image for DesignRequest {Id} (generation {GenId}) using {AiServiceType}",
                 designRequestId, generation.Id, _ai.GetType().FullName);
-            var generated = await _ai.GenerateAsync(
-                new AiImageRequest(prompt, request.AspectRatio, referenceAbs), ct);
+            var imageRequest = new AiImageRequest(prompt, request.AspectRatio, referenceAbs);
+            IReadOnlyList<AiImageResult> candidates = _ai is IMultiCandidateImageService multi
+                ? await multi.GenerateCandidatesAsync(imageRequest, ct)
+                : [await _ai.GenerateAsync(imageRequest, ct)];
 
-            // 4. Upscale (noop in v1)
-            var upscaledAbs = await _upscaler.UpscaleAsync(generated.AbsolutePath, scale: 4, ct);
-
-            // 5. Persist raw AI output to permanent storage.
-            // UserId is null for anonymous (BANNERSH-67) — use bucket "0" in that case.
-            var storageUserId = request.UserId ?? 0;
-            var userDir = _storage.EnsureUserDirectory(storageUserId);
-            var resultFileName = $"design_{request.Id}_{DateTime.UtcNow:yyyyMMddHHmmss}.png";
-            var resultAbs = Path.Combine(userDir, resultFileName);
-            File.Copy(upscaledAbs, resultAbs, overwrite: true);
-            var resultRelative = BannerFileStorage.RelativePathFor(storageUserId, resultFileName);
-
-            // Best-effort cleanup of temp files.
-            TryDelete(generated.AbsolutePath);
-            if (!string.Equals(upscaledAbs, generated.AbsolutePath, StringComparison.Ordinal))
-                TryDelete(upscaledAbs);
-
-            // 6. Crop to the customer's aspect ratio (only needed for 18:9).
-            string finalRelative = resultRelative;
-            string finalAbs = resultAbs;
-            if (request.AspectRatio == "18:9")
+            var completed = new List<BannerGeneration>();
+            try
             {
-                var croppedFileName = $"design_{request.Id}_{DateTime.UtcNow:yyyyMMddHHmmss}_crop.png";
-                var croppedAbs = Path.Combine(userDir, croppedFileName);
-                await _images.CenterCropAsync(resultAbs, croppedAbs, ratioWidth: 2, ratioHeight: 1, ct);
-                finalRelative = BannerFileStorage.RelativePathFor(storageUserId, croppedFileName);
-                finalAbs = croppedAbs;
+                foreach (var generated in candidates)
+                {
+                    var candidateGeneration = generated == candidates[0] ? generation : new BannerGeneration
+                    {
+                        DesignRequestId = request.Id,
+                        CreatedAt = generation.CreatedAt,
+                        Status = BannerGenerationStatus.Processing
+                    };
+                    if (candidateGeneration != generation)
+                    {
+                        _db.BannerGenerations.Add(candidateGeneration);
+                        await _db.SaveChangesAsync(ct);
+                    }
+                    candidateGeneration.Provider = generated.Provider;
+                    try
+                    {
+                        // 4. Upscale (noop in v1)
+                        var upscaledAbs = await _upscaler.UpscaleAsync(generated.AbsolutePath, scale: 4, ct);
+
+                        // 5. Persist raw AI output to permanent storage.
+                        // UserId is null for anonymous (BANNERSH-67) — use bucket "0" in that case.
+                        var storageUserId = request.UserId ?? 0;
+                        var userDir = _storage.EnsureUserDirectory(storageUserId);
+                        var resultFileName = $"design_{request.Id}_{candidateGeneration.Id}.png";
+                        var resultAbs = Path.Combine(userDir, resultFileName);
+                        File.Copy(upscaledAbs, resultAbs, overwrite: true);
+                        var resultRelative = BannerFileStorage.RelativePathFor(storageUserId, resultFileName);
+
+                        // Best-effort cleanup of temp files.
+                        TryDelete(generated.AbsolutePath);
+                        if (!string.Equals(upscaledAbs, generated.AbsolutePath, StringComparison.Ordinal))
+                            TryDelete(upscaledAbs);
+
+                        // 6. Crop to the customer's aspect ratio (only needed for 18:9).
+                        string finalRelative = resultRelative;
+                        string finalAbs = resultAbs;
+                        if (request.AspectRatio == "18:9")
+                        {
+                            var croppedFileName = $"design_{request.Id}_{candidateGeneration.Id}_crop.png";
+                            var croppedAbs = Path.Combine(userDir, croppedFileName);
+                            await _images.CenterCropAsync(resultAbs, croppedAbs, ratioWidth: 2, ratioHeight: 1, ct);
+                            finalRelative = BannerFileStorage.RelativePathFor(storageUserId, croppedFileName);
+                            finalAbs = croppedAbs;
+                        }
+
+                        // 6b. Generate a low-res JPEG preview (max 640 px on the longer side — BANNERSH-91).
+                        // This is what customers see; the full-res finalRelative is reserved for printing.
+                        const int PreviewMaxPx = 640;
+                        const int PreviewQuality = 72;
+                        var previewFileName = $"design_{request.Id}_{candidateGeneration.Id}_preview.jpg";
+                        var previewAbs = Path.Combine(userDir, previewFileName);
+                        await _images.GeneratePreviewAsync(finalAbs, previewAbs,
+                            rotationDegrees: 0, maxWidth: PreviewMaxPx, quality: PreviewQuality, ct);
+                        var previewRelative = BannerFileStorage.RelativePathFor(storageUserId, previewFileName);
+
+                        // 7. Persist results: update BannerGeneration and DesignRequest.
+                        candidateGeneration.StoragePath = resultRelative;
+                        candidateGeneration.CroppedStoragePath = finalRelative;
+                        candidateGeneration.PreviewPath = previewRelative;   // per-generation low-res preview for history strip
+                        candidateGeneration.Status = BannerGenerationStatus.Completed;
+                        candidateGeneration.ErrorMessage = null;
+                        candidateGeneration.CompletedAt = DateTime.UtcNow;
+
+                        completed.Add(candidateGeneration);
+                    }
+                    catch (Exception candidateError) when (!ct.IsCancellationRequested)
+                    {
+                        candidateGeneration.Status = BannerGenerationStatus.Failed;
+                        candidateGeneration.ErrorMessage = "image_processing_failed";
+                        candidateGeneration.IsActive = false;
+                        candidateGeneration.CompletedAt = DateTime.UtcNow;
+                        _log.LogWarning(candidateError, "Could not process candidate from {Provider}", generated.Provider);
+                    }
+                    finally { TryDelete(generated.AbsolutePath); }
+                }
             }
-
-            // 6b. Generate a low-res JPEG preview (max 640 px on the longer side — BANNERSH-91).
-            // This is what customers see; the full-res finalRelative is reserved for printing.
-            const int PreviewMaxPx = 640;
-            const int PreviewQuality = 72;
-            var previewFileName = $"design_{request.Id}_{DateTime.UtcNow:yyyyMMddHHmmss}_preview.jpg";
-            var previewAbs = Path.Combine(userDir, previewFileName);
-            await _images.GeneratePreviewAsync(finalAbs, previewAbs,
-                rotationDegrees: 0, maxWidth: PreviewMaxPx, quality: PreviewQuality, ct);
-            var previewRelative = BannerFileStorage.RelativePathFor(storageUserId, previewFileName);
-
-            // 7. Persist results: update BannerGeneration and DesignRequest.
-            generation.StoragePath = resultRelative;
-            generation.CroppedStoragePath = finalRelative;
-            generation.PreviewPath = previewRelative;   // per-generation low-res preview for history strip
-            generation.Status = BannerGenerationStatus.Completed;
-            generation.CompletedAt = DateTime.UtcNow;
-
+            finally
+            {
+                foreach (var candidate in candidates) TryDelete(candidate.AbsolutePath);
+            }
+            if (completed.Count == 0) throw new InvalidOperationException("image_providers_failed");
+            generation = completed[0];
+            foreach (var result in completed) result.IsActive = result == generation;
             // Keep backward-compat fields on DesignRequest populated for existing callers.
-            request.AiResultStoragePath = resultRelative;
-            request.FinalCroppedStoragePath = finalRelative;
-            request.AiPreviewPath = previewRelative;
+            request.AiResultStoragePath = generation.StoragePath;
+            request.FinalCroppedStoragePath = generation.CroppedStoragePath;
+            request.AiPreviewPath = generation.PreviewPath;
             request.CurrentGenerationId = generation.Id;
             request.Status = DesignRequestStatus.AwaitingApproval;
             request.LastError = null;
@@ -266,7 +308,7 @@ public sealed class AiGenerationPipeline
             await _db.SaveChangesAsync(ct);
 
             _log.LogInformation("Pipeline: DesignRequest {Id} -> AwaitingApproval (gen={GenId}, path={Path})",
-                request.Id, generation.Id, finalRelative);
+                request.Id, generation.Id, generation.CroppedStoragePath);
         }
         catch (Exception ex)
         {
@@ -283,7 +325,8 @@ public sealed class AiGenerationPipeline
             // the customer's control. Refund whatever was charged rather than keeping
             // a credit/free try for a generation they never received.
             var refundableFailure =
-                ex.Message.StartsWith("moderation_block", StringComparison.OrdinalIgnoreCase)
+                ex.Message == "image_providers_failed"
+                || ex.Message.StartsWith("moderation_block", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(
                     ex.Message, "portrait_reference_missing", StringComparison.OrdinalIgnoreCase);
             if (refundableFailure
@@ -312,7 +355,7 @@ public sealed class AiGenerationPipeline
         DesignRequest request,
         bool hasPortrait)
     {
-        var constraints = new List<string>();
+        var constraints = new List<string> { ImageCopyrightInstruction.Text };
         if (hasPortrait)
         {
             constraints.Add(

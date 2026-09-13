@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
 import apiClient from '@/api/client'
+import ImageCliConnections from '@/components/admin/ImageCliConnections.vue'
 
 interface SystemSetting {
   id: number
@@ -34,6 +35,8 @@ const claudeOAuthPending = ref(false)
 const claudeOAuthBusy = ref(false)
 const claudeOAuthError = ref('')
 const managedClaudeKeys = new Set([
+  'codex_image_cli_credentials',
+  'grok_image_cli_credentials',
   'claude_code_oauth_refresh_token',
   'claude_code_oauth_expires_at',
 ])
@@ -158,6 +161,7 @@ onMounted(load)
     <p v-else-if="error" class="text-red-400">{{ error }}</p>
 
     <div v-else class="space-y-4">
+      <ImageCliConnections />
       <div
         v-for="s in visibleSettings"
         :key="s.key"

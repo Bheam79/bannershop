@@ -10,7 +10,7 @@ public record AiImageRequest(
     string? ReferenceImagePath    // absolute path to an uploaded portrait, optional
 );
 
-public record AiImageResult(string AbsolutePath, int WidthPx, int HeightPx);
+public record AiImageResult(string AbsolutePath, int WidthPx, int HeightPx, string? Provider = null);
 
 /// <summary>
 /// Provider-agnostic AI image generator. Lives behind an interface so the
@@ -23,4 +23,10 @@ public interface IAiImageService
     /// raw output — caller is responsible for cropping/post-processing.
     /// </summary>
     Task<AiImageResult> GenerateAsync(AiImageRequest request, CancellationToken ct);
+
+}
+
+public interface IMultiCandidateImageService : IAiImageService
+{
+    Task<IReadOnlyList<AiImageResult>> GenerateCandidatesAsync(AiImageRequest request, CancellationToken ct);
 }

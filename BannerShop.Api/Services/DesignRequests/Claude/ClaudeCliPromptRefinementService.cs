@@ -104,7 +104,7 @@ public sealed class ClaudeCliPromptRefinementService : IPromptRefinementService
         try
         {
             var refined = await _runner.RunAsync(
-                mainPrompt,
+                mainPrompt + "\n" + ImageCopyrightInstruction.Text,
                 BuildUserPrompt(input, categoryPrompt),
                 token,
                 ct);

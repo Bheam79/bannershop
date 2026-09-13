@@ -146,9 +146,10 @@ builder.Services.Configure<OpenAiOptions>(builder.Configuration.GetSection(OpenA
 builder.Services.Configure<FalOptions>(builder.Configuration.GetSection(FalOptions.SectionName));
 builder.Services.Configure<ClaudeCliOptions>(builder.Configuration.GetSection(ClaudeCliOptions.SectionName));
 
-// BANNERSH-289: FLUX.2 [pro] on fal.ai generates banner images. The fal key is
-// resolved from system_settings on each call so admin edits require no restart.
-builder.Services.AddHttpClient<IAiImageService, FalAiImageService>();
+// BANNERSH-297: native Codex + Grok image tools run concurrently with isolated OAuth homes.
+builder.Services.Configure<BannerShop.Api.Services.DesignRequests.Cli.ImageCliOptions>(builder.Configuration.GetSection("ImageCli"));
+builder.Services.AddSingleton<BannerShop.Api.Services.DesignRequests.Cli.ImageCliRuntime>();
+builder.Services.AddScoped<IAiImageService, BannerShop.Api.Services.DesignRequests.Cli.ParallelCliImageService>();
 // BANNERSH-291: Claude Code expands the customer details into the vivid,
 // composition-heavy prompt FLUX.2 Pro needs. It is stateless and tool-free;
 // failures fall back to BannerPromptService's deterministic prompt.

@@ -112,6 +112,7 @@ export interface DesignRequestListItem {
 
 /** One entry in the generation history of a design request (BANNERSH-84). */
 export interface BannerGenerationHistoryItem {
+  provider?: string | null
   id: number
   status: string
   isActive: boolean
