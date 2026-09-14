@@ -131,6 +131,33 @@ dotnet-ef database update \
 | `CLAUDE_CODE_OAUTH_TOKEN` | Optional first-install fallback for Claude CLI prompt refinement; the admin DB setting takes precedence |
 | `VITE_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (frontend `.env`) |
 
+## Production image CLI installation
+
+`make up` checks/installs pinned Codex and Grok CLIs **before** checking the
+remaining application tools. The log always includes
+`>>> Checking/installing Codex ... and Grok ... CLIs`, followed by the installer
+path, installation directory, and each executable's version. An existing matching
+installation prints `Keeping ... (already installed; no npm download needed)`.
+Installation or executable verification failures stop startup.
+
+These are private application copies, not global commands: `command -v codex`
+or `command -v grok` in your shell need not find them. Verify them directly with:
+
+```bash
+"$HOME/.local/share/bannershop/cli/bin/codex" --version
+"$HOME/.local/share/bannershop/cli/bin/grok" --version
+# Install/check only the CLIs, without starting Docker or the application:
+make install-image-clis
+```
+
+The service gets their absolute paths automatically. CLI installation does not
+log in; connect both accounts in `/admin/settings`. Node 20+ and npm are required.
+`IMAGE_CLI_PREFIX`, `CODEX_VERSION`, and `GROK_VERSION` can be overridden as make
+variables. If the checking/installing line is absent, confirm you are running
+`make up` in the updated checkout (`pwd`, `git log -1 --oneline`, and
+`grep -n 'Checking/installing' Makefile`); include the full output when reporting
+an error, including any lines before the frontend build.
+
 ## Production admin and database access
 
 Run these commands from the repository directory on the production host, as

@@ -22,14 +22,17 @@ install_cli() {
     fi
     if [[ "$installed" != "$version" || ! -x "$prefix/bin/$executable" ]]; then
         echo ">>> Installing $package@$version under $prefix..."
-        "$npm" install --global --prefix "$prefix" --include=optional --engine-strict \
+        # Grok's postinstall writes a binary and config under GROK_HOME, even
+        # with --prefix. Keep those writes away from the operator's ~/.grok.
+        GROK_HOME="$prefix/grok-install" "$npm" install --global --prefix "$prefix" --include=optional --engine-strict \
             --no-audit --no-fund "$package@$version" || {
             echo "ERROR: Could not install $executable; check npm registry access and permissions for $prefix" >&2
             exit 1
         }
     else
-        echo ">>> Keeping $executable $version (already installed)."
+        echo ">>> Keeping $executable $version (already installed; no npm download needed)."
     fi
+    echo ">>> Verifying $prefix/bin/$executable"
     "$prefix/bin/$executable" --version || {
         echo "ERROR: $prefix/bin/$executable cannot run on this host" >&2
         exit 1

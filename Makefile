@@ -151,7 +151,9 @@ print-admin-password:
 		|| { echo "No admin password generated yet — run 'make up' first" >&2; exit 1; }
 
 # ── Tool sanity check ────────────────────────────────────────────────────────
-check-tools:
+# Install image providers before checking unrelated application tools. Otherwise
+# a missing docker/Claude command aborts `make up` without any CLI setup output.
+check-tools: install-image-clis
 	@if [ -z "$(DOTNET)" ]; then echo "ERROR: 'dotnet' not found in PATH" >&2; exit 1; fi
 	@if [ -z "$(NPM)" ];    then echo "ERROR: 'npm' not found in PATH"    >&2; exit 1; fi
 	@if [ -z "$(DOCKER)" ]; then echo "ERROR: 'docker' not found in PATH" >&2; exit 1; fi
@@ -161,6 +163,9 @@ check-tools:
 
 # This also runs for build/install-service so generated executable paths exist.
 install-image-clis:
+	@echo ">>> Checking/installing Codex $(CODEX_VERSION) and Grok $(GROK_VERSION) CLIs"
+	@echo ">>> Installer: $(ROOT_DIR)/scripts/install-image-clis.sh"
+	@echo ">>> CLI directory: $(IMAGE_CLI_PREFIX)/bin (user-local, not global PATH)"
 	@NPM="$(NPM)" NODE="$(NODE)" bash "$(ROOT_DIR)/scripts/install-image-clis.sh" \
 		"$(IMAGE_CLI_PREFIX)" "$(CODEX_VERSION)" "$(GROK_VERSION)"
 

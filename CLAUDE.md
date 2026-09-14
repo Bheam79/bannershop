@@ -255,6 +255,12 @@ Override `CODEX_VERSION`, `GROK_VERSION`, or `IMAGE_CLI_PREFIX` via make variabl
 Production config uses absolute executable paths; the systemd unit includes the
 installer's Node directory in PATH so npm shims also work with nvm. Installation
 does not log in: connect accounts with native image access in `/admin/settings`.
+BANNERSH-301 follow-up: CLI installation runs before unrelated `check-tools`
+failures and always logs its source/install paths. Grok 1.0.30's npm postinstall
+writes outside `--prefix` unless `GROK_HOME` is set; the installer scopes that
+variable to `<prefix>/grok-install` for npm only, preserving personal CLI config
+and per-request auth homes. `bash scripts/verify-image-cli-install.sh` is an
+isolated deployment smoke with stubbed npm/Docker/build/systemd (no project suite).
 BANNERSH-298 removed the fal.ai implementation, config, and credential row.
 The `claude_flux_*` setting keys remain for compatibility with saved admin prompts;
 new defaults are provider-neutral and the removal migration preserves custom text.
