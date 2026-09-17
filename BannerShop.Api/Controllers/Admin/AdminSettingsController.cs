@@ -1,4 +1,6 @@
 using BannerShop.Api.Services.SystemSettings;
+using BannerShop.Api.Services.DesignRequests;
+using Microsoft.Extensions.Options;
 using BannerShop.Api.Services.DesignRequests.Claude;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -45,6 +47,12 @@ public class AdminSettingsController : ControllerBase
         });
         return Ok(response);
     }
+
+    /// <summary>App-owned prompt defaults, active overrides and configured model selections only.</summary>
+    [HttpGet("prompts")]
+    public async Task<IActionResult> GetPrompts(
+        [FromServices] IOptionsMonitor<ClaudeCliOptions> claudeOptions, CancellationToken ct) =>
+        Ok(await BannerPromptCatalog.BuildAsync(_settings, claudeOptions.CurrentValue, ct));
 
     // ── PUT /api/admin/settings/{key} ────────────────────────────────────────
     [HttpPut("{key}")]

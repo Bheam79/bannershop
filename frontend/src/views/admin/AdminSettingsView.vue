@@ -170,6 +170,9 @@ onMounted(load)
   <div class="max-w-3xl mx-auto px-4 py-10">
     <div class="mb-6">
       <h1 class="text-2xl font-bold text-white">Systeminnstillinger</h1>
+      <RouterLink to="/admin/settings/prompts" class="inline-block mt-2 text-indigo-300 hover:underline">
+        Se alle AI-prompter og modeller →
+      </RouterLink>
       <p class="text-gray-400 text-sm mt-1">
         Konfigurer API-nøkler og andre runtime-innstillinger. Endringer trer i kraft umiddelbart uten omstart.
       </p>

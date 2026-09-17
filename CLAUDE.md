@@ -267,6 +267,14 @@ new defaults are provider-neutral and the removal migration preserves custom tex
 Copyright-alternative instructions are appended after prompt refinement
 and also included in the CLI instruction, including for existing admin prompts.
 
+BANNERSH-304: `ImageProviderPrompts` keeps Codex/Grok instructions separate; Grok
+portrait requests explicitly require an unchanged photographic cutout, including
+an override after the refined brief. `/admin/settings/prompts` reads the runtime
+builders/defaults and Claude DB overrides (no credentials), plus model selection:
+Claude's configured alias, and unpinned/unreported Codex/Grok model versions.
+`dotnet run --project scripts/verify-image-cli -- prompts-only` checks prompt
+transport/catalogue with fake CLIs; it does not verify real-image likeness.
+
 ## AI design requests (BANNERSH-19)
 - `DesignRequest` + `DesignRequestRevision` entities + `AddDesignRequests` migration ship with this task (BANNERSH-26 is the consolidated foundation task — was still TODO when this was done, so the entities were added here).
 - Stripe webhook (`payment_intent.succeeded`) calls BOTH `OrderService.MarkPaidAsync` and `DesignRequestService.MarkPaidAndEnqueueAsync` — the latter looks up by PaymentIntentId, ignores misses, and enqueues a job. Design-request PaymentIntents use `orderId = -designRequestId` metadata so order-lookups by id won't accidentally hit them.

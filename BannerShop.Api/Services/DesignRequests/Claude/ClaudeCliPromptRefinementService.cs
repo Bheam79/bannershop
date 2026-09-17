@@ -144,7 +144,7 @@ public sealed class ClaudeCliPromptRefinementService : IPromptRefinementService
             ? value.DefaultValue
             : CategoryPrompts[BannerTemplateCategory.Other].DefaultValue;
 
-    private static string BuildUserPrompt(PromptRefinementInput input, string categoryPrompt)
+    public static string BuildUserPrompt(PromptRefinementInput input, string categoryPrompt)
     {
         var theme = string.IsNullOrWhiteSpace(input.ThemeDescription)
             ? "(not supplied — invent a fitting vivid art direction)"

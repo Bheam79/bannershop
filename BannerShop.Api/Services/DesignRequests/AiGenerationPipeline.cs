@@ -348,7 +348,7 @@ public sealed class AiGenerationPipeline
         }
     }
 
-    private static string AppendNonNegotiableConstraints(
+    public static string AppendNonNegotiableConstraints(
         string prompt,
         DesignRequest request,
         bool hasPortrait)
