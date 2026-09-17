@@ -6,8 +6,8 @@ defineProps<{
   locked?: boolean
 }>()
 const emit = defineEmits<{ select: [generation: BannerGenerationHistoryItem] }>()
-function label(generation: BannerGenerationHistoryItem, index: number) {
-  return generation.provider === 'codex' ? 'Codex' : generation.provider === 'grok' ? 'Grok' : `Versjon ${index + 1}`
+function label(index: number) {
+  return `Alternativ ${index + 1}`
 }
 </script>
 
@@ -17,11 +17,11 @@ function label(generation: BannerGenerationHistoryItem, index: number) {
     <p>Se på alternativene og velg bildet du vil bruke.</p>
     <div class="image-choices__grid">
       <button v-for="(generation, index) in generations" :key="generation.id" type="button"
-        :aria-pressed="generation.isActive" :aria-label="`Velg ${label(generation, index)}`"
+        :aria-pressed="generation.isActive" :aria-label="`Velg ${label(index)}`"
         :disabled="locked || activatingGenerationId !== null || generation.isActive"
         :class="{ selected: generation.isActive }" @click="emit('select', generation)">
-        <img v-if="generation.previewUrl" :src="generation.previewUrl" :alt="`Banner fra ${label(generation, index)}`" />
-        <span>{{ label(generation, index) }} · {{ activatingGenerationId === generation.id ? 'Velger…' : generation.isActive ? 'Valgt' : 'Velg dette' }}</span>
+        <img v-if="generation.previewUrl" :src="generation.previewUrl" :alt="label(index)" />
+        <span>{{ label(index) }} · {{ activatingGenerationId === generation.id ? 'Velger…' : generation.isActive ? 'Valgt' : 'Velg dette' }}</span>
       </button>
     </div>
   </section>
