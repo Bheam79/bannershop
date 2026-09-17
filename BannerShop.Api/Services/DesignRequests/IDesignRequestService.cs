@@ -41,7 +41,10 @@ public interface IDesignRequestService
     Task<IReadOnlyList<DesignRequestListItemDto>> ListMineAsync(int userId, CancellationToken ct = default);
 
     /// <summary>Fetch detail for a single request — returns null when not found or not owned by caller (unless admin).</summary>
-    Task<DesignRequestDetailDto?> GetAsync(int id, int callerUserId, bool isAdmin, CancellationToken ct = default);
+    Task<DesignRequestDetailDto?> GetAsync(int id, int callerUserId, bool isAdmin, CancellationToken ct = default, bool hasGuestAccess = false);
+
+    /// <summary>Atomically assigns a guest AI request to an account after browser ownership verification.</summary>
+    Task<DesignRequestDetailDto?> ClaimGuestAsync(int id, int userId, CancellationToken ct = default);
 
     /// <summary>
     /// Customer marks the AwaitingApproval preview as Approved.

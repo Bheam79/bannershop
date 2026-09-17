@@ -439,3 +439,6 @@ All secret API keys live in `system_settings` and are set via `/admin/settings`.
 Non-secret tuning (`OpenAi:ChatModel`, `OpenAi:BaseUrl`, `Stripe:Currency`, etc.) **stays in appsettings**.
 
 Heads-up: when adding a new SystemSettings migration with only seed data, EF won't generate the `.Designer.cs` automatically if you wrote the `.cs` by hand. Always use `dotnet ef migrations add <Name>` (see CLAUDE.md migrations section) — running `dotnet ef migrations list` will reveal a missing migration if the Designer.cs is absent.
+
+## Guest preview and account return (BANNERSH-305)
+Guest AI creation issues a 30-day HttpOnly, per-request Data Protection cookie. GET detail accepts that proof; numeric IDs/IPs alone grant no access. After auth, POST `/{id}/claim` atomically assigns the request and portrait to the account; approval still requires auth. The wizard polls guests normally and restores `?dr=<id>` plus tab-local form/size edits across login/signup. Old guest requests created before this cookie existed cannot be claimed by ID alone. `scripts/verify-guest-banner/README.md` describes standalone browser/SQLite smokes (no project suite or live AI).

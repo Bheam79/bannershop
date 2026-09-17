@@ -489,7 +489,7 @@ public sealed class DesignRequestService : IDesignRequestService
         }).ToList();
     }
 
-    public async Task<DesignRequestDetailDto?> GetAsync(int id, int callerUserId, bool isAdmin, CancellationToken ct = default)
+    public async Task<DesignRequestDetailDto?> GetAsync(int id, int callerUserId, bool isAdmin, CancellationToken ct = default, bool hasGuestAccess = false)
     {
         var r = await _db.DesignRequests
             .AsNoTracking()
@@ -497,11 +497,9 @@ public sealed class DesignRequestService : IDesignRequestService
             .Include(x => x.Generations.OrderBy(g => g.CreatedAt))
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (r is null) return null;
-        // Anonymous design requests (UserId=null) are accessible by anyone who knows the id —
-        // they are created by un-authed users and contain no secret personal data beyond what
-        // the person typed in the form.  The short-lived design-id is treated as the bearer.
-        // Authenticated requests are private to their owner (or admin).
-        if (r.UserId is not null && r.UserId != callerUserId && !isAdmin) return null;
+        if (!isAdmin && (r.UserId is null
+            ? !hasGuestAccess || r.Mode != DesignRequestMode.Ai
+            : r.UserId != callerUserId)) return null;
 
         var dto = ToDetail(r);
 
@@ -520,6 +518,24 @@ public sealed class DesignRequestService : IDesignRequestService
         }
 
         return dto;
+    }
+
+    public async Task<DesignRequestDetailDto?> ClaimGuestAsync(int id, int userId, CancellationToken ct = default)
+    {
+        // Conditional update prevents two accounts from claiming the same request.
+        // Only ownership changes, so a concurrently running generation is not overwritten.
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+        await _db.DesignRequests.Where(r => r.Id == id && r.UserId == null && r.Mode == DesignRequestMode.Ai)
+            .ExecuteUpdateAsync(set => set.SetProperty(r => r.UserId, userId), ct);
+        var owned = await _db.DesignRequests.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId && r.Mode == DesignRequestMode.Ai, ct);
+        if (owned is null) return null;
+        // Keep the portrait reusable when the restored form is edited/regenerated.
+        if (!string.IsNullOrEmpty(owned.UploadedPhotoPath))
+            await _db.BannerDesigns.Where(d => d.StoragePath == owned.UploadedPhotoPath && d.UserId == null)
+                .ExecuteUpdateAsync(set => set.SetProperty(d => d.UserId, userId), ct);
+        await transaction.CommitAsync(ct);
+        return await GetAsync(id, userId, false, ct);
     }
 
     public async Task<DesignRequestActionResult> ApproveAsync(int id, int callerUserId, int? selectedHeightCm = null, CancellationToken ct = default)

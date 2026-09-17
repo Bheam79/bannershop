@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { authReturnPath } from '@/utils/authReturnPath'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import apiClient from '@/api/client'
@@ -36,7 +37,7 @@ async function handleSubmit() {
       phone: phone.value || null,
     })
     auth.setAuth(data)
-    const redirect = (route.query.redirect as string) || '/account'
+    const redirect = authReturnPath(route.query.redirect)
     router.push(redirect)
   } catch (err: any) {
     error.value = err.response?.data?.error ?? 'Registrering feilet. Prøv igjen.'

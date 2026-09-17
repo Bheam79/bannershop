@@ -119,26 +119,6 @@ function formatGenTime(iso: string | null | undefined): string {
       </div>
     </div>
 
-    <!-- Phase: anon_pending — anonymous user after generation -->
-    <div v-else-if="genPhase === 'anon_pending'" class="preview-anon">
-      <i class="fa-solid fa-circle-check" style="font-size:40px;color:#4ade80;margin-bottom:12px"></i>
-      <h3 class="display" style="font-size:20px;color:var(--text);margin-bottom:8px">Banneret genereres!</h3>
-      <p style="font-size:14px;color:var(--muted);max-width:28em;text-align:center;margin:0 0 16px">
-        Opprett en konto for å se og godkjenne resultatet — og for å bestille det ferdige banneret.
-      </p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
-        <RouterLink :to="`/register?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" class="btn btn-primary" style="padding:10px 20px">
-          <i class="fa-solid fa-user-plus"></i> Opprett konto
-        </RouterLink>
-        <RouterLink :to="`/login?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" class="btn btn-ghost" style="padding:10px 20px">
-          Logg inn
-        </RouterLink>
-      </div>
-      <p v-if="designRequestId" style="margin-top:16px;font-size:13px;color:var(--faint)">
-        Design-ID: {{ designRequestId }}
-      </p>
-    </div>
-
     <!-- Phase: ready — show the generated image (or "Ditt banner" placeholder in manual mode) -->
     <template v-else-if="genPhase === 'ready' && currentDesignRequest">
     <BannerImageChoices v-if="!isManual && hasGenerationHistory"
@@ -231,8 +211,8 @@ function formatGenTime(iso: string | null | undefined): string {
       <p style="font-size:13px;color:var(--faint);margin-top:6px">Banneret ditt vil vises her</p>
     </div>
 
-    <!-- Action buttons + credits (hidden while generating or anon_pending) -->
-    <div v-if="genPhase !== 'submitting' && genPhase !== 'generating' && genPhase !== 'anon_pending'" style="margin-top:16px;display:grid;gap:12px">
+    <!-- Action buttons + credits (hidden while generating) -->
+    <div v-if="genPhase !== 'submitting' && genPhase !== 'generating'" style="margin-top:16px;display:grid;gap:12px">
 
       <!-- Error rows -->
       <div v-if="approveError" class="error-box">
@@ -375,19 +355,7 @@ function formatGenTime(iso: string | null | undefined): string {
   background: rgba(255,106,61,.04);
 }
 
-/* ── Phase: anon_pending ─────────────────────────────────────── */
-.preview-anon {
-  width: 100%;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
-  background: var(--surface);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2.5rem 2rem;
-  text-align: center;
-}
+
 
 /* ── Spinner animation ───────────────────────────────────────── */
 @keyframes spin { to { transform: rotate(360deg); } }

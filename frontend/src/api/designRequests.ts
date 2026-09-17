@@ -1,4 +1,5 @@
 import apiClient from './client'
+import { useAuthStore } from '@/stores/auth'
 
 // ── DTOs ──────────────────────────────────────────────────────────────────────
 
@@ -188,11 +189,20 @@ export async function createAiRequest(
     req,
     { headers: { 'X-Request-Integrity': integrityToken } },
   )
+  if (data.requiresAuth) localStorage.setItem(`ai_banner_guest_${data.designRequestId}`, '1')
   return data
 }
 
-/** Get full detail for a design request (used for polling). Requires auth. */
+/** Guest reads use the HttpOnly ownership cookie; sign-in claims that same request. */
 export async function getDesignRequest(id: number): Promise<DesignRequestDetail> {
+  const guestKey = `ai_banner_guest_${id}`
+  if (useAuthStore().isLoggedIn && localStorage.getItem(guestKey)) {
+    await apiClient.post(`/design-requests/${id}/claim`)
+    const selected = localStorage.getItem(`ai_banner_selection_${id}`)
+    if (selected) await activateGeneration(id, Number(selected))
+    localStorage.removeItem(guestKey)
+    localStorage.removeItem(`ai_banner_selection_${id}`)
+  }
   const { data } = await apiClient.get<DesignRequestDetail>(`/design-requests/${id}`)
   return data
 }

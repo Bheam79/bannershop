@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { authReturnPath } from '@/utils/authReturnPath'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import apiClient from '@/api/client'
@@ -23,7 +24,7 @@ async function handleSubmit() {
       password: password.value,
     })
     auth.setAuth(data)
-    const redirect = (route.query.redirect as string) || '/account'
+    const redirect = authReturnPath(route.query.redirect)
     router.push(redirect)
   } catch (err: any) {
     console.error('Login error:', err.response?.data?.error ?? err)
@@ -43,7 +44,7 @@ async function handleSubmit() {
       <h1 class="display" style="font-size:28px;margin-bottom:6px;color:var(--text)">Logg inn</h1>
       <p style="color:var(--muted);font-size:15px;margin-bottom:28px">
         Har du ikke konto?
-        <RouterLink to="/register" style="color:var(--accent);font-weight:600;text-decoration:none">Registrer deg</RouterLink>
+        <RouterLink :to="{ path: '/register', query: { redirect: authReturnPath(route.query.redirect) } }" style="color:var(--accent);font-weight:600;text-decoration:none">Registrer deg</RouterLink>
       </p>
 
       <form @submit.prevent="handleSubmit" style="display:grid;gap:18px">

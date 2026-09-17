@@ -286,26 +286,6 @@ function handleReturnToWizardIdle() {
     </div>
   </div>
 
-  <!-- ── Phase: anon_pending (anonymous user, can't poll) ──────────────────── -->
-  <div v-else-if="genPhase === 'anon_pending'" style="text-align:center;padding:4rem 1rem">
-    <i class="fa-solid fa-circle-check" style="font-size:52px;color:#4ade80;margin-bottom:18px;display:block"></i>
-    <h2 class="display" style="font-size:26px;color:var(--text);margin-bottom:10px">Banneret genereres!</h2>
-    <p style="color:var(--muted);max-width:34em;margin:0 auto 24px">
-      AI-en jobber med designet ditt. Opprett en konto for å se og godkjenne resultatet — og for å bestille det ferdige banneret.
-    </p>
-    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-      <RouterLink :to="`/register?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" class="btn btn-primary" style="padding:12px 24px">
-        <i class="fa-solid fa-user-plus"></i> Opprett konto
-      </RouterLink>
-      <RouterLink :to="`/login?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" class="btn btn-ghost" style="padding:12px 24px">
-        Logg inn
-      </RouterLink>
-    </div>
-    <p v-if="designRequestId" style="margin-top:20px;font-size:13px;color:var(--faint)">
-      Design-ID: {{ designRequestId }} — lagret lokalt, tilgjengelig etter innlogging.
-    </p>
-  </div>
-
   <!-- ── Phase: ready (preview + edit-and-regenerate) ─────────────────────── -->
   <div v-else-if="genPhase === 'ready' && currentDesignRequest" style="display:grid;gap:24px">
     <div style="text-align:center">

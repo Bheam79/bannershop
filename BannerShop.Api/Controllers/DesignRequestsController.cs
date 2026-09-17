@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using Microsoft.AspNetCore.DataProtection;
 using BannerShop.Api.Models.DesignRequests;
 using BannerShop.Api.Services.AiCredits;
 using BannerShop.Api.Services.DesignRequests;
@@ -12,7 +14,7 @@ namespace BannerShop.Api.Controllers;
 /// <summary>
 /// Endpoints for the AI banner builder (free-first, credit-gated — BANNERSH-67) and the
 /// human-designer flow (495 kr). The POST /ai endpoint accepts both anonymous and
-/// authenticated callers; everything else requires auth.
+/// authenticated callers. Guests can read their own preview using a protected browser cookie.
 /// </summary>
 [ApiController]
 [Route("api/design-requests")]
@@ -20,10 +22,12 @@ namespace BannerShop.Api.Controllers;
 public class DesignRequestsController : ControllerBase
 {
     private readonly IDesignRequestService _service;
+    private readonly ITimeLimitedDataProtector _guestAccess;
 
-    public DesignRequestsController(IDesignRequestService service)
+    public DesignRequestsController(IDesignRequestService service, IDataProtectionProvider protection)
     {
         _service = service;
+        _guestAccess = protection.CreateProtector("BannerShop.GuestDesign.v1").ToTimeLimitedDataProtector();
     }
 
     // ── POST /api/design-requests/manual ────────────────────────────────────
@@ -87,6 +91,17 @@ public class DesignRequestsController : ControllerBase
 
         var result = await _service.CreateAiRequestAsync(userId, ipAddress, req, ct);
 
+        if (result.StatusCode == 201 && result.RequiresAuth)
+        {
+            Response.Cookies.Append(GuestCookieName(result.DesignRequestId),
+                _guestAccess.Protect(result.DesignRequestId.ToString(), TimeSpan.FromDays(30)),
+                new CookieOptions
+                {
+                    HttpOnly = true, Secure = Request.IsHttps, SameSite = SameSiteMode.Strict,
+                    Path = $"/api/design-requests/{result.DesignRequestId}", MaxAge = TimeSpan.FromDays(30)
+                });
+        }
+
         return result.StatusCode switch
         {
             201 => StatusCode(201, new CreateAiDesignRequestResponseDto
@@ -127,14 +142,33 @@ public class DesignRequestsController : ControllerBase
 
     // ── GET /api/design-requests/{id} ────────────────────────────────────────
     [HttpGet("{id:int}")]
+    [AllowAnonymous]
     public async Task<IActionResult> Get(int id, CancellationToken ct)
     {
         var userId = GetUserId();
-        if (userId == 0) return Unauthorized();
         var isAdmin = User.IsInRole(nameof(UserRole.Admin));
-        var dto = await _service.GetAsync(id, userId, isAdmin, ct);
+        var dto = await _service.GetAsync(id, userId, isAdmin, ct, HasGuestAccess(id));
         if (dto is null) return NotFound();
         return Ok(dto);
+    }
+
+    [HttpPost("{id:int}/claim")]
+    public async Task<IActionResult> Claim(int id, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        if (userId == 0) return Unauthorized();
+        if (!HasGuestAccess(id)) return NotFound();
+        var dto = await _service.ClaimGuestAsync(id, userId, ct);
+        return dto is null ? NotFound() : Ok(dto);
+    }
+
+    private static string GuestCookieName(int id) => $"bannershop_guest_{id}";
+
+    private bool HasGuestAccess(int id)
+    {
+        if (!Request.Cookies.TryGetValue(GuestCookieName(id), out var token)) return false;
+        try { return _guestAccess.Unprotect(token) == id.ToString(); }
+        catch (CryptographicException) { return false; }
     }
 
     // ── POST /api/design-requests/{id}/approve ───────────────────────────────
