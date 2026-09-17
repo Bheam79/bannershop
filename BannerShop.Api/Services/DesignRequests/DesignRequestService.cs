@@ -522,20 +522,25 @@ public sealed class DesignRequestService : IDesignRequestService
 
     public async Task<DesignRequestDetailDto?> ClaimGuestAsync(int id, int userId, CancellationToken ct = default)
     {
-        // Conditional update prevents two accounts from claiming the same request.
-        // Only ownership changes, so a concurrently running generation is not overwritten.
-        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
-        await _db.DesignRequests.Where(r => r.Id == id && r.UserId == null && r.Mode == DesignRequestMode.Ai)
-            .ExecuteUpdateAsync(set => set.SetProperty(r => r.UserId, userId), ct);
-        var owned = await _db.DesignRequests.AsNoTracking()
-            .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId && r.Mode == DesignRequestMode.Ai, ct);
-        if (owned is null) return null;
-        // Keep the portrait reusable when the restored form is edited/regenerated.
-        if (!string.IsNullOrEmpty(owned.UploadedPhotoPath))
-            await _db.BannerDesigns.Where(d => d.StoragePath == owned.UploadedPhotoPath && d.UserId == null)
-                .ExecuteUpdateAsync(set => set.SetProperty(d => d.UserId, userId), ct);
-        await transaction.CommitAsync(ct);
-        return await GetAsync(id, userId, false, ct);
+        // Production enables MySQL retries. The entire transaction must run inside
+        // the execution strategy; otherwise the first update throws before claiming.
+        return await _db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            // Conditional update prevents two accounts from claiming the same request.
+            // Only ownership changes, so a concurrently running generation is not overwritten.
+            await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+            await _db.DesignRequests.Where(r => r.Id == id && r.UserId == null && r.Mode == DesignRequestMode.Ai)
+                .ExecuteUpdateAsync(set => set.SetProperty(r => r.UserId, userId), ct);
+            var owned = await _db.DesignRequests.AsNoTracking()
+                .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId && r.Mode == DesignRequestMode.Ai, ct);
+            if (owned is null) return null;
+            // Keep the portrait reusable when the restored form is edited/regenerated.
+            if (!string.IsNullOrEmpty(owned.UploadedPhotoPath))
+                await _db.BannerDesigns.Where(d => d.StoragePath == owned.UploadedPhotoPath && d.UserId == null)
+                    .ExecuteUpdateAsync(set => set.SetProperty(d => d.UserId, userId), ct);
+            await transaction.CommitAsync(ct);
+            return await GetAsync(id, userId, false, ct);
+        });
     }
 
     public async Task<DesignRequestActionResult> ApproveAsync(int id, int callerUserId, int? selectedHeightCm = null, CancellationToken ct = default)
@@ -941,7 +946,7 @@ public sealed class DesignRequestService : IDesignRequestService
         return new DesignRequestDetailDto
         {
             Id = r.Id,
-            UserId = r.UserId ?? 0,
+            UserId = r.UserId,
             BannerTemplateId = r.BannerTemplateId,
             Mode = r.Mode.ToString(),
             Status = r.Status.ToString(),

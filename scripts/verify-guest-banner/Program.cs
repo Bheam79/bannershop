@@ -1,5 +1,6 @@
 // Standalone controller/service smoke. SQLite is local/in-memory; no AI, production or project suite.
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using BannerShop.Api.Controllers;
 using BannerShop.Api.Models.DesignRequests;
@@ -19,7 +20,12 @@ using Moq;
 
 using var connection = new SqliteConnection("Data Source=:memory:");
 await connection.OpenAsync();
-using var db = new BannerShopDbContext(new DbContextOptionsBuilder<BannerShopDbContext>().UseSqlite(connection).Options);
+var options = new DbContextOptionsBuilder<BannerShopDbContext>();
+// Only point this at a disposable smoke database: this harness creates/seeds its schema.
+var mysql = Environment.GetEnvironmentVariable("GUEST_SMOKE_MYSQL");
+if (string.IsNullOrEmpty(mysql)) options.UseSqlite(connection);
+else options.UseMySql(mysql, new MariaDbServerVersion(new Version(11, 0, 0)), o => o.EnableRetryOnFailure(3));
+using var db = new BannerShopDbContext(options.Options);
 await db.Database.EnsureCreatedAsync();
 db.Users.AddRange(new User { Id = 305, Email = "guest305@example.invalid" }, new User { Id = 306, Email = "other306@example.invalid" });
 db.BannerDesigns.Add(new BannerDesign { Id = 305, StoragePath = "portrait.png" });
@@ -61,8 +67,17 @@ Check(await guest.Claim(305, default) is UnauthorizedResult, "claim requires acc
 Check(await Controller(service, user: 305).Claim(305, default) is NotFoundResult, "account alone cannot claim by id");
 row.Status = DesignRequestStatus.AwaitingApproval;
 row.FinalCroppedStoragePath = "guest-preview.png";
+row.AiPreviewPath = "guest-preview.svg";
+db.BannerGenerations.Add(new BannerGeneration { DesignRequestId = 305, Id = 3051, Status = BannerGenerationStatus.Completed, IsActive = true, StoragePath = "guest-preview.png", PreviewPath = "guest-preview.svg" });
+db.BannerGenerations.Add(new BannerGeneration { DesignRequestId = 305, Id = 3052, Status = BannerGenerationStatus.Completed, StoragePath = "guest-preview-2.png", PreviewPath = "guest-preview-2.svg" });
+row.CurrentGenerationId = 3051;
 await db.SaveChangesAsync();
-Check(await guest.Get(305, default) is OkObjectResult { Value: DesignRequestDetailDto { PreviewUrl: "/files/guest-preview.png" } }, "guest sees completed preview without registration");
+var fixturePath = Environment.GetEnvironmentVariable("GUEST_SMOKE_FIXTURE");
+if (fixturePath != null) await File.WriteAllTextAsync(fixturePath,
+    JsonSerializer.Serialize(((OkObjectResult)await guest.Get(305, default)).Value, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+Check(await guest.Get(305, default) is OkObjectResult { Value: DesignRequestDetailDto { PreviewUrl: "/files/guest-preview.svg" } }, "guest sees completed preview without registration");
+Check(((DesignRequestDetailDto)((OkObjectResult)await guest.Get(305, default)).Value!).UserId == null,
+    "guest DTO exposes null ownership (not the legacy zero sentinel)");
 var owner = Controller(service, cookie, 305);
 Check(await owner.Claim(305, default) is OkObjectResult { Value: DesignRequestDetailDto { UserId: 305, PersonName: "Guest 305" } }, "sign-up claims same request and form");
 Check(await owner.Claim(305, default) is OkObjectResult, "claim is idempotent");
@@ -71,3 +86,13 @@ Check(await guest.Get(305, default) is NotFoundResult, "guest access ends after 
 Check(await Controller(service, user: 305).Get(305, default) is OkObjectResult, "owner reads without guest cookie");
 Check(await db.BannerDesigns.AsNoTracking().AnyAsync(d => d.Id == 305 && d.UserId == 305), "portrait transferred for reuse in restored form");
 Check(await db.DesignRequests.CountAsync() == 1 && await db.Orders.CountAsync() == 0, "claim makes no duplicate request or premature order");
+
+// ExecuteUpdate bypasses tracking; real HTTP calls use fresh scoped contexts.
+db.ChangeTracker.Clear();
+Check(await Controller(service, user: 306).ActivateGeneration(305, 3052, default) is BadRequestObjectResult,
+    "another account cannot activate an owned generation");
+Check(await owner.ActivateGeneration(305, 3052, default) is OkObjectResult
+    { Value: DesignRequestDetailDto { CurrentGenerationId: 3052, PreviewUrl: "/files/guest-preview-2.svg" } },
+    "claimed owner activates the guest-selected alternative");
+var selectedRow = await db.DesignRequests.AsNoTracking().SingleAsync(r => r.Id == 305);
+Check(selectedRow.FinalCroppedStoragePath == "guest-preview-2.png", "selection synchronizes print asset after claim");

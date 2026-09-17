@@ -72,7 +72,8 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
   async function selectGeneration(gen: BannerGenerationHistoryItem) {
     if (!designRequestId.value || gen.isActive || approving.value || regenerating.value) return
     if (activatingGenerationId.value !== null) return
-    if (currentDesignRequest.value?.userId === null) {
+    // Guest DTOs have null ownership; also accept the legacy API zero sentinel.
+    if (currentDesignRequest.value && !currentDesignRequest.value.userId) {
       localStorage.setItem(`ai_banner_selection_${designRequestId.value}`, String(gen.id))
       applyGuestSelection(currentDesignRequest.value, gen.id)
       return
@@ -124,7 +125,7 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
   async function pollOnce(id: number) {
     try {
       const detail = await getDesignRequest(id)
-      requiresAuthHint.value = detail.userId === null
+      requiresAuthHint.value = !detail.userId
       currentDesignRequest.value = detail
       if (TERMINAL_STATUSES.includes(detail.status)) {
         stopPolling()
@@ -345,7 +346,7 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
     }
 
     designRequestId.value = item.id
-    requiresAuthHint.value = detail.userId === null
+    requiresAuthHint.value = !detail.userId
     if (requiresAuthHint.value) {
       localStorage.setItem(`ai_banner_guest_${item.id}`, '1')
       const selected = localStorage.getItem(`ai_banner_selection_${item.id}`)

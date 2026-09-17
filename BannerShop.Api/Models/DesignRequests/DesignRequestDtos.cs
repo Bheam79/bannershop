@@ -218,7 +218,7 @@ public class DesignRequestListItemDto
 public class DesignRequestDetailDto
 {
     public int Id { get; set; }
-    public int UserId { get; set; }
+    public int? UserId { get; set; }
     public int BannerTemplateId { get; set; }
     public string Mode { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;

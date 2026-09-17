@@ -442,3 +442,9 @@ Heads-up: when adding a new SystemSettings migration with only seed data, EF won
 
 ## Guest preview and account return (BANNERSH-305)
 Guest AI creation issues a 30-day HttpOnly, per-request Data Protection cookie. GET detail accepts that proof; numeric IDs/IPs alone grant no access. After auth, POST `/{id}/claim` atomically assigns the request and portrait to the account; approval still requires auth. The wizard polls guests normally and restores `?dr=<id>` plus tab-local form/size edits across login/signup. Old guest requests created before this cookie existed cannot be claimed by ID alone. `scripts/verify-guest-banner/README.md` describes standalone browser/SQLite smokes (no project suite or live AI).
+
+BANNERSH-305 follow-up: guest detail DTOs must preserve nullable `UserId` (not
+map null to 0). Guest-claim transactions run inside `CreateExecutionStrategy()`
+because production enables MySQL retries; SQLite-only smokes miss that failure.
+The standalone guest smoke supports disposable MariaDB and exports real DTOs
+for its browser checks (see its README).
