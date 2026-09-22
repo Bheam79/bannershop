@@ -286,30 +286,36 @@ async function handleLogout() {
         </div>
 
         <!-- Right visual: two overlapping banner cards -->
-        <div style="position:relative;height:440px">
-          <!-- Confetti -->
-          <span style="position:absolute;top:18px;left:30%;width:10px;height:10px;background:var(--gold);transform:rotate(20deg);border-radius:2px;opacity:.85"></span>
-          <span style="position:absolute;top:60px;right:8%;width:8px;height:8px;background:var(--accent-2);transform:rotate(-15deg);border-radius:2px;opacity:.85"></span>
-          <span style="position:absolute;bottom:40px;left:6%;width:9px;height:9px;background:#3a9d7e;border-radius:50%;opacity:.85"></span>
-          <span style="position:absolute;top:0;left:62%;width:7px;height:7px;background:#c5417a;border-radius:50%;opacity:.85"></span>
+        <div>
+          <div style="position:relative;height:440px">
+            <!-- Confetti -->
+            <span style="position:absolute;top:18px;left:30%;width:10px;height:10px;background:var(--gold);transform:rotate(20deg);border-radius:2px;opacity:.85"></span>
+            <span style="position:absolute;top:60px;right:8%;width:8px;height:8px;background:var(--accent-2);transform:rotate(-15deg);border-radius:2px;opacity:.85"></span>
+            <span style="position:absolute;bottom:40px;left:6%;width:9px;height:9px;background:#3a9d7e;border-radius:50%;opacity:.85"></span>
+            <span style="position:absolute;top:0;left:62%;width:7px;height:7px;background:#c5417a;border-radius:50%;opacity:.85"></span>
 
-          <!-- Main banner card (princess) -->
-          <div class="hero-banner-card" style="position:absolute;top:54px;left:0;width:77%;height:210px;z-index:3;transform:rotate(-3deg)">
-            <img src="/banners/banner-emma-princess.png" alt="Bursdagsbanner Emma" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:14px">
-            <span class="grommet" style="top:9px;left:9px"></span>
-            <span class="grommet" style="top:9px;right:9px"></span>
-            <span class="grommet" style="bottom:9px;left:9px"></span>
-            <span class="grommet" style="bottom:9px;right:9px"></span>
-          </div>
+            <!-- Main banner card (princess) -->
+            <div class="hero-banner-card" style="position:absolute;top:54px;left:0;width:77%;height:210px;z-index:3;transform:rotate(-3deg)">
+              <img src="/banners/banner-emma-princess.png" alt="Bursdagsbanner Emma" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:14px">
+              <span class="grommet" style="top:9px;left:9px"></span>
+              <span class="grommet" style="top:9px;right:9px"></span>
+              <span class="grommet" style="bottom:9px;left:9px"></span>
+              <span class="grommet" style="bottom:9px;right:9px"></span>
+            </div>
 
-          <!-- Secondary banner card (summer) -->
-          <div class="hero-banner-card" style="position:absolute;bottom:6px;right:0;width:64%;height:152px;z-index:2;transform:rotate(4deg)">
-            <img src="/banners/banner-sommerfest.png" alt="Sommerfestbanner" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:14px">
-            <span class="grommet" style="top:9px;left:9px"></span>
-            <span class="grommet" style="top:9px;right:9px"></span>
-            <span class="grommet" style="bottom:9px;left:9px"></span>
-            <span class="grommet" style="bottom:9px;right:9px"></span>
+            <!-- Secondary banner card (summer) -->
+            <div class="hero-banner-card" style="position:absolute;bottom:6px;right:0;width:64%;height:152px;z-index:2;transform:rotate(4deg)">
+              <img src="/banners/banner-sommerfest.png" alt="Sommerfestbanner" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:14px">
+              <span class="grommet" style="top:9px;left:9px"></span>
+              <span class="grommet" style="top:9px;right:9px"></span>
+              <span class="grommet" style="bottom:9px;left:9px"></span>
+              <span class="grommet" style="bottom:9px;right:9px"></span>
+            </div>
           </div>
+          <a class="hero-help" href="tel:+4795362500">
+            <i class="fa-solid fa-phone" aria-hidden="true"></i>
+            <span>Trenger du hjelp, ring <strong>95 36 25 00</strong> !</span>
+          </a>
         </div>
       </div>
     </section>
@@ -607,6 +613,30 @@ async function handleLogout() {
   color: #e7c35a;
 }
 
+/* ── Hero help callout ──────────────────────────────────────── */
+.hero-help {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 28px;
+  padding: 18px 22px;
+  border-radius: 18px;
+  background: var(--gold);
+  color: var(--accent-ink);
+  font-size: 18px;
+  font-weight: 500;
+  text-align: center;
+  text-decoration: none;
+  box-shadow: 0 12px 32px -16px rgba(231,185,78,.5);
+}
+.hero-help strong { white-space: nowrap; }
+.hero-help:hover strong { text-decoration: underline; }
+.hero-help:focus-visible {
+  outline: 3px solid var(--text);
+  outline-offset: 4px;
+}
+
 /* ── Hero banner cards ──────────────────────────────────────── */
 .hero-banner-card {
   border-radius: 14px;
@@ -900,7 +930,7 @@ async function handleLogout() {
 /* ── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 980px) {
   /* Hero collapses to 1 col on tablet */
-  .hero-grid { grid-template-columns: 1fr !important; }
+  .hero-grid { grid-template-columns: minmax(0, 1fr) !important; }
   .order-grid { grid-template-columns: 1fr !important; }
   /* Preview + price panels stack */
   .preview-grid { grid-template-columns: 1fr !important; }
