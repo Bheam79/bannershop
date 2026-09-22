@@ -151,7 +151,7 @@ async function handleLogout() {
           <a href="#anledninger" @click.prevent="scrollTo('anledninger')" style="color:var(--muted);font-weight:500;font-size:15.5px;transition:color .15s;text-decoration:none" class="nav-link">Anledninger</a>
           <a href="#bestill" @click.prevent="scrollTo('bestill')" style="color:var(--muted);font-weight:500;font-size:15.5px;transition:color .15s;text-decoration:none" class="nav-link">Bestill</a>
           <a href="#lagselv" @click.prevent="scrollTo('lagselv')" style="color:var(--muted);font-weight:500;font-size:15.5px;transition:color .15s;text-decoration:none" class="nav-link">Lag ditt banner</a>
-          <a href="#om-oss" style="color:var(--muted);font-weight:500;font-size:15.5px;transition:color .15s;text-decoration:none" class="nav-link">Om oss</a>
+          <a href="/info/about" @click.prevent="router.push('/info/about')" style="color:var(--muted);font-weight:500;font-size:15.5px;transition:color .15s;text-decoration:none" class="nav-link">Om oss</a>
         </nav>
 
         <!-- CTA -->
@@ -214,7 +214,7 @@ async function handleLogout() {
               <a href="#anledninger" @click.prevent="scrollToAndCloseMenu('anledninger')" class="hm-item">Anledninger</a>
               <a href="#bestill" @click.prevent="scrollToAndCloseMenu('bestill')" class="hm-item">Bestill</a>
               <a href="#lagselv" @click.prevent="scrollToAndCloseMenu('lagselv')" class="hm-item">Lag ditt banner</a>
-              <a href="#om-oss" @click="closeMobileMenu" class="hm-item">Om oss</a>
+              <a href="/info/about" @click.prevent="closeMobileMenu(); router.push('/info/about')" class="hm-item">Om oss</a>
               <div style="height:1px;background:var(--line-soft);margin:6px 4px"></div>
               <a href="/login" @click.prevent="closeMobileMenu(); router.push('/login')" class="hm-item">Logg inn</a>
               <a href="/register" @click.prevent="closeMobileMenu(); router.push('/register')" class="hm-item" style="color:var(--accent) !important">Registrer</a>
@@ -542,6 +542,7 @@ async function handleLogout() {
             <h5 style="font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin-bottom:12px;font-weight:700">Kundeservice</h5>
             <a href="/info/shipping" @click.prevent="router.push('/info/shipping')" style="display:block;color:var(--muted);font-size:14.5px;margin-bottom:8px" class="foot-link">Frakt &amp; levering</a>
             <a href="/info/materials" @click.prevent="router.push('/info/materials')" style="display:block;color:var(--muted);font-size:14.5px;margin-bottom:8px" class="foot-link">Materialer</a>
+            <a href="/info/about" @click.prevent="router.push('/info/about')" style="display:block;color:var(--muted);font-size:14.5px;margin-bottom:8px" class="foot-link">Om oss</a>
             <a href="/info/contact" @click.prevent="router.push('/info/contact')" style="display:block;color:var(--muted);font-size:14.5px;margin-bottom:8px" class="foot-link">Kontakt oss</a>
             <a href="/login" @click.prevent="router.push('/login')" style="display:block;color:var(--muted);font-size:14.5px;margin-bottom:8px" class="foot-link">Logg inn</a>
           </div>

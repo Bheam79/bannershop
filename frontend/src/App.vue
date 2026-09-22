@@ -80,6 +80,7 @@ watch(
         <p style="display:flex;justify-content:center;gap:18px;flex-wrap:wrap;margin-bottom:10px">
           <RouterLink to="/info/shipping" class="footer-mini-link">Frakt &amp; levering</RouterLink>
           <RouterLink to="/info/materials" class="footer-mini-link">Materialer</RouterLink>
+          <RouterLink to="/info/about" class="footer-mini-link">Om oss</RouterLink>
           <RouterLink to="/info/contact" class="footer-mini-link">Kontakt oss</RouterLink>
           <RouterLink to="/info/terms" class="footer-mini-link">Brukervilkår</RouterLink>
           <RouterLink to="/info/privacy" class="footer-mini-link">Personvern</RouterLink>
