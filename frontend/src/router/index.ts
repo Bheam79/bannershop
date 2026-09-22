@@ -213,6 +213,11 @@ const router = createRouter({
 
     // ── Info / legal (BANNERSH-222) ──────────────────────────────────────────
     {
+      path: '/info/about',
+      name: 'info-about',
+      component: () => import('@/views/info/InfoAboutView.vue'),
+    },
+    {
       path: '/info/shipping',
       name: 'info-shipping',
       component: () => import('@/views/info/InfoShippingView.vue'),
