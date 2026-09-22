@@ -15,9 +15,6 @@
     "TimeoutSeconds": 60
   },
 
-  "Fal": {
-    "ModelId": "fal-ai/flux-2-pro"
-  },
 
   "Replicate": {
     "ApiToken": "r8_REPLACE_WITH_YOUR_REPLICATE_TOKEN"

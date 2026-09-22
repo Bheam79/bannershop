@@ -44,21 +44,12 @@ internal static class DbHelper
         db.SaveChanges();
     }
 
-    /// <summary>
-    /// The <c>AvailableFrom</c> date seeded for the 400g indoor material, mirroring
-    /// <c>BannerShopStartupSeeder</c>. Exposed as a constant so tests assert against the
-    /// seeded value rather than against the wall clock — the date is a fixed calendar
-    /// date that has since passed, so a "must be in the future" assertion is a time bomb.
-    /// </summary>
-    public static readonly DateTime IndoorMaterialAvailableFromUtc =
-        new(2026, 8, 31, 0, 0, 0, DateTimeKind.Utc);
-
     /// <summary>Seeds materials and banner sizes (matching production seed / BannerShopStartupSeeder).</summary>
     public static void SeedCatalog(BannerShopDbContext db)
     {
         // BANNERSH-259: keep in sync with BannerShopStartupSeeder.
-        // mat2 (680g) has no availability date; mat1 (400g) carries one (2026-08-31).
-        var mat1 = new Material { Id = 1, Name = "400g innendørs banner",                     WidthCm = 160, WeightGsm = 400, PricePerSqm = 180m, AvailableFrom = IndoorMaterialAvailableFromUtc };
+        // Both materials are in stock without an availability date.
+        var mat1 = new Material { Id = 1, Name = "400g innendørs banner",                     WidthCm = 160, WeightGsm = 400, PricePerSqm = 180m, AvailableFrom = null };
         var mat2 = new Material { Id = 2, Name = "680g kraftig banner - 3 år utendørs garanti", WidthCm = 180, WeightGsm = 680, PricePerSqm = 140m, AvailableFrom = null };
         db.Materials.AddRange(mat1, mat2);
 
@@ -68,7 +59,7 @@ internal static class DbHelper
             new BannerSize { Id = 1, Name = "680g × 154",  IsActive = true, MaterialId = 2, SortOrder = 10, MinWidthCm = 1,   MaxWidthCm = 700, MinHeightCm = 1,   MaxHeightCm = 154, PricingHeightCm = 154, PricingMultiplier = 1 },
             new BannerSize { Id = 2, Name = "680g × 300",  IsActive = true, MaterialId = 2, SortOrder = 20, MinWidthCm = 1,   MaxWidthCm = 700, MinHeightCm = 154, MaxHeightCm = 300, PricingHeightCm = 154, PricingMultiplier = 2 },
             new BannerSize { Id = 3, Name = "680g × 450",  IsActive = true, MaterialId = 2, SortOrder = 30, MinWidthCm = 1,   MaxWidthCm = 700, MinHeightCm = 300, MaxHeightCm = 450, PricingHeightCm = 154, PricingMultiplier = 3 },
-            // Material 1 — 400g indoor (carries an AvailableFrom of 2026-08-31)
+            // Material 1 — 400g indoor (available now)
             new BannerSize { Id = 4, Name = "400g × 180",  IsActive = true, MaterialId = 1, SortOrder = 40, MinWidthCm = 1,   MaxWidthCm = 800, MinHeightCm = 1,   MaxHeightCm = 180, PricingHeightCm = 180, PricingMultiplier = 1 },
             new BannerSize { Id = 5, Name = "400g × 355",  IsActive = true, MaterialId = 1, SortOrder = 50, MinWidthCm = 1,   MaxWidthCm = 800, MinHeightCm = 180, MaxHeightCm = 355, PricingHeightCm = 180, PricingMultiplier = 2 },
             new BannerSize { Id = 6, Name = "400g × 530",  IsActive = true, MaterialId = 1, SortOrder = 60, MinWidthCm = 1,   MaxWidthCm = 800, MinHeightCm = 360, MaxHeightCm = 530, PricingHeightCm = 180, PricingMultiplier = 3 },

@@ -12,7 +12,7 @@ namespace BannerShop.Api.Services.DesignRequests.OpenAi;
 /// <summary>
 /// LLM-backed prompt rewriter that asks an OpenAI chat model (default
 /// <c>gpt-4o-mini</c>) to turn the customer's terse input into a richer
-/// detailed prompt suitable for FLUX.2 Pro on fal.ai.
+/// detailed prompt suitable for the downstream image providers.
 ///
 /// Worked example from BANNERSH-61: a customer types just "minecraft" as the
 /// theme on a birthday banner. The refiner is told the category is Birthday,
@@ -147,7 +147,7 @@ public sealed class OpenAiPromptRefinementService : IPromptRefinementService
     {
         var system = new StringBuilder();
         system.AppendLine("You are a prompt engineer for an AI image generator that produces large-format printed party banners.");
-        system.AppendLine("The image model is FLUX.2 Pro on fal.ai. When a portrait is supplied, the fal-ai/flux-2-pro/edit endpoint receives it as an image reference.");
+        system.AppendLine("The image providers are Codex and Grok. When a portrait is supplied, each provider receives it as an image reference named @image1.");
         system.AppendLine();
         system.AppendLine("Goals when rewriting the customer's request into the final image prompt:");
         system.AppendLine("  • Stay faithful to the celebration category and any theme keywords the customer gave.");

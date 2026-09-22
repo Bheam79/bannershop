@@ -90,9 +90,9 @@ import InfoPageLayout from './InfoPageLayout.vue'
         overføres i henhold til EU-US Data Privacy Framework.
       </li>
       <li>
-        <strong>fal.ai</strong> (USA) — AI-generering av bannerdesign.
-        Beskrivelse og eventuelle portrettfoto sendes til fal.ai kun når du
-        benytter AI-designtjenesten. <strong>OpenAI, LLC</strong> (USA)
+        <strong>OpenAI</strong> og <strong>xAI</strong> — AI-generering av bannerdesign.
+        Beskrivelse og eventuelle portrettfoto sendes til disse leverandørene kun når du
+        benytter AI-designtjenesten. <strong>Anthropic</strong>
         brukes til å forbedre tekstbeskrivelsen før generering.
       </li>
       <li>
@@ -107,7 +107,7 @@ import InfoPageLayout from './InfoPageLayout.vue'
 
     <h2>5. Overføring til tredjeland</h2>
     <p>
-      Stripe, fal.ai og OpenAI er basert i USA. Overføring skjer basert på EUs
+      Stripe, OpenAI, xAI og Anthropic er basert i USA. Overføring skjer basert på EUs
       standard kontraktsklausuler (SCC) og/eller EU-US Data Privacy
       Framework der gjeldende. Du kan be om mer informasjon om
       overføringsmekanismene ved å kontakte oss.

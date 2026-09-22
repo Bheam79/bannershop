@@ -15,7 +15,7 @@ import InfoPageLayout from './InfoPageLayout.vue'
 
     <h2>Telefon</h2>
     <p>
-      <a href="tel:+4793234000">93 23 40 00</a><br>
+      <a href="tel:+4795362500">95 36 25 00</a><br>
       Mandag–fredag 09–16.
     </p>
 

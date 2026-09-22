@@ -179,8 +179,8 @@ const {
   approveError, approving, regenerating, regenerateError,
   reordering, reorderError,
   activatingGenerationId, activateGenerationError,
-  startPolling, cleanup: cleanupGeneration,
-  generateBanner: _generateBanner, approve, regenerate: _regenerate,
+  cleanup: cleanupGeneration,
+  generateBanner: _generateBanner, approve: _approve, regenerate: _regenerate,
   reorderCurrentDesign, selectPastDesign: _selectPastDesign,
   selectGeneration,
   returnToWizardIdle: _returnToWizardIdle,
@@ -457,8 +457,55 @@ async function generateBanner() {
   }
 }
 
+function saveGuestForm() {
+  if (isManual.value || auth.isLoggedIn || !designRequestId.value) return
+  sessionStorage.setItem(`ai_banner_form_${designRequestId.value}`, JSON.stringify({
+    personName: personName.value, personAge: personAge.value, textContent: textContent.value,
+    themeDescription: themeDescription.value, selectedTemplateId: selectedTemplateId.value,
+    selectedAspectRatio: selectedAspectRatio.value, selectedQuality: selectedQuality.value,
+    customWidth: customWidth.value, customHeight: customHeight.value,
+    customMaterialGsm: customMaterialGsm.value, language: language.value,
+  }))
+}
+
+function restoreGuestForm(id: number) {
+  const saved = sessionStorage.getItem(`ai_banner_form_${id}`)
+  if (!saved) return
+  try {
+    const form = JSON.parse(saved)
+    personName.value = form.personName
+    personAge.value = form.personAge
+    textContent.value = form.textContent
+    themeDescription.value = form.themeDescription
+    selectedTemplateId.value = form.selectedTemplateId
+    selectedAspectRatio.value = form.selectedAspectRatio
+    selectedQuality.value = form.selectedQuality
+    customWidth.value = form.customWidth
+    customHeight.value = form.customHeight
+    customMaterialGsm.value = form.customMaterialGsm
+    language.value = form.language
+  } catch { /* A corrupt tab-local draft must not prevent loading the server result. */ }
+  if (auth.isLoggedIn) sessionStorage.removeItem(`ai_banner_form_${id}`)
+}
+
+const bannerAuthRedirect = computed(() => designRequestId.value
+  ? `/banner-builder/ai?dr=${designRequestId.value}`
+  : '/banner-builder/ai?resume=1')
+
+function requireBannerAccount() {
+  if (auth.isLoggedIn) return false
+  void router.push({ path: '/register', query: { redirect: bannerAuthRedirect.value } })
+  return true
+}
+
+async function approve() {
+  if (requireBannerAccount()) return
+  await _approve()
+}
+
 /** Regenerate with pricing reset + credits update */
 async function regenerate() {
+  if (requireBannerAccount()) return
   if (!step2Valid.value) return
   resetPricing()
   const result = await _regenerate()
@@ -531,6 +578,10 @@ function aspectRatioToOption(raw: string | null | undefined): AspectRatioOption 
 async function handleSelectPastDesign(item: DesignRequestListItem) {
   resetPricing()
   const detail = await _selectPastDesign(item)
+  if (!detail) {
+    step.value = 2
+    return
+  }
   if (detail) {
     personName.value = detail.personName
     personAge.value = detail.personAge ?? null
@@ -555,6 +606,7 @@ async function handleSelectPastDesign(item: DesignRequestListItem) {
     photoPreviewUrl.value = detail.uploadedPhotoUrl ?? null
     uploadedPhotoBannerDesignId.value = detail.uploadedPhotoBannerDesignId ?? null
 
+    if (!isManual.value) restoreGuestForm(item.id)
     step.value = 2
     // Manual mode: refresh the canvas placeholder so the "Gå videre" CTA is
     // visible regardless of the past design's status (Approved / Final / etc.)
@@ -707,6 +759,7 @@ function addManualToCartAndCheckout() {
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 onMounted(async () => {
+  window.addEventListener('beforeunload', saveGuestForm)
   await loadTemplates()
   // BANNERSH-189: credits/paywall logic is AI-only — skip the API call in manual mode.
   if (!isManual.value) {
@@ -789,12 +842,10 @@ onMounted(async () => {
   // resumption behaviour by appending ?resume=1 to its post-auth redirect URL.
   const resumeParam = (route.query.resume as string | undefined)?.trim()
   const draftIdStr = localStorage.getItem('ai_banner_draft_id')
-  if (resumeParam === '1' && draftIdStr && auth.isLoggedIn && !categoryParam) {
+  if (resumeParam === '1' && draftIdStr && !categoryParam) {
     const draftId = parseInt(draftIdStr, 10)
     if (!isNaN(draftId) && draftId > 0) {
-      step.value = 2
-      designRequestId.value = draftId
-      startPolling(draftId)
+      await handleSelectPastDesign({ id: draftId } as DesignRequestListItem)
       return
     }
   }
@@ -863,6 +914,8 @@ watch(genPhase, (phase) => {
 })
 
 onBeforeUnmount(() => {
+  saveGuestForm()
+  window.removeEventListener('beforeunload', saveGuestForm)
   cleanupGeneration()
   stopProgressBar()
   if (photoPreviewUrl.value) URL.revokeObjectURL(photoPreviewUrl.value)
@@ -903,14 +956,14 @@ onBeforeUnmount(() => {
 
     <!-- Soft auth hint (anonymous user after creation) — full-width, above the grid -->
     <!-- AI mode only — manual mode auth-gates at "Gå videre" instead of generation. -->
-    <div v-if="!isManual && requiresAuthHint" class="notice-gold" style="margin-bottom:2rem">
+    <div v-if="!isManual && requiresAuthHint && genPhase === 'ready'" class="notice-gold" style="margin-bottom:2rem">
       <i class="fa-solid fa-circle-info" style="margin-top:2px;flex-shrink:0"></i>
       <span>
         <strong>Opprett konto for å godkjenne og bestille.</strong>
-        Banneret ditt genereres i bakgrunnen — logg inn for å se og godkjenne resultatet.
-        <RouterLink :to="`/register?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" style="color:var(--accent);font-weight:600">Registrer deg</RouterLink>
+        Du kan se banneret før du registrerer deg. Når du oppretter konto, kommer du tilbake hit med banneret ditt.
+        <RouterLink :to="`/register?redirect=${encodeURIComponent(bannerAuthRedirect)}`" style="color:var(--accent);font-weight:600">Registrer deg</RouterLink>
         eller
-        <RouterLink :to="`/login?redirect=${encodeURIComponent('/banner-builder/ai?resume=1')}`" style="color:var(--accent);font-weight:600">logg inn</RouterLink>.
+        <RouterLink :to="`/login?redirect=${encodeURIComponent(bannerAuthRedirect)}`" style="color:var(--accent);font-weight:600">logg inn</RouterLink>.
       </span>
     </div>
 

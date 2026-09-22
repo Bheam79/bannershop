@@ -1,4 +1,8 @@
 using BannerShop.Api.Services.DesignRequests;
+using BannerShop.Api.Services.DesignRequests.Claude;
+using BannerShop.Api.Controllers.Admin;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using BannerShop.Api.Services.DesignRequests.Cli;
 using BannerShop.Api.Services.SystemSettings;
 using BannerShop.Api.Services.BannerBuilder;
@@ -112,6 +116,8 @@ if name == 'codex':
 else:
     prompt = pathlib.Path(sys.argv[sys.argv.index('--prompt-file') + 1]).read_text()
     assert '--tools' in sys.argv and '--no-subagents' in sys.argv
+(root / (name + '.prompt')).write_text(prompt)
+if name == 'grok': (root / 'grok.system').write_text(sys.argv[sys.argv.index('--system-prompt-override') + 1])
 assert 'original alternative' in prompt
 (root / (name + '.start')).write_text(str(time.time()))
 mode = json.loads((root / 'modes.json').read_text())[name]
@@ -127,6 +133,66 @@ else: shutil.copy(root / ('solid.png' if mode == 'solid' else 'fixture.png'), de
 """;
     await File.WriteAllTextAsync(root + "/" + name, script);
     if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(root + "/" + name, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+}
+
+if (args.Contains("prompts-only"))
+{
+    // Isolated prompt transport reproduction: fake credentials and CLI executables only.
+    foreach (var name in new[] { "codex", "grok" })
+        await scope.ServiceProvider.GetRequiredService<ISystemSettingsService>().SetValueAsync(
+            ImageCliRuntime.CredentialKey(name), "{}", default);
+    await SetMode("valid", "valid");
+    var portraitOutputs = await ai.GenerateCandidatesAsync(new("A themed outfit transformation", "18:9", root + "/fixture.png"), default);
+    await Cleanup(portraitOutputs);
+    Check(portraitOutputs.Count == 2, "portrait request reaches both native CLI adapters");
+    var grokPrompt = File.ReadAllText(root + "/grok.prompt");
+    Check(grokPrompt.Contains("photographic cutout") && grokPrompt.Contains("lookalike"),
+        "Grok receives explicit photographic cutout / no-lookalike instructions");
+    Check(grokPrompt.EndsWith(ImageProviderPrompts.GrokPortraitInstruction),
+        "cutout instruction is reasserted after the refined design brief");
+    Check(File.ReadAllText(root + "/grok.system").Contains(ImageProviderPrompts.GrokPortraitInstruction),
+        "Grok system override also contains the full cutout requirement");
+    var codexPrompt = File.ReadAllText(root + "/codex.prompt");
+    Check(codexPrompt.Contains(ImageProviderPrompts.CodexPortraitInstruction)
+        && !codexPrompt.Contains(ImageProviderPrompts.GrokPortraitInstruction),
+        "Codex keeps independent portrait instructions");
+    var noPortraitOutputs = await ai.GenerateCandidatesAsync(new("Decorations only", "16:9", null), default);
+    await Cleanup(noPortraitOutputs);
+    Check(noPortraitOutputs.Count == 2 && !File.ReadAllText(root + "/grok.prompt").Contains("PORTRAIT CUTOUT REQUIREMENT")
+        && !File.ReadAllText(root + "/grok.system").Contains("PORTRAIT CUTOUT REQUIREMENT"),
+        "no-portrait generation does not demand a cutout or missing reference");
+
+    var settings = scope.ServiceProvider.GetRequiredService<ISystemSettingsService>();
+    await settings.SetValueAsync(ClaudeCliPromptRefinementService.MainPromptSetting, "Saved custom main prompt");
+    await settings.SetValueAsync("stripe_secret_key", "SECRET-MUST-NOT-LEAK");
+    var claudeOptions = new Mock<IOptionsMonitor<ClaudeCliOptions>>();
+    claudeOptions.SetupGet(x => x.CurrentValue).Returns(new ClaudeCliOptions { Model = "custom-model-id" });
+    var controller = new AdminSettingsController(settings, null!);
+    var response = (OkObjectResult)await controller.GetPrompts(claudeOptions.Object, default);
+    var catalog = (BannerPromptCatalogResult)response.Value!;
+    var main = catalog.Prompts.Single(x => x.Id == ClaudeCliPromptRefinementService.MainPromptSetting);
+    Check(main.Effective == "Saved custom main prompt" && main.BuiltIn == ClaudeCliPromptRefinementService.DefaultMainPrompt,
+        "catalog displays both saved override and built-in Claude prompt");
+    Check(catalog.Prompts.Count(x => x.SettingKey?.StartsWith("claude_flux_category_") == true) == 8
+        && catalog.Prompts.Count(x => x.Group == "Grunnprompt") == 8,
+        "all eight category directions and base prompt builders are listed");
+    Check(catalog.Prompts.Where(x => x.SettingKey?.StartsWith("claude_flux_category_") == true)
+        .All(x => x.Effective == x.BuiltIn), "missing category settings use runtime defaults");
+    Check(catalog.Prompts.Single(x => x.Id == "grok-True").BuiltIn.Contains(ImageProviderPrompts.GrokPortraitInstruction)
+        && catalog.Prompts.Single(x => x.Id == "constraints").BuiltIn.Contains("TEXT REQUIREMENT"),
+        "catalog includes live provider instruction and post-refinement constraints");
+    Check(catalog.Models.Single(x => x.Agent == "Claude").Model == "custom-model-id"
+        && catalog.Models.Where(x => x.Agent != "Claude").All(x => x.Model.Contains("ikke låst")),
+        "model display follows configuration and labels unpinned provider defaults");
+    Check(!JsonSerializer.Serialize(catalog).Contains("SECRET-MUST-NOT-LEAK")
+        && !catalog.Prompts.Any(x => x.SettingKey?.Contains("credentials") == true),
+        "prompt endpoint excludes credentials and unrelated settings");
+    Check(typeof(AdminSettingsController).GetCustomAttributes(typeof(AuthorizeAttribute), true)
+        .Cast<AuthorizeAttribute>().Any(x => x.Roles == "Admin")
+        && !typeof(AdminSettingsController).GetMethod(nameof(AdminSettingsController.GetPrompts))!
+            .IsDefined(typeof(AllowAnonymousAttribute), true), "prompt endpoint retains admin-only authorization");
+    Console.WriteLine("Prompt-only checks passed; no live image generation or project test suite run.");
+    return;
 }
 
 foreach (var name in new[] { "codex", "grok" }) runtime.StartLogin(name);

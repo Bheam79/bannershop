@@ -14,7 +14,7 @@ public record AiImageResult(string AbsolutePath, int WidthPx, int HeightPx, stri
 
 /// <summary>
 /// Provider-agnostic AI image generator. Lives behind an interface so the
-/// current fal.ai integration can be changed without touching callers.
+/// current CLI integration can be changed without touching callers.
 /// </summary>
 public interface IAiImageService
 {

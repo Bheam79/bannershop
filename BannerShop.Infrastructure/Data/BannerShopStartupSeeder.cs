@@ -33,8 +33,7 @@ public static class BannerShopStartupSeeder
 
         logger?.LogInformation("Seeding default materials (table is empty).");
 
-        // Material 2 (680g) is the current outdoor banner — available now.
-        // Material 1 (400g) is an indoor banner not yet in production — available from Aug 2026.
+        // Both the 680g outdoor and 400g indoor materials are in stock.
         db.Materials.AddRange(
             new Material
             {
@@ -43,7 +42,7 @@ public static class BannerShopStartupSeeder
                 WidthCm = 160,
                 WeightGsm = 400,
                 PricePerSqm = 180m,
-                AvailableFrom = new DateTime(2026, 8, 31, 0, 0, 0, DateTimeKind.Utc)
+                AvailableFrom = null
             },
             new Material
             {
@@ -70,7 +69,7 @@ public static class BannerShopStartupSeeder
         // Range-based pricing rules (BANNERSH-255).
         //
         // 680g (Material 2, available now): 154 cm height per panel, max width 700 cm.
-        // 400g (Material 1, future):        180 cm height per panel, max width 800 cm.
+        // 400g (Material 1, available now): 180 cm height per panel, max width 800 cm.
         //
         // Height tiers encode how many panels are needed for a given banner height.
         // Fixed-price rows are for the most common standard sizes.
@@ -80,7 +79,7 @@ public static class BannerShopStartupSeeder
             new BannerSize { Id = 2, Name = "680g × 300",  IsActive = true, MaterialId = 2, SortOrder = 20, MinWidthCm = 1,   MaxWidthCm = 700, MinHeightCm = 154, MaxHeightCm = 300, PricingHeightCm = 154, PricingMultiplier = 2, FixedPrice = null },
             new BannerSize { Id = 3, Name = "680g × 450",  IsActive = true, MaterialId = 2, SortOrder = 30, MinWidthCm = 1,   MaxWidthCm = 700, MinHeightCm = 300, MaxHeightCm = 450, PricingHeightCm = 154, PricingMultiplier = 3, FixedPrice = null },
 
-            // Material 1 — 400g indoor (future, available from Aug 2026)
+            // Material 1 — 400g indoor (available now)
             new BannerSize { Id = 4, Name = "400g × 180",  IsActive = true, MaterialId = 1, SortOrder = 40, MinWidthCm = 1,   MaxWidthCm = 800, MinHeightCm = 1,   MaxHeightCm = 180, PricingHeightCm = 180, PricingMultiplier = 1, FixedPrice = null },
             new BannerSize { Id = 5, Name = "400g × 355",  IsActive = true, MaterialId = 1, SortOrder = 50, MinWidthCm = 1,   MaxWidthCm = 800, MinHeightCm = 180, MaxHeightCm = 355, PricingHeightCm = 180, PricingMultiplier = 2, FixedPrice = null },
             new BannerSize { Id = 6, Name = "400g × 530",  IsActive = true, MaterialId = 1, SortOrder = 60, MinWidthCm = 1,   MaxWidthCm = 800, MinHeightCm = 360, MaxHeightCm = 530, PricingHeightCm = 180, PricingMultiplier = 3, FixedPrice = null },

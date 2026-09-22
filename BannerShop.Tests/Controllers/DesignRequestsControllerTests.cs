@@ -179,10 +179,10 @@ public class DesignRequestsControllerTests : IClassFixture<TestWebApplicationFac
     }
 
     [Fact]
-    public async Task Get_WithoutAuth_Returns401()
+    public async Task Get_WithoutAuthOrGuestCookie_Returns404()
     {
         var response = await _factory.CreateClient().GetAsync("/api/design-requests/1");
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     // ── POST /api/design-requests/manual ─────────────────────────────────────

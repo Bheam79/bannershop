@@ -953,7 +953,7 @@ public class DesignRequestServiceTests
     }
 
     [Fact]
-    public async Task GetAsync_AnonymousRequest_AccessibleByAnyAuthenticatedCaller()
+    public async Task GetAsync_AnonymousRequest_RequiresGuestProof()
     {
         using var db = DbHelper.CreateInMemory();
         await SeedAsync(db);
@@ -965,8 +965,10 @@ public class DesignRequestServiceTests
         // Caller is a completely different, unrelated authenticated user (id 777)
         var dto = await svc.GetAsync(dr.Id, callerUserId: 777, isAdmin: false);
 
-        dto.Should().NotBeNull();
-        dto!.Id.Should().Be(dr.Id);
+        dto.Should().BeNull();
+        var guestDto = await svc.GetAsync(dr.Id, callerUserId: 0, isAdmin: false, hasGuestAccess: true);
+        guestDto.Should().NotBeNull();
+        guestDto!.Id.Should().Be(dr.Id);
     }
 
     [Fact]

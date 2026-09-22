@@ -24,7 +24,6 @@ export type GenPhase =
   | 'idle'
   | 'submitting'
   | 'generating'
-  | 'anon_pending'
   | 'ready'
   | 'tilpass'
   | 'error'
@@ -73,6 +72,12 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
   async function selectGeneration(gen: BannerGenerationHistoryItem) {
     if (!designRequestId.value || gen.isActive || approving.value || regenerating.value) return
     if (activatingGenerationId.value !== null) return
+    // Guest DTOs have null ownership; also accept the legacy API zero sentinel.
+    if (currentDesignRequest.value && !currentDesignRequest.value.userId) {
+      localStorage.setItem(`ai_banner_selection_${designRequestId.value}`, String(gen.id))
+      applyGuestSelection(currentDesignRequest.value, gen.id)
+      return
+    }
     activatingGenerationId.value = gen.id
     activateGenerationError.value = null
     try {
@@ -85,6 +90,14 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
     } finally {
       activatingGenerationId.value = null
     }
+  }
+
+  function applyGuestSelection(detail: DesignRequestDetail, selectedId: number) {
+    const selected = detail.generationHistory.find(g => g.id === selectedId && g.previewUrl)
+    if (!selected) return
+    detail.previewUrl = selected.previewUrl
+    detail.currentGenerationId = selected.id
+    detail.generationHistory.forEach(g => { g.isActive = g.id === selected.id })
   }
 
   // ── Reorder ────────────────────────────────────────────────────────────────
@@ -112,6 +125,7 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
   async function pollOnce(id: number) {
     try {
       const detail = await getDesignRequest(id)
+      requiresAuthHint.value = !detail.userId
       currentDesignRequest.value = detail
       if (TERMINAL_STATUSES.includes(detail.status)) {
         stopPolling()
@@ -127,8 +141,14 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
           genPhase.value = 'error'
         }
       }
-    } catch {
-      // Transient errors — keep polling
+    } catch (e: unknown) {
+      const status = (e as { response?: { status?: number } }).response?.status
+      if (status === 401 || status === 403 || status === 404) {
+        stopPolling()
+        genPhase.value = 'error'
+        generateApiError.value = 'Kunne ikke hente banneret. Åpne det i nettleseren der du laget det, eller logg inn på kontoen din.'
+      }
+      // Transient errors — keep polling.
     }
   }
 
@@ -157,12 +177,8 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
       designRequestId.value = resp.designRequestId
       localStorage.setItem('ai_banner_draft_id', String(resp.designRequestId))
 
-      if (resp.requiresAuth) {
-        requiresAuthHint.value = true
-        genPhase.value = 'anon_pending'
-      } else {
-        startPolling(resp.designRequestId)
-      }
+      requiresAuthHint.value = resp.requiresAuth
+      startPolling(resp.designRequestId)
 
       return { creditsRemaining: resp.creditsRemaining }
     } catch (e: unknown) {
@@ -311,6 +327,8 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
     try {
       detail = await getDesignRequest(item.id)
     } catch {
+      genPhase.value = 'error'
+      generateApiError.value = 'Kunne ikke hente banneret. Prøv igjen i nettleseren der du laget det.'
       // Stay on the wizard with current state — surfacing the failure is the
       // view's responsibility. We don't redirect because the most likely
       // causes (401 / 404) would just produce another broken page.
@@ -328,6 +346,12 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
     }
 
     designRequestId.value = item.id
+    requiresAuthHint.value = !detail.userId
+    if (requiresAuthHint.value) {
+      localStorage.setItem(`ai_banner_guest_${item.id}`, '1')
+      const selected = localStorage.getItem(`ai_banner_selection_${item.id}`)
+      if (selected) applyGuestSelection(detail, Number(selected))
+    }
     currentDesignRequest.value = detail
     editExpanded.value = false
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -344,6 +368,8 @@ export function useBannerGeneration(options: BannerGenerationOptions) {
 
   // ── Return to wizard idle ──────────────────────────────────────────────────
   function returnToWizardIdle() {
+    stopPolling()
+    requiresAuthHint.value = false
     genPhase.value = 'idle'
     generateApiError.value = null
     regenerateError.value = null
