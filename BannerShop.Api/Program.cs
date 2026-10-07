@@ -115,6 +115,12 @@ builder.Services.Configure<TestingOptions>(builder.Configuration.GetSection(Test
 // WebApplicationFactory / unit test setup.
 builder.Services.AddScoped<IStripePaymentService, StripePaymentService>();
 
+builder.Services.Configure<AdminOrderNotificationOptions>(builder.Configuration.GetSection("AdminOrderNotifications"));
+// The gateway puts its credential in the query string: suppress HTTP URL logging.
+builder.Services.AddHttpClient(AdminOrderNotificationService.SmsClientName,
+    http => http.Timeout = TimeSpan.FromSeconds(10)).RemoveAllLoggers();
+builder.Services.AddScoped<IAdminOrderNotificationService, AdminOrderNotificationService>();
+
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IAdminOrderService, AdminOrderService>();
 

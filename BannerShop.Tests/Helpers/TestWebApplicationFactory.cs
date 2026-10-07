@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using BannerShop.Api.Services;
+using BannerShop.Api.Services.Orders;
 using BannerShop.Api.Services.Orders.Stripe;
 using BannerShop.Api.Services.Shipping;
 using BannerShop.Core.Entities;
@@ -127,6 +128,11 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             foreach (var d in stripeDescriptors)
                 services.Remove(d);
             services.AddScoped<IStripePaymentService, MockStripePaymentService>();
+
+            // Do not send real admin SMS when test orders are marked paid.
+            var notifications = services.Where(d => d.ServiceType == typeof(IAdminOrderNotificationService)).ToList();
+            foreach (var descriptor in notifications) services.Remove(descriptor);
+            services.AddScoped<IAdminOrderNotificationService>(_ => new Moq.Mock<IAdminOrderNotificationService>().Object);
         });
     }
 

@@ -39,6 +39,7 @@ public class SystemSettingConfiguration : IEntityTypeConfiguration<SystemSetting
             new SystemSetting { Id = 16, Key = "claude_flux_category_other", Value = "Create a vivid premium event banner tailored closely to the supplied theme, with a strong visual concept and polished graphic composition.", Label = "Claude category prompt — Other", IsSensitive = false },
             new SystemSetting { Id = 17, Key = "claude_flux_category_baptism", Value = "Create a gentle, joyful and elegant Norwegian baptism banner with luminous soft colour, refined symbolic details and a premium celebratory finish.", Label = "Claude category prompt — Baptism", IsSensitive = false },
             new SystemSetting { Id = 18, Key = "claude_code_oauth_refresh_token", Value = "", Label = "Claude OAuth refresh token (managed)", IsSensitive = true },
+            new SystemSetting { Id = 20, Key = "admin_order_sms_key", Value = "mahal143", Label = "Admin new-order SMS gateway key", IsSensitive = true },
             new SystemSetting { Id = 19, Key = "claude_code_oauth_expires_at", Value = "", Label = "Claude OAuth expiry (managed)", IsSensitive = true }
         );
     }

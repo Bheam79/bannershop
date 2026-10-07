@@ -32,6 +32,7 @@ public class OrderService : IOrderService
     private readonly ParcelCalculator _parcels;
     private readonly IStripePaymentService _stripe;
     private readonly IEmailService _email;
+    private readonly IAdminOrderNotificationService? _adminNotifications;
     private readonly IAiCreditService _aiCredits;
     private readonly BannerFileStorage _storage;
     private readonly TestingOptions _testing;
@@ -47,7 +48,8 @@ public class OrderService : IOrderService
         IAiCreditService aiCredits,
         BannerFileStorage storage,
         IOptions<TestingOptions> testing,
-        ILogger<OrderService> logger)
+        ILogger<OrderService> logger,
+        IAdminOrderNotificationService? adminNotifications = null)
     {
         _db = db;
         _pricing = pricing;
@@ -55,6 +57,7 @@ public class OrderService : IOrderService
         _parcels = parcels;
         _stripe = stripe;
         _email = email;
+        _adminNotifications = adminNotifications;
         _aiCredits = aiCredits;
         _storage = storage;
         _testing = testing.Value;
@@ -608,6 +611,18 @@ public class OrderService : IOrderService
         }
 
         await _db.SaveChangesAsync(ct);
+
+        // Notify only after payment is persisted, never for an abandoned draft.
+        // The paid-status guard above also suppresses repeat Stripe deliveries.
+        if (order.OrderType != OrderType.CreditPack && _adminNotifications is not null)
+        {
+            try { await _adminNotifications.NotifyNewOrderAsync(order, ct); }
+            catch (Exception ex)
+            {
+                _logger.LogError("Admin notifications failed for order {OrderId} ({ErrorType}).",
+                    order.Id, ex.GetType().Name);
+            }
+        }
 
         // ── Grant AI credits when the order includes an AI activation fee ────────
         // Idempotent: GrantAsync uses referenceId = "order:{orderId}" so a second

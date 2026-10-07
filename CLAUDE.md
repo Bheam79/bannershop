@@ -456,3 +456,6 @@ map null to 0). Guest-claim transactions run inside `CreateExecutionStrategy()`
 because production enables MySQL retries; SQLite-only smokes miss that failure.
 The standalone guest smoke supports disposable MariaDB and exports real DTOs
 for its browser checks (see its README).
+
+## Admin new-order alerts (BANNERSH-314)
+Confirmed banner payments notify current Admin profiles by email and SMS (not drafts/credit packs); repeat paid webhooks skip alerts. SMS uses masked DB `admin_order_sms_key` and `AdminOrderNotifications:SmsEndpoint` (default supplied gateway), with HTTP URL logging disabled because the key is a query parameter. Delivery is best-effort, without retries; email requires existing SMTP configuration. Offline verification: `dotnet run --project scripts/verify-admin-order-notifications/VerifyAdminOrderNotifications.csproj` (no real sends/project suite). `/admin/users` currently displays roles but has no role-editing UI/API.
