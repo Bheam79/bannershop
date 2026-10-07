@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { isValidPhone } from '@/utils/phone'
 import type { DeliveryType } from '@/types'
 import type { PackingMode } from '@/api/shop'
 
@@ -10,6 +11,7 @@ export interface CheckoutAddress {
 }
 
 export interface CheckoutState {
+  customerPhone: string
   recipientName: string
   address: CheckoutAddress
   deliveryType: DeliveryType
@@ -57,6 +59,7 @@ function writeDraftOrder(snapshot: DraftOrderSnapshot | null): void {
 }
 
 interface LastAddressSnapshot {
+  customerPhone: string
   recipientName: string
   address: CheckoutAddress
   deliveryType: DeliveryType
@@ -69,6 +72,7 @@ function readLastAddress(): LastAddressSnapshot | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<LastAddressSnapshot> | null
     if (!parsed || typeof parsed !== 'object') return null
+    const customerPhone = typeof parsed.customerPhone === 'string' ? parsed.customerPhone : ''
     const recipientName = typeof parsed.recipientName === 'string' ? parsed.recipientName : ''
     const addr = parsed.address ?? { line1: '', postalCode: '', city: '' }
     const address: CheckoutAddress = {
@@ -82,7 +86,7 @@ function readLastAddress(): LastAddressSnapshot | null {
         : 'Standard'
     const packingMode: PackingMode =
       parsed.packingMode === 'Rolled' ? 'Rolled' : 'Folded'
-    return { recipientName, address, deliveryType, packingMode }
+    return { customerPhone, recipientName, address, deliveryType, packingMode }
   } catch {
     return null
   }
@@ -101,6 +105,7 @@ export const useCheckoutStore = defineStore('checkout', () => {
   // populated even on a fresh page load after `checkout.clear()`.
   const last = readLastAddress()
 
+  const customerPhone = ref(last?.customerPhone ?? '')
   const recipientName = ref(last?.recipientName ?? '')
   const address = ref<CheckoutAddress>(
     last?.address ?? { line1: '', postalCode: '', city: '' },
@@ -119,7 +124,7 @@ export const useCheckoutStore = defineStore('checkout', () => {
   const draftCartHash = ref<string | null>(draftSnapshot?.cartHash ?? null)
 
   const isReady = () => {
-    if (!recipientName.value.trim()) return false
+    if (!recipientName.value.trim() || !isValidPhone(customerPhone.value)) return false
     if (deliveryType.value === 'Pickup') return true
     return (
       !!address.value.line1.trim() &&
@@ -129,6 +134,9 @@ export const useCheckoutStore = defineStore('checkout', () => {
   }
 
   function setCheckout(state: CheckoutState) {
+    // A reused draft must contain the contact number the customer just confirmed.
+    if (customerPhone.value !== state.customerPhone) clearDraftOrder()
+    customerPhone.value = state.customerPhone
     recipientName.value = state.recipientName
     address.value = { ...state.address }
     deliveryType.value = state.deliveryType
@@ -140,6 +148,7 @@ export const useCheckoutStore = defineStore('checkout', () => {
     // instead of waiting for payment success — means the form is
     // pre-filled even if the user abandons the order mid-payment.
     writeLastAddress({
+      customerPhone: state.customerPhone,
       recipientName: state.recipientName,
       address: { ...state.address },
       deliveryType: state.deliveryType,
@@ -148,6 +157,7 @@ export const useCheckoutStore = defineStore('checkout', () => {
   }
 
   function clear() {
+    customerPhone.value = ''
     recipientName.value = ''
     address.value = { line1: '', postalCode: '', city: '' }
     deliveryType.value = 'Standard'
@@ -196,6 +206,7 @@ export const useCheckoutStore = defineStore('checkout', () => {
   function loadLastAddress(): boolean {
     const last = readLastAddress()
     if (!last) return false
+    customerPhone.value = last.customerPhone
     recipientName.value = last.recipientName
     address.value = { ...last.address }
     deliveryType.value = last.deliveryType
@@ -204,6 +215,7 @@ export const useCheckoutStore = defineStore('checkout', () => {
   }
 
   return {
+    customerPhone,
     recipientName,
     address,
     deliveryType,

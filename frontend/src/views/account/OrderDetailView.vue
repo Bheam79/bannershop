@@ -574,6 +574,13 @@ const packingLabel = computed(() => {
         </div>
       </section>
 
+      <section v-if="!isCreditPack && order.customerPhone">
+        <h2 class="section-title"><i class="fa-solid fa-phone"></i>Telefon</h2>
+        <div class="panel">
+          <a :href="`tel:${order.customerPhone.replace(/[^+0-9]/g, '')}`">{{ order.customerPhone }}</a>
+        </div>
+      </section>
+
       <!-- ── Shipping address ───────────────────────────────────────────── -->
       <section v-if="!isCreditPack && order.shippingAddress">
         <h2 class="section-title">

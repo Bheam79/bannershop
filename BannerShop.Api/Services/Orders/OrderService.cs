@@ -71,6 +71,13 @@ public class OrderService : IOrderService
         if (req.Items is null || req.Items.Count == 0)
             return Fail("Order must contain at least one item.");
 
+        var customerPhone = req.CustomerPhone?.Trim();
+        if (customerPhone is not null &&
+            (customerPhone.Length > 50 ||
+             !System.Text.RegularExpressions.Regex.IsMatch(customerPhone, @"^\+?[0-9][0-9 ()-]*[0-9]$") ||
+             customerPhone.Count(char.IsAsciiDigit) is < 6 or > 15))
+            return Fail("CustomerPhone must be a valid phone number (6–15 digits).");
+
         // Shipping address is required for all delivery types except Pickup
         if (req.DeliveryType != DeliveryType.Pickup && req.ShippingAddress is null)
             return Fail("ShippingAddress is required for Standard and Express delivery types.");
@@ -313,6 +320,7 @@ public class OrderService : IOrderService
         var order = new Order
         {
             UserId              = userId,
+            CustomerPhone       = customerPhone,
             Status              = OrderStatus.PendingPayment,
             OrderType           = orderType,
             OrderState          = OrderState.Draft,

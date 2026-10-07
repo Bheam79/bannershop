@@ -938,6 +938,12 @@ const packingLabel = computed(() => {
               <span v-else class="text-gray-400">—</span>
             </div>
           </div>
+          <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-0.5">Telefon</div>
+            <a v-if="order.customerPhone" :href="`tel:${order.customerPhone.replace(/[^+0-9]/g, '')}`"
+               class="text-blue-400 hover:underline">{{ order.customerPhone }}</a>
+            <span v-else class="text-gray-400">Ikke oppgitt</span>
+          </div>
           <div v-if="order.shippingAddress">
             <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-0.5">Leveringsadresse</div>
             <address class="not-italic text-gray-300 space-y-0.5">

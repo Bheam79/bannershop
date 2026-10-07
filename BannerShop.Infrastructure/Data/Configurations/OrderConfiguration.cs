@@ -25,6 +25,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         e.Property(x => x.ExpressFeeNok).HasColumnType("decimal(10,2)");
         e.Property(x => x.AiActivationFeeNok).HasColumnType("decimal(10,2)").HasDefaultValue(0m);
         e.Property(x => x.TotalNok).HasColumnType("decimal(10,2)");
+        e.Property(x => x.CustomerPhone).HasMaxLength(50);
         e.Property(x => x.StripePaymentIntentId).HasMaxLength(200);
         // BANNERSH-185: soft-delete flag for customer-cleared Draft / PendingPayment
         // orders. Indexed so the (UserId, Deleted) and (Deleted) filters used by the

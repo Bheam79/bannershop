@@ -128,6 +128,11 @@ const formatDate = formatDateLong
           </dl>
         </div>
 
+        <div v-if="order.customerPhone" class="panel">
+          <h2 class="section-title"><i class="fa-solid fa-phone"></i>Telefon</h2>
+          <a :href="`tel:${order.customerPhone.replace(/[^+0-9]/g, '')}`">{{ order.customerPhone }}</a>
+        </div>
+
         <!-- Delivery address -->
         <div v-if="order.shippingAddress" class="panel">
           <h2 class="section-title">

@@ -168,6 +168,7 @@ async function confirmMockPayment() {
       } else {
         const resp = await createOrderDraft({
           deliveryType: checkout.deliveryType,
+          customerPhone: checkout.customerPhone,
           shippingAddress: checkout.deliveryType !== 'Pickup' ? {
             line1: checkout.address.line1,
             postalCode: checkout.address.postalCode,
@@ -295,6 +296,7 @@ async function pay() {
         //     spawning a duplicate.
         const resp = await createOrderDraft({
           deliveryType: checkout.deliveryType,
+          customerPhone: checkout.customerPhone,
           shippingAddress: checkout.deliveryType !== 'Pickup' ? {
             line1: checkout.address.line1,
             postalCode: checkout.address.postalCode,
@@ -411,6 +413,7 @@ async function pay() {
           </div>
           <address class="addr-block">
             <div class="addr-name">{{ checkout.recipientName }}</div>
+            <div>Telefon: {{ checkout.customerPhone }}</div>
             <template v-if="checkout.deliveryType !== 'Pickup'">
               <div>{{ checkout.address.line1 }}</div>
               <div>{{ checkout.address.postalCode }} {{ checkout.address.city }}</div>

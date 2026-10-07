@@ -16,6 +16,10 @@ public class CreateOrderDraftRequest
     /// </summary>
     public AddressInputDto? ShippingAddress { get; set; }
 
+    /// <summary>Checkout contact number. Optional for compatibility with older clients.</summary>
+    [StringLength(50)]
+    public string? CustomerPhone { get; set; }
+
     /// <summary>
     /// How the customer wants the order packaged. Affects the Bring quote computed
     /// server-side at order draft time so the persisted shipping cost matches the
@@ -259,6 +263,7 @@ public class OrderDetailDto
 {
     public int Id { get; set; }
     public int UserId { get; set; }
+    public string? CustomerPhone { get; set; }
     public string? CustomerName { get; set; }
     public string? CustomerEmail { get; set; }
     public string Status { get; set; } = string.Empty;

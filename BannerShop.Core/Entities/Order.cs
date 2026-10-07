@@ -27,6 +27,9 @@ public class Order
     /// </summary>
     public PackingMode PackingMode { get; set; } = PackingMode.Rolled;
 
+    /// <summary>Contact number captured at checkout; null on legacy orders.</summary>
+    public string? CustomerPhone { get; set; }
+
     public int? ShippingAddressId { get; set; }
     public decimal ShippingCostNok { get; set; }
     public decimal ExpressFeeNok { get; set; }

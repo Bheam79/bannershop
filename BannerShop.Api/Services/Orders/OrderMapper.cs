@@ -51,6 +51,7 @@ internal static class OrderMapper
         {
             Id = o.Id,
             UserId = o.UserId,
+            CustomerPhone = o.CustomerPhone ?? o.User?.Phone,
             CustomerName = o.User?.Name,
             CustomerEmail = o.User?.Email,
             Status = o.Status.ToString(),

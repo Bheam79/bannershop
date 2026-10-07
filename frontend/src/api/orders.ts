@@ -4,6 +4,7 @@ import type { DeliveryType, EyeletOption } from '@/types'
 // ── Request types ─────────────────────────────────────────────────────────────
 
 export interface OrderDraftRequest {
+  customerPhone?: string
   deliveryType: DeliveryType
   /** Required for Standard/Express delivery. Omit for Pickup. */
   shippingAddress?: {
@@ -163,6 +164,7 @@ export interface ShipmentTracking {
 }
 
 export interface OrderDetailResponse {
+  customerPhone?: string | null
   id: number
   userId?: number
   customerName?: string | null

@@ -10,6 +10,7 @@ import { generateBannerPreview } from '@/api/bannerBuilder'
 import type { DeliveryType, EyeletOption, ShippingEstimate } from '@/types'
 import { countEyelets } from '@/types'
 import { formatNok, formatDateLong } from '@/utils/format'
+import { isValidPhone } from '@/utils/phone'
 
 const router = useRouter()
 const cart = useCartStore()
@@ -114,6 +115,7 @@ function removeItem(idx: number) {
 if (!checkout.recipientName.trim() && !checkout.address.line1.trim()) {
   checkout.loadLastAddress()
 }
+const customerPhone = ref(checkout.customerPhone || auth.user?.phone || '')
 const recipientName = ref(checkout.recipientName)
 const addressLine1 = ref(checkout.address.line1)
 const postalCode = ref(checkout.address.postalCode)
@@ -269,6 +271,8 @@ const formErrors = ref<Record<string, string>>({})
 function validate(): boolean {
   const errs: Record<string, string> = {}
   if (!recipientName.value.trim()) errs.recipientName = 'Navn er påkrevd'
+  if (!customerPhone.value.trim()) errs.customerPhone = 'Telefonnummer er påkrevd'
+  else if (!isValidPhone(customerPhone.value)) errs.customerPhone = 'Oppgi et gyldig telefonnummer (6–15 siffer)'
   if (deliveryType.value !== 'Pickup') {
     if (!addressLine1.value.trim()) errs.addressLine1 = 'Adresse er påkrevd'
     if (!/^\d{4}$/.test(postalCode.value.trim())) errs.postalCode = 'Ugyldig postnummer (4 siffer)'
@@ -287,6 +291,7 @@ function proceed() {
   }
   // Save checkout state before any redirect so it's available on return
   checkout.setCheckout({
+    customerPhone: customerPhone.value.trim(),
     recipientName: recipientName.value.trim(),
     address: {
       line1: addressLine1.value.trim(),
@@ -433,6 +438,26 @@ function eyeletCountFor(item: import('@/types').CartItem): number {
               />
               <p v-if="formErrors.recipientName" class="field-error">
                 {{ formErrors.recipientName }}
+              </p>
+            </div>
+
+            <div class="form-field full">
+              <label class="field-label" for="customerPhone">Telefonnummer</label>
+              <input
+                id="customerPhone"
+                v-model="customerPhone"
+                type="tel"
+                autocomplete="tel"
+                maxlength="50"
+                required
+                placeholder="F.eks. +47 912 34 567"
+                class="field-input"
+                :class="{ 'field-input--error': formErrors.customerPhone }"
+                :aria-invalid="!!formErrors.customerPhone"
+                :aria-describedby="formErrors.customerPhone ? 'customerPhoneError' : undefined"
+              />
+              <p v-if="formErrors.customerPhone" id="customerPhoneError" class="field-error">
+                {{ formErrors.customerPhone }}
               </p>
             </div>
 
