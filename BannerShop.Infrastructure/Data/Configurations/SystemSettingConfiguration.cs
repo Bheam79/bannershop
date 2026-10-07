@@ -24,6 +24,7 @@ public class SystemSettingConfiguration : IEntityTypeConfiguration<SystemSetting
             new SystemSetting { Id = 4, Key = "stripe_secret_key",      Value = "", Label = "Stripe Secret Key (sk_live_… / sk_test_… / rk_live_… / rk_test_…)", IsSensitive = true },
             new SystemSetting { Id = 5, Key = "stripe_publishable_key", Value = "", Label = "Stripe Publishable Key (pk_live_… / pk_test_…)",                  IsSensitive = false },
             new SystemSetting { Id = 6, Key = "stripe_webhook_secret",  Value = "", Label = "Stripe Webhook Secret (whsec_…)",                                  IsSensitive = true },
+            new SystemSetting { Id = 7, Key = "fal_api_key", Value = "", Label = "fal.ai API Key (admin order upscaling)", IsSensitive = true },
             // BANNERSH-293: Claude credentials must never be seeded. Admins can either
             // paste a setup-token into id 8 or use the OAuth flow; ids 18-19 are
             // maintained by that flow and let the background refresher rotate tokens.

@@ -261,7 +261,7 @@ writes outside `--prefix` unless `GROK_HOME` is set; the installer scopes that
 variable to `<prefix>/grok-install` for npm only, preserving personal CLI config
 and per-request auth homes. `bash scripts/verify-image-cli-install.sh` is an
 isolated deployment smoke with stubbed npm/Docker/build/systemd (no project suite).
-BANNERSH-298 removed the fal.ai implementation, config, and credential row.
+BANNERSH-298 removed the fal.ai implementation, config, and credential row. BANNERSH-312 reintroduces the masked `fal_api_key` solely for admin order 2x/4x SeedVR seamless downloads, not customer image generation. PNGs and durable queue handles are cached by source-content hash + scale under `FileStorage:LocalRoot/admin-upscales`; `scripts/verify-order-upscale/README.md` covers standalone offline checks and failed-job recovery.
 The `claude_flux_*` setting keys remain for compatibility with saved admin prompts;
 new defaults are provider-neutral and the removal migration preserves custom text.
 Copyright-alternative instructions are appended after prompt refinement

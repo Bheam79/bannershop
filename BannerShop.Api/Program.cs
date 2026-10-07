@@ -131,6 +131,9 @@ builder.Services.AddSingleton<BannerFileStorage>();
 builder.Services.AddSingleton<IImageProcessingService, ImageProcessingService>();
 // BannerPreviewService: generates GUID-keyed cached previews with eyelet overlays.
 builder.Services.AddSingleton<BannerPreviewService>();
+// Admin download derivatives use fal's durable queue, never the customer AI pipeline.
+builder.Services.AddHttpClient("FalOrderUpscale", http => http.Timeout = TimeSpan.FromSeconds(60));
+builder.Services.AddSingleton<FalOrderUpscaleService>();
 
 // ─── AI Credit Pool (BANNERSH-65) ────────────────────────────────────────────
 builder.Services.AddScoped<IAiCreditService, AiCreditService>();

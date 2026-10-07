@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
+import OrderUpscaleDownloads from '@/components/admin/OrderUpscaleDownloads.vue'
 import {
   getAdminOrder,
   updateOrderStatus,
@@ -915,6 +916,11 @@ const packingLabel = computed(() => {
                   Åpne design-bestilling ↗
                 </RouterLink>
               </div>
+              <OrderUpscaleDownloads
+                v-if="item.designDownloadUrl"
+                :order-id="orderId"
+                :item-id="item.id"
+              />
             </div>
           </div>
         </div>
