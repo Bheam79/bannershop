@@ -459,3 +459,5 @@ for its browser checks (see its README).
 
 ## Admin new-order alerts (BANNERSH-314)
 Confirmed banner payments notify current Admin profiles by email and SMS (not drafts/credit packs); repeat paid webhooks skip alerts. SMS uses masked DB `admin_order_sms_key` and `AdminOrderNotifications:SmsEndpoint` (default supplied gateway), with HTTP URL logging disabled because the key is a query parameter. Delivery is best-effort, without retries; email requires existing SMTP configuration. Offline verification: `dotnet run --project scripts/verify-admin-order-notifications/VerifyAdminOrderNotifications.csproj` (no real sends/project suite). `/admin/users` currently displays roles but has no role-editing UI/API.
+
+BANNERSH-316: runtime CLI credentials can occupy SystemSettings ID 20; new setting migrations must omit the ID and insert only when the unique key is absent, with rollback by key. Do not add these rows to `HasData`/the snapshot (future ID-based updates/deletes could target a credential). `scripts/verify-settings-migration` exercises real MariaDB startup migrations, including the original collision and existing SMS values, without the project suite.

@@ -1248,14 +1248,6 @@ namespace BannerShop.Infrastructure.Data.Migrations
                         },
                         new
                         {
-                            Id = 20,
-                            IsSensitive = true,
-                            Key = "admin_order_sms_key",
-                            Label = "Admin new-order SMS gateway key",
-                            Value = "mahal143"
-                        },
-                        new
-                        {
                             Id = 19,
                             IsSensitive = true,
                             Key = "claude_code_oauth_expires_at",

@@ -10,19 +10,22 @@ namespace BannerShop.Infrastructure.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.InsertData(
-                table: "SystemSettings",
-                columns: new[] { "Id", "IsSensitive", "Key", "Label", "Value" },
-                values: new object[] { 20, true, "admin_order_sms_key", "Admin new-order SMS gateway key", "mahal143" });
+            // CLI OAuth settings are created at runtime and can already occupy ID 20.
+            // Allocate an ID instead, and preserve any previously configured SMS key.
+            // Fix this migration itself: a later migration cannot repair a failed Up.
+            migrationBuilder.Sql("""
+                INSERT INTO `SystemSettings` (`IsSensitive`, `Key`, `Label`, `Value`)
+                SELECT TRUE, 'admin_order_sms_key', 'Admin new-order SMS gateway key', 'mahal143'
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM `SystemSettings` WHERE `Key` = 'admin_order_sms_key'
+                );
+                """);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DeleteData(
-                table: "SystemSettings",
-                keyColumn: "Id",
-                keyValue: 20);
+            migrationBuilder.Sql("DELETE FROM `SystemSettings` WHERE `Key` = 'admin_order_sms_key';");
         }
     }
 }

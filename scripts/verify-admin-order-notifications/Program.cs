@@ -26,10 +26,20 @@ void Check(bool condition, string label)
 using var db = new BannerShopDbContext(new DbContextOptionsBuilder<BannerShopDbContext>()
     .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
 await db.Database.EnsureCreatedAsync();
+// InMemory cannot execute the key-based SQL seed in AddAdminOrderSmsKey.
+// The standalone verify-settings-migration smoke covers the real MariaDB seed.
+db.SystemSettings.Add(new SystemSetting
+{
+    Key = AdminOrderNotificationService.SmsKeySetting,
+    Value = "fixture-default-key",
+    Label = "Admin new-order SMS gateway key",
+    IsSensitive = true
+});
+await db.SaveChangesAsync();
 using var cache = new MemoryCache(new MemoryCacheOptions());
 var settings = new SystemSettingsService(db, cache);
 var seededKey = (await settings.GetAllAsync()).Single(s => s.Key == AdminOrderNotificationService.SmsKeySetting);
-Check(seededKey.IsSensitive && !string.IsNullOrWhiteSpace(seededKey.Value), "SMS key seeded as sensitive setting");
+Check(seededKey.IsSensitive && !string.IsNullOrWhiteSpace(seededKey.Value), "SMS migration fixture is a sensitive setting");
 var key = "fixture+key&æ";
 await settings.SetValueAsync(AdminOrderNotificationService.SmsKeySetting, key);
 var masked = JsonSerializer.Serialize(((OkObjectResult)await new AdminSettingsController(settings, null!).GetAll(default)).Value);
