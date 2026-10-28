@@ -41,7 +41,7 @@ BANNERSHOP_DB="..." dotnet-ef database update \
 Top-level `Makefile` stands up the full stack on any Linux host with `docker`, `dotnet`, `npm`, `systemctl`, `openssl` in PATH. MariaDB runs as a Docker container; backend (which now also serves the SPA from `BannerShop.Api/wwwroot/`) runs as a `systemctl --user` service.
 
 - Ports: backend `:17080`, MariaDB `127.0.0.1:17006` (both in the 17000–17100 range).
-- Layout under `$HOME/.local/share/bannershop/{app,data,secrets}` and unit at `$HOME/.config/systemd/user/bannershop.service` — no sudo required (except optional `loginctl enable-linger $USER` for boot start).
+- Layout under `$HOME/.local/share/bannershop/{app,data,secrets}` and unit at `$HOME/.config/systemd/user/bannershop.service`. Installation now enables and verifies `loginctl` lingering for the deployment user (BANNERSH-315); denied host policy produces an administrator command, never automatic sudo. Existing installs can run `make enable-boot` without rebuilding. `systemctl --user` commands must run as that same user.
 - Secrets (DB password, JWT key, admin password) are generated on first run via `openssl rand`, kept mode 0600 under `secrets/`, and reused on subsequent `make up`.
 - The Vite build is copied into `BannerShop.Api/wwwroot/` at publish time so a single ASP.NET process serves `/api/*` and the SPA (with `MapFallbackToFile("index.html")` for client-side routes — only registered when the file exists, so tests/dev are unaffected).
 - `Program.cs` auto-runs `db.Database.Migrate()` only in `Development` or `Production` environments — `Testing` (used by `TestWebApplicationFactory` with the InMemory provider) is skipped because InMemory doesn't support migrations.

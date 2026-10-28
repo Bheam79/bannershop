@@ -131,6 +131,57 @@ dotnet-ef database update \
 | `CLAUDE_CODE_OAUTH_TOKEN` | Optional first-install fallback for Claude CLI prompt refinement; the admin DB setting takes precedence |
 | `VITE_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (frontend `.env`) |
 
+## Production service and reboot startup
+
+`make up` installs **`bannershop.service` as a systemd user service** at
+`~/.config/systemd/user/bannershop.service`. It serves the API and frontend on
+port 17080. Manage it as the **same Linux user that ran `make up`**:
+
+```bash
+systemctl --user status bannershop.service --no-pager
+systemctl --user restart bannershop.service
+journalctl --user -u bannershop.service -b -n 100 --no-pager
+```
+
+An enabled user service needs **lingering** to start before anyone logs in.
+Older installations enabled the unit without configuring lingering, so a reboot
+could leave the site down until the deployment user logged in. `make up` now
+enables and verifies lingering; it stops with an actionable error if host policy
+denies the change. See [systemd's lingering documentation](https://www.freedesktop.org/software/systemd/man/latest/loginctl.html).
+
+To enable an existing installation and start it now, run this on the production
+host as its deployment user (no rebuild or configuration changes):
+
+```bash
+make enable-boot
+```
+
+The equivalent commands, which also work with an older checkout, are:
+
+```bash
+loginctl enable-linger "$(id -un)"
+systemctl --user enable --now bannershop.service
+# Expected: Linger=yes, enabled, and active respectively
+loginctl show-user "$(id -un)" --property=Linger
+systemctl --user is-enabled bannershop.service
+systemctl --user is-active bannershop.service
+```
+
+If `loginctl` reports access denied, ask a host administrator to run
+`loginctl enable-linger <deployment-user>` once, then run `make enable-boot`
+as the deployment user. Running `systemctl --user` as another user manages that
+other user's services.
+
+MariaDB uses the `bannershop-db` Docker container with `--restart unless-stopped`;
+the host's Docker daemon must also start at boot. Check with
+`systemctl is-enabled docker.service` and `docker ps -a --filter name=bannershop-db`.
+If MariaDB was deliberately stopped (for example by `make down`), start it with
+`make db-up`, then `make restart`. `make status` shows service enablement,
+lingering, and the running database container; `make logs` tails application logs.
+If a service remains down despite `Linger=yes`, inspect its journal above for
+the actual startup error. After the next planned reboot, verify the site responds
+before logging in as the deployment user.
+
 ## Production image CLI installation
 
 `make up` checks/installs pinned Codex and Grok CLIs **before** checking the

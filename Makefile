@@ -11,6 +11,7 @@
 #   make up         # generate secrets, start MariaDB, build, install & start
 #   make down       # stop the systemd user service AND the MariaDB container
 #   make restart    # restart only the service
+#   make enable-boot # enable boot startup for an already installed service
 #   make status     # show service + container status
 #   make logs       # tail journald logs (Ctrl-C to exit)
 #   make build      # rebuild backend + frontend without touching the service
@@ -33,8 +34,9 @@
 #   - The service is enabled (`systemctl --user enable`) so re-running
 #     `make up` after a code change does a `systemctl --user restart`
 #     and the new build is picked up.
-#   - The service starts only after you log in unless you also run
-#     `loginctl enable-linger $USER` once as root.
+#   - Installation enables and verifies user lingering so the service starts
+#     at boot without a login. If host policy denies this, an administrator
+#     must run the printed loginctl command for the deployment user.
 # ─────────────────────────────────────────────────────────────────────────────
 
 SERVICE_NAME  := bannershop
@@ -96,7 +98,7 @@ CLAUDE        := $(shell command -v claude 2>/dev/null)
 # ─────────────────────────────────────────────────────────────────────────────
 .PHONY: help up down restart status logs build publish frontend config secrets \
         db-up db-down db-shell db-users install-service stop-service start-service uninstall \
-        check-tools install-image-clis print-admin-password \
+        check-tools install-image-clis print-admin-password enable-linger enable-boot \
         test test-coverage e2e-coverage
 
 help:
@@ -106,6 +108,7 @@ help:
 	@echo "  up          Generate secrets, start MariaDB, build, install & (re)start service"
 	@echo "  down        Stop systemd user service AND the MariaDB container"
 	@echo "  restart     Restart only the systemd user service"
+	@echo "  enable-boot Enable startup after reboot for an existing installation"
 	@echo "  status      Show service and container status"
 	@echo "  logs        Tail service logs (Ctrl-C to exit)"
 	@echo "  install-image-clis   Install pinned Codex/Grok CLIs (no login required)"
@@ -139,6 +142,12 @@ restart:
 status:
 	@echo "── systemd user service ──────────────────────────────────────────"
 	-@systemctl --user status $(SERVICE_NAME) --no-pager 2>/dev/null || echo "(not installed)"
+	-@systemctl --user is-enabled $(SERVICE_NAME)
+	@if [ "$$(loginctl show-user "$$(id -un)" --property=Linger --value 2>/dev/null)" = yes ]; then \
+		echo "Linger=yes (user services start at boot without login)"; \
+	else \
+		echo "WARNING: boot startup is not configured — run 'make enable-boot' as the deployment user."; \
+	fi
 	@echo ""
 	@echo "── MariaDB container ─────────────────────────────────────────────"
 	-@$(DOCKER) ps --filter "name=^$(DB_CONTAINER)$$" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null
@@ -363,7 +372,31 @@ config: install-image-clis secrets publish
 build: config
 
 # ── systemd user service ─────────────────────────────────────────────────────
-install-service: build
+# Enabling a user unit alone only starts it when its user's manager runs.
+# Lingering starts that manager at boot and keeps it alive after logout.
+enable-linger:
+	@set -eu; \
+	 deployment_user=$$(id -un); \
+	 command -v loginctl >/dev/null || { echo "ERROR: 'loginctl' is required for boot startup." >&2; exit 1; }; \
+	 if [ "$$(loginctl show-user "$$deployment_user" --property=Linger --value 2>/dev/null)" != yes ]; then \
+		echo ">>> Enabling boot startup for user $$deployment_user"; \
+		loginctl --no-ask-password enable-linger "$$deployment_user" || { \
+			echo "ERROR: boot startup could not be enabled. Ask a host administrator to run:" >&2; \
+			echo "  loginctl enable-linger $$deployment_user" >&2; \
+			echo "Then run 'make enable-boot' as $$deployment_user. No sudo is run automatically." >&2; \
+			exit 1; \
+		}; \
+	 fi; \
+	 if [ "$$(loginctl show-user "$$deployment_user" --property=Linger --value)" != yes ]; then \
+		echo "ERROR: Linger is not yes for $$deployment_user; boot startup is not configured." >&2; exit 1; \
+	 fi; \
+	 echo ">>> Linger=yes for $$deployment_user (user services start at boot without login)"
+
+# Recovery shortcut: uses the installed app/unit without rebuilding or changing config.
+enable-boot: enable-linger
+	systemctl --user enable --now $(SERVICE_NAME)
+
+install-service: build enable-linger
 	@mkdir -p $(UNIT_DIR)
 	@echo ">>> Writing $(UNIT_FILE)"
 	@printf '%s\n' \
